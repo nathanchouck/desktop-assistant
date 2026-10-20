@@ -11,7 +11,27 @@ not meant to be distributed.
 
 ## Status
 
-Planning. No app code yet. See the roadmap.
+Milestone 0 (project setup) done: the window opens, built-in commands search
+and run, and anything else shows an "Ask Claude" row. Next up is M1 (hotkeys,
+Windows key, glass window). See the roadmap.
+
+## Getting the app
+
+Every push builds a Windows installer on GitHub Actions: open the latest
+**build** run under the Actions tab and download `desktop-assistant-windows`.
+
+## Developing
+
+Needs Node 22+ and Rust (stable). On Windows, also the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (WebView2 is
+already on Windows 11).
+
+```sh
+npm install
+npm run tauri dev
+```
+
+See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for the other commands.
 
 ## Docs
 

@@ -2,6 +2,18 @@
 
 How code in this repo should look, and the step-by-step for common changes.
 
+## Everyday commands
+
+| Command | What it does |
+|---|---|
+| `npm install` | install JS deps (once) |
+| `npm run tauri dev` | run the app with hot reload |
+| `npm run bindings` | regenerate `ui/src/lib/bindings.ts` after IPC changes |
+| `npm run check` / `npm test` | UI typecheck / UI tests |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | Rust tests |
+| `npx tauri build` | release installer (on Windows) |
+| `npx tauri icon src-tauri/icons/app-icon.png -o src-tauri/icons` | regenerate icons |
+
 ## General
 
 - Small modules with one job. If a file passes ~400 lines, split it.
@@ -29,7 +41,8 @@ How code in this repo should look, and the step-by-step for common changes.
 
 - `strict` TypeScript. Call the backend only through generated
   `lib/bindings.ts`. Never use raw `invoke("name")` strings.
-- Components are presentational; state lives in `lib/stores/`.
+- Components are presentational; state lives in `lib/stores/` as Svelte 5
+  rune classes in `*.svelte.ts` files.
 - Colors, radii, blur and spacing come from `styles/tokens.css` only.
 - Every interactive element is reachable by keyboard.
 
@@ -40,7 +53,13 @@ How code in this repo should look, and the step-by-step for common changes.
 - Events (backend to UI streams) are named `noun:verb`: `ai:delta`,
   `ai:approval`, `index:progress`.
 - Every payload is a Rust struct with `#[derive(Serialize, specta::Type)]`.
-  Regenerate bindings after changing one (`cargo run --bin gen-bindings`).
+  Regenerate bindings after changing one (`npm run bindings`). A Rust test
+  fails if the committed bindings are stale.
+- Avoid `u64`/`i64` and floats in IPC types (TypeScript can't hold u64 safely,
+  and floats become `number | null`). Use `u32` or keep the field Rust-only
+  with `#[serde(skip)]` + `#[specta(skip)]`.
+- Settings structs don't use `#[serde(default)]`; defaults come from
+  `Settings::default()` via layering, which keeps generated types non-optional.
 
 ## Procedure: add a search provider
 
@@ -87,8 +106,8 @@ Not worth it here: end-to-end UI automation, mocking Win32.
 ## CI / release
 
 - `test.yml` (ubuntu): fmt, clippy, `cargo test`, `vitest`, typecheck.
-- `build.yml` (windows-latest): `tauri build` produces an `.msi`/`.exe`
-  installer uploaded as a workflow artifact. Tags `v*` create a GitHub Release
+- `build.yml` (windows-latest, every push): `tauri build` produces an
+  `.msi`/`.exe` installer uploaded as a workflow artifact. Tags `v*` create a GitHub Release
   that the in-app updater reads (later milestone).
 - Version lives in `src-tauri/tauri.conf.json` and is bumped per release.
 

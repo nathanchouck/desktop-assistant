@@ -1,0 +1,48 @@
+[package]
+name = "desktop-assistant"
+version = "0.1.0"
+description = "Personal Raycast-style launcher for Windows"
+edition = "2021"
+rust-version = "1.85"
+default-run = "desktop-assistant"
+
+[lib]
+# Distinct lib name avoids a Windows linker clash between the bin and lib.
+name = "desktop_assistant_lib"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "gen-bindings"
+path = "src/bin/gen-bindings.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "0.0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+thiserror = "2"
+anyhow = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+dirs = "7"
+tauri-plugin-opener = "2.7"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

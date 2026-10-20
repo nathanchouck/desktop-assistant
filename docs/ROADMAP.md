@@ -3,14 +3,15 @@
 Milestones are in build order. Each one should leave the app usable.
 Tick boxes as work lands.
 
-## M0 Project setup
-- [ ] Scaffold Tauri 2 + Svelte 5 + TS (`src-tauri/`, `ui/`)
-- [ ] Module skeleton per ARCHITECTURE.md (empty modules, traits, `AppError`)
-- [ ] `tauri-specta` bindings generation + `gen-bindings` bin
-- [ ] `tracing` to rolling log file
-- [ ] `Settings` struct with defaults, TOML load/save, version + migration hook
-- [ ] CI: `test.yml` (ubuntu) and `build.yml` (windows installer artifact)
-- [ ] `CLAUDE.md` / README kept in sync with docs
+## M0 Project setup ✅
+- [x] Scaffold Tauri 2 + Svelte 5 + TS (`src-tauri/`, `ui/`)
+- [x] Core types and traits (`AppError`, `SearchProvider` + aggregator, `AiProvider`, `AiEvent`)
+- [x] `tauri-specta` bindings generation + `gen-bindings` bin + staleness test
+- [x] `tracing` to rolling log file
+- [x] `Settings` struct with defaults, TOML load/save, version + migration hook
+- [x] Built-in commands (Open Settings, Open Log Folder, Quit) end to end
+- [x] CI: `test.yml` (ubuntu) and `build.yml` (windows installer artifact)
+- [x] `CLAUDE.md` / README kept in sync with docs
 
 ## M1 Shell: window, hotkeys, glass
 - [ ] Frameless, transparent, always-on-top window created hidden at startup
