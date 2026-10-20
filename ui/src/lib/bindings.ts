@@ -114,7 +114,10 @@ export type SearchResponse = {
 };
 
 export type SearchSettings = {
-	/**  Path fragments to hide from file results. */
+	/**
+	 *  Folders whose contents never show up in file results: a folder name
+	 *  ("node_modules") or a partial path ("AppData\Local\Temp").
+	 */
 	exclusions: string[],
 	max_results: number,
 };

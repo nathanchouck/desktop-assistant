@@ -20,7 +20,7 @@
         search.move(intent.delta);
         break;
       case "activate":
-        void search.activate(intent.index, intent.admin);
+        void search.activate(intent.index, intent.action);
         break;
       case "escape":
         // First Esc clears the query; the next one hides the launcher.
@@ -68,10 +68,7 @@
         onselect={(i) => (search.selected = i)}
         onactivate={(i) => search.activate(i)}
       />
-      <Footer
-        notice={search.notice}
-        canElevate={search.current?.actions.includes("run_as_admin") ?? false}
-      />
+      <Footer notice={search.notice} actions={search.current?.actions ?? []} />
     {/if}
   </div>
 </main>

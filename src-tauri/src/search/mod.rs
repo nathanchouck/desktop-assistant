@@ -2,6 +2,7 @@
 
 pub mod apps;
 pub mod commands;
+pub mod files;
 pub mod item;
 pub mod rank;
 

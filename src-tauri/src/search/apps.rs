@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use super::{Action, ItemKind, ResultItem, SearchError, SearchProvider};
 use crate::fuzzy::FuzzyQuery;
 use crate::icons::{self, IconCache};
-use crate::platform::{PlatformError, RawApp, Shell};
+use crate::platform::{IconSource, PlatformError, RawApp, Shell};
 
 const ID_PREFIX: &str = "app:";
 /// Keyword matches (e.g. the exe name) count a little less than the title.
@@ -73,7 +73,8 @@ impl AppIndex {
         let entries = build_entries(listed?);
         for entry in &entries {
             if let Some(target) = target_from_id(&entry.id) {
-                self.icons.register(&entry.icon, target);
+                self.icons
+                    .register(&entry.icon, IconSource::App(target.to_owned()));
             }
         }
         let count = entries.len();
@@ -407,7 +408,8 @@ mod tests {
         let mut extracted = 0;
         for entry in entries.iter().take(10) {
             let target = target_from_id(&entry.id).unwrap().to_owned();
-            if let Ok(image) = shell.app_icon(target, crate::icons::ICON_SIZE).await {
+            let source = IconSource::App(target);
+            if let Ok(image) = shell.icon(source, crate::icons::ICON_SIZE).await {
                 assert_eq!(image.rgba.len(), (image.width * image.height * 4) as usize);
                 crate::icons::encode_png(&image).unwrap();
                 extracted += 1;

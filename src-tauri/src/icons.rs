@@ -1,5 +1,6 @@
-//! App icons. Pulled from the OS the first time a row needs one, cached on
-//! disk as PNG (`%LOCALAPPDATA%\desktop-assistant\icons`) and in memory.
+//! Icons for apps, files and folders. Pulled from the OS the first time a
+//! row needs one, cached on disk as PNG
+//! (`%LOCALAPPDATA%\desktop-assistant\icons`) and in memory.
 //! The UI loads them through the `icon` URI protocol registered in `lib.rs`.
 
 use std::collections::{HashMap, HashSet};
@@ -7,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::platform::{Image, Shell};
+use crate::platform::{IconSource, Image, Shell};
 
 /// Pixels per side. Rows draw icons at 24 px, so this covers 2x+ displays.
 pub const ICON_SIZE: u32 = 64;
@@ -17,15 +18,16 @@ pub type Png = Arc<Vec<u8>>;
 pub struct IconCache {
     dir: PathBuf,
     shell: Arc<Shell>,
-    /// icon key → app target to extract it from.
-    sources: RwLock<HashMap<String, String>>,
+    /// icon key → where to extract it from.
+    sources: RwLock<HashMap<String, IconSource>>,
     memory: Mutex<HashMap<String, Png>>,
     /// Keys whose extraction failed this session; not retried per keystroke.
     failed: Mutex<HashSet<String>>,
 }
 
-/// Stable key for an app target: 16 hex chars (FNV-1a 64). Stable across
-/// runs and Rust versions, so the disk cache stays valid.
+/// Stable key for an icon identity (an app target, an extension, ...):
+/// 16 hex chars (FNV-1a 64). Stable across runs and Rust versions, so the
+/// disk cache stays valid.
 pub fn key_for(target: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in target.bytes() {
@@ -54,10 +56,11 @@ impl IconCache {
         }
     }
 
-    /// Records where to get the icon for `key`.
-    pub fn register(&self, key: &str, target: &str) {
+    /// Records where to get the icon for `key`. Keeps the first source seen,
+    /// so many files sharing an extension icon don't churn the map.
+    pub fn register(&self, key: &str, source: IconSource) {
         if let Ok(mut map) = self.sources.write() {
-            map.insert(key.to_owned(), target.to_owned());
+            map.entry(key.to_owned()).or_insert(source);
         }
     }
 
@@ -77,8 +80,8 @@ impl IconCache {
             return None;
         }
 
-        let target = self.sources.read().ok()?.get(key).cloned()?;
-        let encoded = match self.shell.app_icon(target.clone(), ICON_SIZE).await {
+        let source = self.sources.read().ok()?.get(key).cloned()?;
+        let encoded = match self.shell.icon(source.clone(), ICON_SIZE).await {
             Ok(image) => encode_png(&image).map_err(|e| e.to_string()),
             Err(e) => Err(e.to_string()),
         };
@@ -91,7 +94,7 @@ impl IconCache {
                 Some(self.remember(key, bytes))
             }
             Err(e) => {
-                tracing::debug!("no icon for {target}: {e}");
+                tracing::debug!("no icon for {source:?}: {e}");
                 if let Ok(mut failed) = self.failed.lock() {
                     failed.insert(key.to_owned());
                 }

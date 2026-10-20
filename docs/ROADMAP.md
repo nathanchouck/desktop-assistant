@@ -53,14 +53,22 @@ Check on a real Windows machine:
 - [ ] Ctrl+Shift+Enter shows the UAC prompt for desktop apps
 - [ ] Apps you open often move up within a day of use
 
-## M3 File search (Everything)
-- [ ] Everything SDK wrapper (64-bit DLL bundled), in `spawn_blocking`
-- [ ] Detect missing or stopped Everything and show a fix-it row
-- [ ] Merge file/folder results with apps; files rank below strong app matches
-- [ ] Exclusions (`node_modules`, `.git`, `AppData` temp, `$Recycle.Bin`) in settings
-- [ ] File actions: Open, Reveal in Explorer, Copy path, Open with…, Delete to Recycle Bin
-- [ ] Filters: `f ` files only, `d ` folders only, `ext:pdf`
-- [ ] Query-sequence handling so stale results never flash
+## M3 File search (Everything) ✅ (pending on-device check)
+- [x] Everything SDK compiled in from source (no DLL to ship), on its own worker thread
+- [x] Detect missing or stopped Everything and show a fix-it row (start it / download it)
+- [x] Merge file/folder results with apps; files rank below equally good app matches
+- [x] Exclusions (`node_modules`, `.git`, `AppData` temp, `$Recycle.Bin`) in settings
+- [x] File actions: Open, Show in folder (Ctrl+Enter), Copy path (Ctrl+Shift+C)
+- [ ] File actions: Open with…, Delete to Recycle Bin (needs an action menu; M7)
+- [x] Filters: `f ` files only, `d ` folders only, plus any Everything syntax (`ext:pdf`)
+- [x] Query-sequence handling so stale results never flash (UI) and stale searches skip (worker)
+- [x] Windows CI installs Everything and runs a real search test
+
+Check on a real Windows machine:
+- [ ] With Everything running, typing part of a file name finds it within a keystroke or two
+- [ ] With Everything closed, the "Start Everything" row appears and works
+- [ ] Ctrl+Enter opens Explorer with the file selected; Ctrl+Shift+C copies the path
+- [ ] Nothing from `node_modules`, `.git` or Temp shows up
 
 ## M4 Claude
 - [ ] Detect `claude` install + login status; fix-it row if missing
@@ -86,6 +94,7 @@ Check on a real Windows machine:
 
 ## M6 Settings & integrations
 - [ ] Settings window (glass, same tokens): hotkeys, Win-key override toggle, default provider, billing mode per provider, exclusions, startup
+- [ ] Apply settings live (today hotkeys and file exclusions are read at startup)
 - [ ] Hotkey recorder control
 - [ ] API keys stored in Credential Manager
 - [ ] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs

@@ -17,6 +17,8 @@ pub enum AppError {
     Launch(String),
     #[error("unknown result: {0}")]
     UnknownItem(String),
+    #[error("could not copy to the clipboard: {0}")]
+    Clipboard(String),
 }
 
 /// What the UI receives when a command fails. Keeps internal error types

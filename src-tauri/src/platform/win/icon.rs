@@ -1,8 +1,9 @@
-//! App icons via `IShellItemImageFactory`, the same images Start shows.
+//! Icons via `IShellItemImageFactory`: the same images Start and Explorer show.
 
 use std::ffi::c_void;
 use std::mem::size_of;
 
+use windows::core::HSTRING;
 use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{
     DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER,
@@ -13,17 +14,17 @@ use windows::Win32::UI::Shell::{
     IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
 };
 
-use super::apps_folder_path;
 use crate::icons::bgra_premultiplied_to_rgba;
 use crate::platform::Image;
 
-/// Must run on an STA thread. `size` is in pixels (square).
-pub fn app_icon(target: &str, size: u32) -> windows::core::Result<Image> {
+/// Must run on an STA thread. `parsing_name` is a path or shell path;
+/// `size` is in pixels (square).
+pub fn icon(parsing_name: &HSTRING, size: u32) -> windows::core::Result<Image> {
     let side = i32::try_from(size).unwrap_or(64);
     // SAFETY: COM calls on an STA thread; the bitmap is deleted after reading.
     unsafe {
         let factory: IShellItemImageFactory =
-            SHCreateItemFromParsingName(&apps_folder_path(target), None::<&IBindCtx>)?;
+            SHCreateItemFromParsingName(parsing_name, None::<&IBindCtx>)?;
         let bitmap = factory.GetImage(
             SIZE { cx: side, cy: side },
             SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,

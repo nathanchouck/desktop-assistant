@@ -61,3 +61,15 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Tests (includes bindings freshness check)
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # File search talks to the real Everything, so install and start it,
+      # then run the tests that need it (marked #[ignore] for local runs).
+      - name: Install and start Everything
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install everything --no-progress -y
+          Start-Process "$env:ProgramFiles\Everything\Everything.exe" -ArgumentList "-startup"
+      - name: Tests against real Everything
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml everything -- --ignored --nocapture

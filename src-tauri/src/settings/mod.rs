@@ -90,7 +90,8 @@ pub struct ProviderSettings {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct SearchSettings {
-    /// Path fragments to hide from file results.
+    /// Folders whose contents never show up in file results: a folder name
+    /// ("node_modules") or a partial path ("AppData\Local\Temp").
     pub exclusions: Vec<String>,
     pub max_results: u32,
 }

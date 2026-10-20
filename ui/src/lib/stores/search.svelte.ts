@@ -46,26 +46,21 @@ export class SearchStore {
     this.selected = (this.selected + delta + n) % n;
   }
 
-  /** Enter: run the item's default action, or "run as administrator". */
-  async activate(index = this.selected, admin = false): Promise<void> {
+  /** Runs `action` (default: the item's first action) on row `index`. */
+  async activate(index = this.selected, action?: Action): Promise<void> {
     const item = this.items[index];
     if (!item) return;
     if (item.kind === "ask_ai") {
       this.notice = "Asking AI arrives in milestone 4.";
       return;
     }
-    const action = pickAction(item, admin);
-    if (!action) {
-      this.notice = `${item.title} can't run as administrator.`;
+    const chosen = action ?? item.actions[0];
+    if (!chosen || !item.actions.includes(chosen)) {
+      this.notice = `That doesn't apply to ${item.title}.`;
       return;
     }
-    const res = await commands.itemActivate(item.id, action);
+    const res = await commands.itemActivate(item.id, chosen);
     if (res.status === "error") this.notice = res.error.message;
     else this.clear();
   }
-}
-
-function pickAction(item: ResultItem, admin: boolean): Action | undefined {
-  if (admin) return item.actions.includes("run_as_admin") ? "run_as_admin" : undefined;
-  return item.actions[0];
 }

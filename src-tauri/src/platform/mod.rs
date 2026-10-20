@@ -1,9 +1,14 @@
 //! OS-specific work behind one small interface: listing installed apps,
-//! getting their icons, and launching them. Windows does the real work
-//! (`win/`); other platforms get stubs so the app builds and tests anywhere.
+//! searching files (Everything), getting icons, and opening things.
+//! Windows does the real work (`win/`); other platforms get stubs so the app
+//! builds and tests anywhere.
 
 #[cfg(windows)]
 mod win;
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// An app as the OS reports it, before filtering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,6 +17,33 @@ pub struct RawApp {
     /// `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`, or a path).
     pub target: String,
     pub name: String,
+}
+
+/// A file search for Everything: its query syntax, and how many results.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileSearch {
+    pub search: String,
+    pub max: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileHit {
+    pub path: String,
+    pub name: String,
+    /// The containing folder.
+    pub dir: String,
+    pub is_folder: bool,
+    /// Last modified, Unix seconds.
+    pub modified: Option<i64>,
+}
+
+/// Where an icon comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IconSource {
+    /// A Start menu app, by target.
+    App(String),
+    /// A file or folder on disk.
+    Path(String),
 }
 
 /// A decoded image, straight (not premultiplied) RGBA, 8 bits per channel.
@@ -30,12 +62,24 @@ pub enum PlatformError {
     Os(String),
     #[error("the background shell thread stopped")]
     WorkerGone,
+    #[error("Everything isn't running")]
+    EverythingNotRunning,
+    /// A newer file search came in before this one started.
+    #[error("superseded by a newer search")]
+    Superseded,
 }
 
 /// Entry point for shell work. Cheap to share behind an `Arc`.
 pub struct Shell {
+    /// App listing and icons.
     #[cfg(windows)]
     worker: win::sta::StaWorker,
+    /// Everything queries (the SDK needs a single thread to itself).
+    #[cfg(windows)]
+    everything: win::sta::StaWorker,
+    /// Bumped per file search, so queued searches that are already out of
+    /// date skip straight to `Superseded` instead of piling up while typing.
+    file_search_generation: Arc<AtomicU64>,
 }
 
 impl Default for Shell {
@@ -49,6 +93,9 @@ impl Shell {
         Self {
             #[cfg(windows)]
             worker: win::sta::StaWorker::spawn("shell-worker"),
+            #[cfg(windows)]
+            everything: win::sta::StaWorker::spawn("everything"),
+            file_search_generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -64,22 +111,43 @@ impl Shell {
         }
     }
 
-    pub async fn app_icon(&self, target: String, size: u32) -> Result<Image, PlatformError> {
+    pub async fn search_files(&self, search: FileSearch) -> Result<Vec<FileHit>, PlatformError> {
+        let generation = self.file_search_generation.fetch_add(1, Ordering::SeqCst) + 1;
         #[cfg(windows)]
         {
-            self.worker
-                .run(move || win::app_icon(&target, size).map_err(os))
+            let latest = Arc::clone(&self.file_search_generation);
+            self.everything
+                .run(move || {
+                    if latest.load(Ordering::SeqCst) != generation {
+                        return Err(PlatformError::Superseded);
+                    }
+                    win::everything::search(&search)
+                })
                 .await?
         }
         #[cfg(not(windows))]
         {
-            let _ = (target, size);
+            let _ = (generation, search);
+            Ok(Vec::new())
+        }
+    }
+
+    pub async fn icon(&self, source: IconSource, size: u32) -> Result<Image, PlatformError> {
+        #[cfg(windows)]
+        {
+            self.worker
+                .run(move || win::icon(&source, size).map_err(os))
+                .await?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (source, size);
             Err(PlatformError::Unsupported)
         }
     }
 
-    /// Opens an app (or runs it as administrator). Runs on its own thread so a
-    /// slow launch never queues behind icon work.
+    /// Opens an app (or runs it as administrator). Each open runs on its own
+    /// thread so a slow launch never queues behind icon work.
     pub async fn launch_app(&self, target: String, as_admin: bool) -> Result<(), PlatformError> {
         #[cfg(windows)]
         {
@@ -91,6 +159,46 @@ impl Shell {
             Err(PlatformError::Unsupported)
         }
     }
+
+    /// Opens a file or folder with its default program.
+    pub async fn open_path(&self, path: String) -> Result<(), PlatformError> {
+        #[cfg(windows)]
+        {
+            win::sta::run_once(move || win::open_path(&path).map_err(os)).await?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            Err(PlatformError::Unsupported)
+        }
+    }
+
+    /// Opens the containing folder in Explorer with the item selected.
+    pub async fn reveal_path(&self, path: String) -> Result<(), PlatformError> {
+        #[cfg(windows)]
+        {
+            win::sta::run_once(move || win::reveal(&path).map_err(os)).await?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            Err(PlatformError::Unsupported)
+        }
+    }
+}
+
+/// Where Everything is installed, if it is (to offer starting it).
+pub fn everything_exe() -> Option<PathBuf> {
+    let candidates = [
+        std::env::var_os("ProgramFiles").map(|p| PathBuf::from(p).join("Everything")),
+        std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("Everything")),
+        std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join(r"Programs\Everything")),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .map(|dir| dir.join("Everything.exe"))
+        .find(|exe| exe.is_file())
 }
 
 #[cfg(windows)]

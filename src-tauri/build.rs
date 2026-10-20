@@ -21,4 +21,22 @@ fn main() {
         // Turn linker warnings (e.g. a bad manifest) into errors.
         println!("cargo:rustc-link-arg=/WX");
     }
+
+    if target_os == "windows" {
+        build_everything_sdk();
+    }
+}
+
+/// Compiles the vendored Everything SDK (file search) into a static library.
+fn build_everything_sdk() {
+    let sdk = PathBuf::from("third_party/everything-sdk");
+    println!("cargo:rerun-if-changed={}", sdk.display());
+    cc::Build::new()
+        .file(sdk.join("src/Everything.c"))
+        .define("UNICODE", None)
+        .define("_UNICODE", None)
+        // Third-party code: its warnings aren't ours to fix.
+        .warnings(false)
+        .compile("everything_sdk");
+    println!("cargo:rustc-link-lib=user32");
 }

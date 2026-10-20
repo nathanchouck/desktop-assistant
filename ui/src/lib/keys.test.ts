@@ -15,15 +15,24 @@ describe("intentFor", () => {
     expect(intentFor(key("ArrowUp"))).toEqual({ type: "move", delta: -1 });
   });
 
-  it("opens with Enter and runs as admin with Ctrl+Shift+Enter", () => {
-    expect(intentFor(key("Enter"))).toEqual({ type: "activate", admin: false });
-    expect(intentFor(key("Enter", { ctrl: true, shift: true }))).toEqual({ type: "activate", admin: true });
-    expect(intentFor(key("Enter", { shift: true }))).toEqual({ type: "activate", admin: false });
+  it("maps Enter variants to actions", () => {
+    expect(intentFor(key("Enter"))).toEqual({ type: "activate" });
+    expect(intentFor(key("Enter", { shift: true }))).toEqual({ type: "activate" });
+    expect(intentFor(key("Enter", { ctrl: true }))).toEqual({ type: "activate", action: "reveal_in_explorer" });
+    expect(intentFor(key("Enter", { ctrl: true, shift: true }))).toEqual({
+      type: "activate",
+      action: "run_as_admin",
+    });
+  });
+
+  it("copies the path with Ctrl+Shift+C", () => {
+    expect(intentFor(key("C", { ctrl: true, shift: true }))).toEqual({ type: "activate", action: "copy_path" });
+    expect(intentFor(key("c", { ctrl: true }))).toBeNull();
   });
 
   it("opens row N with Ctrl+N", () => {
-    expect(intentFor(key("1", { ctrl: true }))).toEqual({ type: "activate", index: 0, admin: false });
-    expect(intentFor(key("9", { ctrl: true }))).toEqual({ type: "activate", index: 8, admin: false });
+    expect(intentFor(key("1", { ctrl: true }))).toEqual({ type: "activate", index: 0 });
+    expect(intentFor(key("9", { ctrl: true }))).toEqual({ type: "activate", index: 8 });
   });
 
   it("leaves typing alone", () => {

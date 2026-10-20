@@ -4,6 +4,7 @@ use crate::icons::IconCache;
 use crate::paths::AppPaths;
 use crate::platform::Shell;
 use crate::search::apps::{AppIndex, AppProvider};
+use crate::search::files::FileProvider;
 use crate::search::{commands::CommandProvider, Aggregator};
 use crate::settings::Settings;
 use crate::store::Store;
@@ -32,9 +33,15 @@ impl AppState {
         let shell = Arc::new(Shell::new());
         let icons = Arc::new(IconCache::new(paths.icon_cache_dir(), Arc::clone(&shell)));
         let apps = Arc::new(AppIndex::new(Arc::clone(&shell), Arc::clone(&icons)));
+        let files = FileProvider::new(
+            Arc::clone(&shell),
+            Arc::clone(&icons),
+            settings.search.exclusions.clone(),
+        );
         let search = Aggregator::new(vec![
             Arc::new(CommandProvider),
             Arc::new(AppProvider::new(Arc::clone(&apps))),
+            Arc::new(files),
         ]);
         Self {
             paths,

@@ -99,3 +99,13 @@ Windows orders hook-injected input, which is why D-011 mostly worked. It now
 applies to every Win release we saw go down, not just detected taps, so a
 press misjudged as a combo can't let Start through. Taps alone open the
 launcher. Remaining gap: admin windows (see D-012).
+
+## D-016 Everything SDK compiled in, not the DLL (updates D-003)
+The SDK is one MIT-licensed C file. Compiling it into the app (`build.rs`,
+Windows only) means no `Everything64.dll` to bundle, find or keep in sync,
+and a plain `extern "system"` binding for the dozen functions we use. The
+source was taken from the `everything-sdk-sys` crate's vendored copy because
+voidtools.com wasn't reachable from the build environment; see
+`third_party/everything-sdk/README.md`. Considered: the pure-Rust
+`everything-ipc` crate (heavier, newer, less proven) and hand-writing the
+WM_COPYDATA protocol (error-prone without being able to test locally).

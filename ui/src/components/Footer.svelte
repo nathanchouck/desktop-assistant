@@ -1,15 +1,18 @@
 <script lang="ts">
+  import type { Action } from "../lib/bindings";
+  import { actionHints } from "../lib/keys";
+
   interface Props {
     /** Shown instead of the key hints when set (errors, "coming soon"). */
     notice: string | null;
-    /** The selected result can run as administrator. */
-    canElevate: boolean;
+    /** The selected result's actions; extra ones get a key hint. */
+    actions: Action[];
   }
-  let { notice, canElevate }: Props = $props();
+  let { notice, actions }: Props = $props();
 
   const hints = $derived<[string, string][]>([
     ["↵", "Open"],
-    ...(canElevate ? ([["Ctrl ⇧ ↵", "Admin"]] as [string, string][]) : []),
+    ...actionHints.filter(([action]) => actions.includes(action)).map(([, key, label]) => [key, label] as [string, string]),
     ["Esc", "Clear"],
   ]);
 </script>
@@ -40,6 +43,7 @@
     color: var(--text-faint);
   }
   .notice {
+    min-width: 0;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -54,6 +58,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
+    white-space: nowrap;
   }
   kbd {
     padding: 0 var(--space-1);
