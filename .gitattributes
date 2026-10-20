@@ -1,0 +1,5 @@
+# Keep LF everywhere so generated files compare equal on Windows.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary

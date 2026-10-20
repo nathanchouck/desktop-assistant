@@ -9,6 +9,12 @@
   let { value, activeIndex, oninput, onkeydown }: Props = $props();
   let input: HTMLInputElement;
 
+  /** Called when the launcher appears: typing replaces the old query. */
+  export function focusAndSelect(): void {
+    input.focus();
+    input.select();
+  }
+
   $effect(() => input.focus());
 </script>
 

@@ -1,9 +1,14 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import SearchBar from "./components/SearchBar.svelte";
   import ResultList from "./components/ResultList.svelte";
+  import Footer from "./components/Footer.svelte";
+  import { commands, events } from "./lib/bindings";
   import { SearchStore } from "./lib/stores/search.svelte";
 
   const search = new SearchStore();
+  let bar: SearchBar;
+  let content: HTMLDivElement;
 
   function onkeydown(e: KeyboardEvent) {
     switch (e.key) {
@@ -16,57 +21,73 @@
       case "Enter":
         void search.activate();
         break;
+      case "Escape":
+        // First Esc clears the query; the next one hides the launcher.
+        if (search.query) search.clear();
+        else void commands.launcherHide();
+        break;
       default:
         return;
     }
     e.preventDefault();
   }
+
+  onMount(() => {
+    // Fit the window to the content. The results area has a fixed height,
+    // so this only fires when switching between bar-only and expanded.
+    let lastHeight = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const height = Math.ceil(entry?.borderBoxSize[0]?.blockSize ?? 0);
+      if (height > 0 && height !== lastHeight) {
+        lastHeight = height;
+        void commands.launcherSetHeight(height);
+      }
+    });
+    observer.observe(content);
+
+    const unlisten = events.launcherShown.listen(() => bar.focusAndSelect());
+
+    return () => {
+      observer.disconnect();
+      void unlisten.then((stop) => stop());
+    };
+  });
 </script>
 
-<main class="glass">
-  <SearchBar
-    value={search.query}
-    activeIndex={search.items.length > 0 ? search.selected : null}
-    oninput={(v) => search.setQuery(v)} {onkeydown} />
-  {#if search.items.length > 0}
-    <div class="divider"></div>
-    <ResultList
-      items={search.items}
-      selected={search.selected}
-      onselect={(i) => (search.selected = i)}
-      onactivate={(i) => search.activate(i)}
+<main>
+  <div class="content" bind:this={content}>
+    <SearchBar
+      bind:this={bar}
+      value={search.query}
+      activeIndex={search.items.length > 0 ? search.selected : null}
+      oninput={(v) => search.setQuery(v)}
+      {onkeydown}
     />
-  {/if}
-  {#if search.notice}
-    <p class="notice">{search.notice}</p>
-  {/if}
+    {#if search.expanded}
+      <ResultList
+        items={search.items}
+        selected={search.selected}
+        onselect={(i) => (search.selected = i)}
+        onactivate={(i) => search.activate(i)}
+      />
+      <Footer notice={search.notice} />
+    {/if}
+  </div>
 </main>
 
 <style>
-  .glass {
+  main {
     height: 100%;
-    display: flex;
-    flex-direction: column;
-    border-radius: var(--radius-window);
-    background: var(--glass-tint);
-    backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
-    border: 1px solid transparent;
-    background-clip: padding-box;
-    /* Inner highlight: bright at the top edge, fading downward. */
+    background: var(--surface-sheen), var(--surface);
+    /* Inner highlight: bright along the top edge, faint along the bottom.
+     * Windows 11 rounds the corners and draws the outer shadow itself. */
     box-shadow:
-      inset 0 1px 0 var(--glass-highlight-top),
-      inset 0 -1px 0 var(--glass-highlight-bottom),
-      var(--glass-shadow);
+      inset 0 1px 0 var(--highlight-top),
+      inset 0 -1px 0 var(--highlight-bottom);
     overflow: hidden;
   }
-  .divider {
-    height: 1px;
-    margin: 0 var(--space-4) var(--space-2);
-    background: var(--glass-highlight-bottom);
-  }
-  .notice {
-    margin: auto var(--space-5) var(--space-3);
-    font-size: var(--font-size-sub);
-    color: var(--text-muted);
+  .content {
+    display: flex;
+    flex-direction: column;
   }
 </style>

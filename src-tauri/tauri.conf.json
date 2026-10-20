@@ -15,8 +15,14 @@
         "label": "launcher",
         "title": "Desktop Assistant",
         "width": 720,
-        "height": 480,
+        "height": 64,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
         "resizable": false,
+        "visible": false,
         "center": true
       }
     ],
@@ -26,7 +32,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

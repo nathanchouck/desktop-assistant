@@ -13,6 +13,13 @@ How code in this repo should look, and the step-by-step for common changes.
 | `cargo test --manifest-path src-tauri/Cargo.toml` | Rust tests |
 | `npx tauri build` | release installer (on Windows) |
 | `npx tauri icon src-tauri/icons/app-icon.png -o src-tauri/icons` | regenerate icons |
+| `cargo clippy --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets` | lint the Windows-only code from Linux (`rustup target add x86_64-pc-windows-msvc` once) |
+
+Debugging tips:
+- `DA_KEEP_OPEN=1` stops the launcher hiding when it loses focus (for devtools).
+- `RUST_LOG=desktop_assistant_lib=debug` logs timings such as hotkey-to-visible.
+- On Linux the webview won't shrink below 200 px tall, so the bar-only window
+  looks taller there than on Windows. Not worth working around.
 
 ## General
 
@@ -105,7 +112,8 @@ Not worth it here: end-to-end UI automation, mocking Win32.
 
 ## CI / release
 
-- `test.yml` (ubuntu): fmt, clippy, `cargo test`, `vitest`, typecheck.
+- `test.yml`: UI typecheck/tests/build on Linux; Rust fmt, clippy and tests
+  on both Linux and Windows (the Windows job covers the keyboard hook).
 - `build.yml` (windows-latest, every push): `tauri build` produces an
   `.msi`/`.exe` installer uploaded as a workflow artifact. Tags `v*` create a GitHub Release
   that the in-app updater reads (later milestone).

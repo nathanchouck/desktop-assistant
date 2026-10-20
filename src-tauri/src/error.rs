@@ -9,6 +9,10 @@ pub enum AppError {
     Settings(#[from] SettingsError),
     #[error("could not find the {0} directory for this user")]
     MissingDir(&'static str),
+    #[error("could not open {path}: {reason}")]
+    Open { path: String, reason: String },
+    #[error("the app is still starting up")]
+    NotReady,
 }
 
 /// What the UI receives when a command fails. Keeps internal error types

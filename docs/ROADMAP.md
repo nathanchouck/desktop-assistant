@@ -13,21 +13,29 @@ Tick boxes as work lands.
 - [x] CI: `test.yml` (ubuntu) and `build.yml` (windows installer artifact)
 - [x] `CLAUDE.md` / README kept in sync with docs
 
-## M1 Shell: window, hotkeys, glass
-- [ ] Frameless, transparent, always-on-top window created hidden at startup
-- [ ] Center on the monitor with the cursor; remember size
-- [ ] Acrylic via `window-vibrancy`; Win10 fallback tint
-- [ ] Glass design tokens + SearchBar + ResultList shell
-- [ ] Ctrl+Space global shortcut toggles the window
-- [ ] **Windows-key tap override** (`WH_KEYBOARD_LL`, combos pass through, dummy key to suppress Start)
-- [ ] Hide on blur, on Esc, and after launching
-- [ ] Tray icon: Settings, Reindex, Quit
-- [ ] Single-instance guard
-- [ ] Start with Windows (setting)
-- [ ] Light/dark follows Windows; reduce-motion respected
-- [ ] Measure hotkey-to-visible (< 50 ms)
+## M1 Shell: window, hotkeys, glass ✅ (pending on-device check)
+- [x] Frameless, transparent, always-on-top window created hidden at startup
+- [x] Center on the monitor with the cursor; two heights (bar only / bar + results)
+- [x] Acrylic via `window-vibrancy`; opaque fallback when unavailable
+- [x] Glass design tokens + SearchBar + ResultList + footer with key hints
+- [x] Ctrl+Space global shortcut toggles the window
+- [x] **Windows-key tap override** (`WH_KEYBOARD_LL`, combos pass through, masked Win-up to suppress Start)
+- [x] Hide on blur, on Esc (first Esc clears), and after launching
+- [x] Tray icon: Open, Settings, Open Log Folder, Quit (Reindex moves to M2)
+- [x] Single-instance guard (second launch shows the running launcher)
+- [x] Start with Windows (`general.launch_at_login`, applied at startup in release builds)
+- [x] Light/dark follows Windows; reduce-motion respected
+- [ ] Measure hotkey-to-visible (< 50 ms): logged at debug level; needs a number from a real machine
+
+Check on a real Windows machine:
+- [ ] Glass looks right in light and dark mode (tune `--surface` in `tokens.css`)
+- [ ] Windows key tap opens the launcher and Start stays closed
+- [ ] Win+E, Win+V, Win+Shift+S, Win+L still work
+- [ ] Launcher takes keyboard focus when opened from the Windows key and Ctrl+Space
+- [ ] Ctrl+Space doesn't clash with your keyboard layout's input switching
 
 ## M2 App launcher
+- [ ] Tray menu: Reindex
 - [ ] Index Start Menu `.lnk` (user + all users) and Store apps (`shell:AppsFolder`)
 - [ ] Icon extraction + on-disk icon cache
 - [ ] `nucleo` fuzzy matching, acronyms ("vsc" → Visual Studio Code)

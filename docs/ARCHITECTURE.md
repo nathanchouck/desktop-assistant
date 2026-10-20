@@ -12,7 +12,9 @@ generality.
 | Backend | Rust (stable), `tokio` async runtime |
 | UI | Svelte 5 + TypeScript + Vite |
 | Styling | Plain CSS with design tokens (custom properties); no CSS framework |
-| Window effect | `window-vibrancy` crate (Acrylic on Win11, fallback tint on Win10) |
+| Window effect | `window-vibrancy` Acrylic (Win11 system backdrop; blur-behind on Win10); opaque surface if unavailable |
+| Hotkeys | `tauri-plugin-global-shortcut` (Ctrl+Space) + a `WH_KEYBOARD_LL` hook via `windows-sys` (Windows key tap) |
+| Tray, single instance, autostart | Tauri tray + `tauri-plugin-single-instance` + `tauri-plugin-autostart` |
 | Fuzzy matching | `nucleo-matcher` |
 | Storage | SQLite via `rusqlite` (history, frecency); TOML for settings |
 | Secrets | Windows Credential Manager via `keyring` |
@@ -42,9 +44,22 @@ generality.
 ```
 
 - One window, created hidden at startup and never destroyed. Showing it is
-  just `show()` + focus, which keeps hotkey-to-visible under 50 ms.
-- The window hides when it loses focus, on Esc, or after launching something.
-- A tray icon gives Settings, Reindex, and Quit.
+  position + `show()` + focus, which keeps hotkey-to-visible under 50 ms.
+  Close (Alt+F4) is turned into hide.
+- It opens on the monitor under the mouse, centered, with its top edge 22%
+  down the work area so it grows downward.
+- Two heights only: search bar alone (empty query) or bar + a fixed-height
+  results area + footer. The UI measures itself and calls
+  `launcher_set_height`; resizing only on that switch avoids Acrylic redraw
+  flicker on every keystroke.
+- It hides when it loses focus, on Esc (the first Esc clears the query), or
+  after running something. A toggle within 250 ms of a hide is ignored, so a
+  hotkey that briefly steals focus closes the window instead of reopening it.
+- Opened by: Ctrl+Space, tapping the Windows key, tray left-click, or
+  launching the app again (single-instance hands off to the running copy).
+- The tray menu has Open Launcher, Settings, Open Log Folder and Quit; menu
+  items and result rows share `actions.rs`.
+- Set `DA_KEEP_OPEN=1` to stop hide-on-blur while debugging (devtools).
 
 ## Source layout
 
@@ -66,6 +81,7 @@ desktop-assistant/
 │       ├── paths.rs             # config / data / log folders
 │       ├── logging.rs           # tracing to rolling file (+ stderr in debug)
 │       ├── state.rs             # AppState managed by Tauri
+│       ├── actions.rs           # runs what the user picked (rows, tray)
 │       ├── ipc/                 # #[tauri::command]s + specta builder; thin
 │       ├── settings/            # Settings (layered over defaults), load/save/migrate
 │       ├── search/
@@ -81,8 +97,11 @@ desktop-assistant/
 │       │   ├── session.rs       # (M4) conversation state, follow-ups
 │       │   ├── approvals.rs     # (M4) pending tool approvals
 │       │   └── codex.rs         # (M5) Codex CLI adapter
-│       ├── window/              # (M1) show/hide/position, vibrancy, tray
-│       ├── hotkey/              # (M1) shortcut.rs, win_key.rs (LL hook)
+│       ├── window/              # show/hide/toggle, placement, glass, tray.rs
+│       ├── hotkey/
+│       │   ├── shortcut.rs      # Ctrl+Space (configurable) via global-shortcut
+│       │   ├── tap.rs           # pure "lone Windows key tap" state machine
+│       │   └── win_key.rs       # Windows-only LL keyboard hook thread
 │       ├── store/               # (M2) SQLite: history, frecency, migrations
 │       ├── integrations/        # (M6) mcp_registry.rs
 │       └── platform/windows/    # (M2) ShellExecute, icon extraction
@@ -190,19 +209,27 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
 ## Windows key override
 
 `hotkey/win_key.rs` installs a `WH_KEYBOARD_LL` hook on a dedicated thread with
-its own message loop.
+its own message loop. The decision logic lives in `hotkey/tap.rs` as a pure
+state machine with unit tests; the hook just feeds it events.
 
-- Win down: mark "pending", let it through.
-- Any other key while pending: it's a combo (Win+E, Win+V...), so clear
-  pending and pass everything through untouched.
-- Win up while still pending: inject a dummy key event (an unassigned VK)
-  before the Win-up so Windows doesn't open Start, then post "toggle launcher"
-  to the main thread.
-- The hook callback must only flip state and post a message. Windows silently
+- Win down with Shift/Ctrl/Alt already held: a combo from the start.
+- Win down otherwise: "armed". Let it through.
+- Any other key down while Win is held: a combo (Win+E, Win+V...), disarm.
+  Everything passes through untouched.
+- Win up while still armed: a lone tap. The hook swallows the real Win-up and
+  injects, in one `SendInput`: mask key down, mask key up, Win up. Windows
+  sees Win+mask (a combo), so Start doesn't open. The mask is `0xE8`, an
+  unassigned virtual key (the same trick AutoHotkey uses). Then it posts
+  "toggle launcher" to the main thread.
+- Injected events carry a tag in `dwExtraInfo` so the hook skips its own.
+- If `SendInput` doesn't insert all three events, the real Win-up is let
+  through instead, so Windows can never think Win is stuck down (Start may
+  open in that rare case).
+- The hook callback only updates state, injects and posts. Windows silently
   removes hooks that take too long (`LowLevelHooksTimeout`).
 - Limits: it can't see keys while an elevated (admin) window has focus unless
-  this app also runs elevated. Ctrl+Esc still opens Start. A setting turns
-  the override off.
+  this app also runs elevated. Ctrl+Esc still opens Start.
+  `hotkeys.win_key_override = false` turns it off (applied at startup).
 
 ## Storage & paths
 
@@ -235,9 +262,12 @@ Blow a budget means fix it before adding features on top.
 ## UI / theme
 
 Liquid glass:
-- Window: frameless, transparent, rounded 16 px, Acrylic behind it.
-- On top: a low-alpha tint layer, a 1 px inner highlight border (white ~25%
-  at the top fading to ~5%), and a soft outer shadow.
+- Window: frameless and transparent with Acrylic behind it. Windows 11 rounds
+  the corners (8 px) and draws the outer shadow (D-009).
+- On top: a low-alpha tint (`--surface`), a diagonal sheen, and a 1 px inner
+  highlight bright at the top edge and faint at the bottom.
+- When Acrylic isn't available (Win10 without it, Linux dev), `--surface` is
+  opaque. `main.ts` sets `<html data-glass="on">` from `app_info().glass`.
 - Selected row: a brighter glass "pill" with a subtle gradient sheen.
 - Follows the Windows light/dark setting. All values live in
   `ui/src/styles/tokens.css`; components never hard-code colors.

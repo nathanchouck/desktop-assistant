@@ -18,4 +18,9 @@ export class LatestOnly {
     this.applied = seq;
     return true;
   }
+
+  /** Drops every response still in flight (e.g. after clearing the query). */
+  invalidate(): void {
+    this.applied = this.issued;
+  }
 }

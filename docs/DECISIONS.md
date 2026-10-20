@@ -45,3 +45,24 @@ Fallback if neither works cleanly: read-only by default, plus an explicit
 ## D-008 Built-in Google integrations (no AI) deferred
 Commands like `cal` need our own Google OAuth (a Google Cloud project).
 Asking Claude covers this for now; revisit in M8.
+
+## D-009 OS-drawn corners and Acrylic, not CSS glass
+CSS `backdrop-filter` can't blur the desktop behind a window, so the blur has
+to come from the OS (Acrylic via `window-vibrancy`). The OS blur fills the
+whole window rectangle, so the corners come from Windows 11 too (an
+undecorated window with `shadow: true` gets 8 px rounded corners and a
+system shadow). That rules out the 16 px CSS radius from the original plan.
+We call `window-vibrancy` directly instead of Tauri's `set_effects` because
+the latter drops errors, and the UI needs to know whether glass is on.
+
+## D-010 Two window heights, not fit-to-content on every keystroke
+Resizing a blurred window on each keystroke risks flicker and lag. The
+window is either the search bar alone or bar + fixed results area + footer,
+so it resizes only when the query goes from empty to non-empty and back.
+
+## D-011 Windows key: swallow the real key-up and replay it masked
+Injecting a mask key from inside the hook and then letting the real Win-up
+through doesn't reliably beat Start, because injected input is processed
+after the current event. Swallowing the real Win-up and injecting
+mask-down, mask-up, Win-up in one `SendInput` keeps the order exact. If the
+injection fails, the real Win-up goes through, so the key can never stick.

@@ -8,11 +8,18 @@ export class SearchStore {
   selected = $state(0);
   notice = $state<string | null>(null);
 
+  /** Bar + results when there is text; just the bar otherwise. */
+  expanded = $derived(this.query.trim().length > 0);
+
   #latest = new LatestOnly();
 
   async setQuery(query: string): Promise<void> {
     this.query = query;
     this.notice = null;
+    if (query.trim() === "") {
+      this.clear();
+      return;
+    }
     const seq = this.#latest.next();
     const res = await commands.searchQuery(query, seq);
     if (res.status === "error") {
@@ -22,6 +29,14 @@ export class SearchStore {
     if (!this.#latest.accept(res.data.seq)) return;
     this.items = res.data.items;
     this.selected = 0;
+  }
+
+  clear(): void {
+    this.#latest.invalidate();
+    this.query = "";
+    this.items = [];
+    this.selected = 0;
+    this.notice = null;
   }
 
   move(delta: number): void {
@@ -38,6 +53,7 @@ export class SearchStore {
       case "command": {
         const res = await commands.commandRun(item.id);
         if (res.status === "error") this.notice = res.error.message;
+        else this.clear();
         break;
       }
       case "ask_ai":

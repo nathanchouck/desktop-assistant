@@ -3,23 +3,26 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta_typescript::Typescript;
 use tauri::{AppHandle, State, Wry};
-use tauri_plugin_opener::OpenerExt;
-use tauri_specta::{collect_commands, Builder};
+use tauri_specta::{collect_commands, collect_events, Builder};
 
+use crate::actions;
 use crate::ai::AiEvent;
 use crate::error::IpcError;
 use crate::search::{commands::BuiltinCommand, ResultItem};
 use crate::settings::Settings;
 use crate::state::AppState;
+use crate::window;
 
 #[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct AppInfo {
     pub version: String,
     pub settings_file: String,
     pub log_dir: String,
+    /// True when the OS blur is active behind the window.
+    pub glass: bool,
 }
 
 #[derive(Debug, Clone, Serialize, specta::Type)]
@@ -36,6 +39,7 @@ fn app_info(state: State<'_, AppState>) -> AppInfo {
         version: env!("CARGO_PKG_VERSION").into(),
         settings_file: state.paths.settings_file().display().to_string(),
         log_dir: state.paths.log_dir().display().to_string(),
+        glass: state.launcher.glass(),
     }
 }
 
@@ -63,27 +67,29 @@ async fn search_query(
 
 #[tauri::command]
 #[specta::specta]
-fn command_run(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), IpcError> {
+fn command_run(app: AppHandle, id: String) -> Result<(), IpcError> {
     let cmd = BuiltinCommand::from_id(&id).ok_or_else(|| IpcError {
         message: format!("unknown command: {id}"),
     })?;
-    tracing::info!("running {id}");
-    let open = |path: PathBuf| {
-        app.opener()
-            .open_path(path.display().to_string(), None::<&str>)
-            .map_err(|e| IpcError {
-                message: format!("could not open {}: {e}", path.display()),
-            })
-    };
-    match cmd {
-        BuiltinCommand::OpenSettings => open(state.paths.settings_file()),
-        BuiltinCommand::OpenLogFolder => open(state.paths.log_dir()),
-        BuiltinCommand::Quit => {
-            app.exit(0);
-            Ok(())
-        }
-    }
+    actions::run_builtin(&app, cmd).map_err(Into::into)
 }
+
+#[tauri::command]
+#[specta::specta]
+fn launcher_hide(app: AppHandle) {
+    window::hide(&app);
+}
+
+/// The UI reports its content height so the window can fit it.
+#[tauri::command]
+#[specta::specta]
+fn launcher_set_height(app: AppHandle, height: u32) {
+    window::set_height(&app, height);
+}
+
+/// Sent each time the launcher appears, so the UI can focus the search box.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+pub struct LauncherShown;
 
 pub fn builder() -> Builder<Wry> {
     Builder::<Wry>::new()
@@ -91,8 +97,11 @@ pub fn builder() -> Builder<Wry> {
             app_info,
             settings_get,
             search_query,
-            command_run
+            command_run,
+            launcher_hide,
+            launcher_set_height
         ])
+        .events(collect_events![LauncherShown])
         // Not used by a command yet, but exported so the UI can share them.
         .typ::<AiEvent>()
 }

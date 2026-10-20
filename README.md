@@ -11,9 +11,10 @@ not meant to be distributed.
 
 ## Status
 
-Milestone 0 (project setup) done: the window opens, built-in commands search
-and run, and anything else shows an "Ask Claude" row. Next up is M1 (hotkeys,
-Windows key, glass window). See the roadmap.
+Milestones 0–1 done: a glass launcher that opens with Ctrl+Space or a tap of
+the Windows key, lives in the tray, and searches built-in commands. Anything
+else shows an "Ask Claude" row. Next up is M2 (finding and launching apps).
+See the roadmap.
 
 ## Getting the app
 

@@ -3,12 +3,14 @@ use std::sync::{Arc, RwLock};
 use crate::paths::AppPaths;
 use crate::search::{commands::CommandProvider, Aggregator};
 use crate::settings::Settings;
+use crate::window::LauncherState;
 
 /// Shared app state, managed by Tauri and available to every command.
 pub struct AppState {
     pub paths: AppPaths,
     pub settings: RwLock<Settings>,
     pub search: Aggregator,
+    pub launcher: LauncherState,
 }
 
 impl AppState {
@@ -17,6 +19,7 @@ impl AppState {
             paths,
             settings: RwLock::new(settings),
             search: Aggregator::new(vec![Arc::new(CommandProvider)]),
+            launcher: LauncherState::default(),
         }
     }
 

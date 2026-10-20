@@ -26,3 +26,14 @@ describe("LatestOnly", () => {
     expect(g.accept(99)).toBe(false);
   });
 });
+
+describe("LatestOnly.invalidate", () => {
+  it("drops responses issued before it", () => {
+    const g = new LatestOnly();
+    const a = g.next();
+    g.invalidate();
+    expect(g.accept(a)).toBe(false);
+    const b = g.next();
+    expect(g.accept(b)).toBe(true);
+  });
+});
