@@ -212,19 +212,16 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
 its own message loop. The decision logic lives in `hotkey/tap.rs` as a pure
 state machine with unit tests; the hook just feeds it events.
 
+- Win down (first, not auto-repeat): let it through, then inject a press and
+  release of the mask key `0xE8` (an unassigned virtual key; AutoHotkey uses
+  the same trick). Windows now treats the press as a combo, so releasing Win
+  never opens Start. Real combos still work because Win stays held. (D-012)
 - Win down with Shift/Ctrl/Alt already held: a combo from the start.
-- Win down otherwise: "armed". Let it through.
-- Any other key down while Win is held: a combo (Win+E, Win+V...), disarm.
-  Everything passes through untouched.
-- Win up while still armed: a lone tap. The hook swallows the real Win-up and
-  injects, in one `SendInput`: mask key down, mask key up, Win up. Windows
-  sees Win+mask (a combo), so Start doesn't open. The mask is `0xE8`, an
-  unassigned virtual key (the same trick AutoHotkey uses). Then it posts
-  "toggle launcher" to the main thread.
-- Injected events carry a tag in `dwExtraInfo` so the hook skips its own.
-- If `SendInput` doesn't insert all three events, the real Win-up is let
-  through instead, so Windows can never think Win is stuck down (Start may
-  open in that rare case).
+- Any other key down while Win is held: a combo (Win+E, Win+V...), so no tap.
+- Win up with no other key in between: a lone tap. Post "toggle launcher" to
+  the main thread. The key-up itself passes through.
+- Nothing is ever swallowed, so no key can get stuck. Injected events carry a
+  tag in `dwExtraInfo` so the hook skips its own.
 - The hook callback only updates state, injects and posts. Windows silently
   removes hooks that take too long (`LowLevelHooksTimeout`).
 - Limits: it can't see keys while an elevated (admin) window has focus unless

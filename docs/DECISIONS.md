@@ -66,3 +66,12 @@ through doesn't reliably beat Start, because injected input is processed
 after the current event. Swallowing the real Win-up and injecting
 mask-down, mask-up, Win-up in one `SendInput` keeps the order exact. If the
 injection fails, the real Win-up goes through, so the key can never stick.
+
+## D-012 Windows key: mask on key-down instead (replaces D-011)
+On real hardware, masking at key-up still let Start (or search) open now and
+then. The masking key now goes in the moment Win goes down, tens of
+milliseconds before any release, which is the approach AutoHotkey users rely
+on for Windows 11. Win-up is never swallowed or replayed any more, which also
+removes the stuck-key risk D-011 had to guard against. Remaining gap: while
+an elevated (admin) window has focus, Windows doesn't send keys to our hook
+at all, so Start opens normally there.

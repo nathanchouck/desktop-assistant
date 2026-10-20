@@ -36,8 +36,12 @@ pub enum KeyEvent {
 pub enum Verdict {
     /// Let the event through unchanged.
     Pass,
-    /// A lone tap just finished. The caller swallows this Win-up, replays it
-    /// behind a masking key so Windows doesn't open Start, and opens the launcher.
+    /// A Windows key just went down (not a repeat). Let it through, then
+    /// press and release the mask key, so that whatever happens next Windows
+    /// sees a combo and never opens Start.
+    Mask,
+    /// A lone tap just finished: open the launcher. The key-up still goes
+    /// through (Start is already masked).
     Tap,
 }
 
@@ -64,7 +68,7 @@ impl TapDetector {
                 let other_win_down = self.down[1 - i];
                 self.down[i] = true;
                 self.armed = !modifiers_held && !other_win_down;
-                Verdict::Pass
+                Verdict::Mask
             }
             KeyEvent::OtherDown => {
                 if self.down.iter().any(|&d| d) {
@@ -106,18 +110,29 @@ mod tests {
     }
 
     #[test]
-    fn lone_tap_triggers() {
+    fn lone_tap_masks_then_triggers() {
         assert_eq!(
             run(&[down(Left), WinUp { side: Left }]),
-            [Verdict::Pass, Verdict::Tap]
+            [Verdict::Mask, Verdict::Tap]
         );
         assert_eq!(run(&[down(Right), WinUp { side: Right }])[1], Verdict::Tap);
     }
 
     #[test]
-    fn auto_repeat_still_counts_as_a_tap() {
+    fn auto_repeat_masks_once_and_still_taps() {
         let v = run(&[down(Left), down(Left), down(Left), WinUp { side: Left }]);
-        assert_eq!(v[3], Verdict::Tap);
+        assert_eq!(
+            v,
+            [Verdict::Mask, Verdict::Pass, Verdict::Pass, Verdict::Tap]
+        );
+    }
+
+    #[test]
+    fn every_press_is_masked_even_combos() {
+        // Masking on Win-down is what keeps Start closed; combos still work
+        // because Win stays held.
+        let v = run(&[down(Left), OtherDown, WinUp { side: Left }]);
+        assert_eq!(v[0], Verdict::Mask);
     }
 
     #[test]
@@ -148,7 +163,10 @@ mod tests {
             WinUp { side: Right },
             WinUp { side: Left },
         ]);
-        assert_eq!(v, [Verdict::Pass; 4]);
+        assert_eq!(
+            v,
+            [Verdict::Mask, Verdict::Mask, Verdict::Pass, Verdict::Pass]
+        );
     }
 
     #[test]
