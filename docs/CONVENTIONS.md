@@ -1,0 +1,99 @@
+# Conventions & standard procedures
+
+How code in this repo should look, and the step-by-step for common changes.
+
+## General
+
+- Small modules with one job. If a file passes ~400 lines, split it.
+- Names say what things are: `everything.rs`, not `search2.rs`.
+- Comments explain *why*, not what. No commented-out code.
+- No new dependency without a reason in the commit message.
+- Personal app: skip anything that only matters for other users
+  (telemetry, localization, multi-tenant config, license checks).
+
+## Rust
+
+- `cargo fmt` and `cargo clippy -- -D warnings` must pass.
+- Errors: `thiserror` enums per module, converted into `AppError` in
+  `error.rs`. `anyhow` only in `main.rs`/setup code.
+- No `unwrap()`/`expect()` outside tests and startup code where failure means
+  the app can't run anyway. Never panic on the search or AI path.
+- Async: `tokio`. Never block the async runtime; use `spawn_blocking` for
+  Win32 or Everything calls that can stall.
+- Windows-only code goes in `platform/windows/` or behind `#[cfg(windows)]`
+  with a stub for other targets, so `cargo test` runs on Linux.
+- Logging with `tracing`. `info` for lifecycle events, `debug` for per-query
+  detail. Never log API keys. Prompts are logged only at `trace`.
+
+## UI (Svelte + TS)
+
+- `strict` TypeScript. Call the backend only through generated
+  `lib/bindings.ts`. Never use raw `invoke("name")` strings.
+- Components are presentational; state lives in `lib/stores/`.
+- Colors, radii, blur and spacing come from `styles/tokens.css` only.
+- Every interactive element is reachable by keyboard.
+
+## IPC
+
+- Commands (request/response) are named `verb_noun`: `search_query`,
+  `ai_send`, `settings_get`.
+- Events (backend to UI streams) are named `noun:verb`: `ai:delta`,
+  `ai:approval`, `index:progress`.
+- Every payload is a Rust struct with `#[derive(Serialize, specta::Type)]`.
+  Regenerate bindings after changing one (`cargo run --bin gen-bindings`).
+
+## Procedure: add a search provider
+
+1. Create `search/<name>.rs` with a struct implementing `SearchProvider`.
+2. Return raw fuzzy scores; don't apply frecency (the ranker does).
+3. Use stable `ResultItem.id`s (`"<kind>:<unique key>"`) so frecency works.
+4. Register it in `search/mod.rs` and add an enable toggle in `Settings`.
+5. Add unit tests for matching and id stability.
+6. Check it stays inside the 40 ms per-provider budget on a real machine.
+
+## Procedure: add an AI provider
+
+1. Create `ai/<name>.rs` implementing `AiProvider`.
+2. Write the output parser as a pure function `fn parse_line(&str) -> Vec<AiEvent>`.
+3. Record real output into `src-tauri/tests/fixtures/<name>/*.jsonl` and test
+   the parser against it.
+4. Handle billing mode: strip or inject the provider's API key env var.
+5. Map approvals into `AiEvent::ApprovalRequested`.
+6. Add it to the router, the provider switcher and the prefix map.
+
+## Procedure: add a built-in command
+
+1. Add a variant in `search/commands.rs` with a title, keywords and handler.
+2. If it needs settings, add fields with defaults to `Settings`.
+3. Test that the keywords match.
+
+## Testing
+
+| Layer | What | Where |
+|---|---|---|
+| Unit | ranking, routing/prefixes, parsers, settings migration | inline `#[cfg(test)]` |
+| Fixture | Claude/Codex stream parsing from recorded output | `src-tauri/tests/` |
+| UI | stores and keyboard handling (Vitest) | `ui/src/**/*.test.ts` |
+| Manual | hotkey, glass, Win key, real search | checklist in PR/commit message |
+
+Not worth it here: end-to-end UI automation, mocking Win32.
+
+## Git
+
+- Branch per piece of work; small commits with imperative messages
+  ("Add Everything search provider").
+- A milestone isn't done until its ROADMAP boxes are ticked and CI is green.
+
+## CI / release
+
+- `test.yml` (ubuntu): fmt, clippy, `cargo test`, `vitest`, typecheck.
+- `build.yml` (windows-latest): `tauri build` produces an `.msi`/`.exe`
+  installer uploaded as a workflow artifact. Tags `v*` create a GitHub Release
+  that the in-app updater reads (later milestone).
+- Version lives in `src-tauri/tauri.conf.json` and is bumped per release.
+
+## Settings sync across my computers
+
+`settings.toml` and the MCP registry are plain text with no secrets, so they
+can live in a synced folder (OneDrive). Keys stay per machine in Credential
+Manager.
