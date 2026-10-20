@@ -88,3 +88,14 @@ Results are sent on every keystroke; inlining base64 PNGs would bloat each
 response and re-decode images constantly. Rows carry a short key instead and
 the webview fetches `icon://` URLs, which it caches like any image. Icons are
 extracted lazily, so only rows that are actually shown cost anything.
+
+## D-015 Windows key: masked replay of every release (replaces D-012)
+D-012 was wrong: masking on key-down made Start open on every tap. The mask
+was injected from inside the hook while Win-down was being handled, and
+Windows processed it *before* that Win-down, so it didn't count. (D-011's
+reasoning had this ordering backwards too.) Swallowing the real Win-up and
+injecting mask-down, mask-up, Win-up as one batch is correct whichever way
+Windows orders hook-injected input, which is why D-011 mostly worked. It now
+applies to every Win release we saw go down, not just detected taps, so a
+press misjudged as a combo can't let Start through. Taps alone open the
+launcher. Remaining gap: admin windows (see D-012).

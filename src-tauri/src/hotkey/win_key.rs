@@ -1,10 +1,12 @@
 //! Windows only: a low-level keyboard hook that turns a lone tap of the
 //! Windows key into "toggle the launcher", while Win+<key> combos still work.
 //!
-//! How Start stays closed: the moment a Windows key goes down, the hook
-//! presses and releases an unassigned "mask" key. Windows then treats the
-//! press as a combo, so releasing Win never opens Start. Real combos (Win+E)
-//! still work because Win stays held. Nothing is ever swallowed.
+//! How Start stays closed: when a Windows key is released, the hook swallows
+//! the real key-up and replays it as mask-down, mask-up, Win-up in a single
+//! `SendInput`. The mask is an unassigned key, so Windows sees "Win+mask", a
+//! combo, and doesn't open Start. Doing it as one batch keeps the order exact
+//! no matter when Windows processes keys injected from inside a hook (it
+//! handles them *before* the key being hooked; see D-015).
 //!
 //! The hook lives on its own thread with a message loop, because Windows calls
 //! a low-level hook on the thread that installed it. The callback must return
@@ -20,8 +22,8 @@ use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-    VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+    KEYEVENTF_KEYUP, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW,
@@ -135,13 +137,16 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         let kb = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
         if kb.dwExtraInfo != INJECTED_TAG {
             if let Some(event) = to_event(kb.vkCode, wparam as u32, modifiers_held) {
-                match detect(event) {
-                    // Injected input queues behind the event being handled,
-                    // so the mask lands just after this Win-down, long before
-                    // the user lets go.
-                    Verdict::Mask => send_mask(),
-                    Verdict::Tap => notify_tap(),
-                    Verdict::Pass => {}
+                if let Verdict::MaskedRelease { tap } = detect(event) {
+                    let replayed = replay_masked_release(kb.vkCode, kb.scanCode);
+                    if tap {
+                        notify_tap();
+                    }
+                    if replayed {
+                        // The replay above stands in for this key-up.
+                        return 1;
+                    }
+                    tracing::debug!("could not mask the Windows key; Start may open");
                 }
             }
         }
@@ -197,23 +202,30 @@ fn notify_tap() {
     });
 }
 
-/// Presses and releases the mask key. If this fails (rare: blocked by
-/// Windows security), Start may open this once; nothing is ever swallowed,
-/// so no key can get stuck.
-fn send_mask() {
-    let key = |flags: u32| INPUT {
+/// Injects mask-down, mask-up, Win-up as one batch. Returns true only if all
+/// three went in; otherwise the caller lets the real key-up through, so
+/// Windows can never be left thinking Win is still held.
+fn replay_masked_release(win_vk: u32, scan: u32) -> bool {
+    let (Ok(win_vk), Ok(scan)) = (u16::try_from(win_vk), u16::try_from(scan)) else {
+        return false;
+    };
+    let key = |vk: u16, scan: u16, flags: u32| INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
-                wVk: MASK_VK,
-                wScan: 0,
+                wVk: vk,
+                wScan: scan,
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: INJECTED_TAG,
             },
         },
     };
-    let inputs = [key(0), key(KEYEVENTF_KEYUP)];
+    let inputs = [
+        key(MASK_VK, 0, 0),
+        key(MASK_VK, 0, KEYEVENTF_KEYUP),
+        key(win_vk, scan, KEYEVENTF_KEYUP | KEYEVENTF_EXTENDEDKEY),
+    ];
     // SAFETY: `inputs` is a valid array of INPUT for the duration of the call.
     let sent = unsafe {
         SendInput(
@@ -222,9 +234,7 @@ fn send_mask() {
             std::mem::size_of::<INPUT>() as i32,
         )
     };
-    if sent != inputs.len() as u32 {
-        tracing::debug!("could not mask the Windows key; Start may open");
-    }
+    sent == inputs.len() as u32
 }
 
 #[cfg(test)]

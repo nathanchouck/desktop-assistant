@@ -19,7 +19,7 @@ Tick boxes as work lands.
 - [x] Acrylic via `window-vibrancy`; opaque fallback when unavailable
 - [x] Glass design tokens + SearchBar + ResultList + footer with key hints
 - [x] Ctrl+Space global shortcut toggles the window
-- [x] **Windows-key tap override** (`WH_KEYBOARD_LL`, combos pass through, mask key on Win-down keeps Start closed; D-012)
+- [x] **Windows-key tap override** (`WH_KEYBOARD_LL`, combos pass through, masked replay of every Win release keeps Start closed; D-015)
 - [x] Hide on blur, on Esc (first Esc clears), and after launching
 - [x] Tray icon: Open, Settings, Open Log Folder, Quit (Reindex moves to M2)
 - [x] Single-instance guard (second launch shows the running launcher)
@@ -30,7 +30,7 @@ Tick boxes as work lands.
 Check on a real Windows machine:
 - [x] Glass looks right in light and dark mode (tune `--surface` in `tokens.css`)
 - [x] Windows key tap opens the launcher
-- [ ] Start/search stays closed every time (was slipping through now and then; fixed per D-012, re-check)
+- [ ] Start/search stays closed every time (D-012 broke it; fixed per D-015, re-check)
 - [x] Win+E, Win+V, Win+Shift+S, Win+L still work
 - [x] Launcher takes keyboard focus when opened from the Windows key and Ctrl+Space
 - [x] Ctrl+Space doesn't clash with your keyboard layout's input switching
