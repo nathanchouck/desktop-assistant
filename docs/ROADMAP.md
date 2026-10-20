@@ -53,25 +53,35 @@ Check on a real Windows machine:
 - [ ] Ctrl+Shift+Enter shows the UAC prompt for desktop apps
 - [ ] Apps you open often move up within a day of use
 
-## M3 File search (Everything) ✅ (pending on-device check)
-- [x] Everything SDK compiled in from source (no DLL to ship), on its own worker thread
-- [x] Detect missing or stopped Everything and show a fix-it row (start it / download it)
+## M3 File search ✅ (pending on-device check)
+- [x] Built-in file index of your folders (default: user folder), saved between runs, kept current by watching (D-017)
+- [x] Everything used automatically when running (covers every drive); SDK compiled in, no DLL
+- [x] ~~Fix-it row when Everything is missing~~ (dropped: Everything is optional now)
 - [x] Merge file/folder results with apps; files rank below equally good app matches
 - [x] Exclusions (`node_modules`, `.git`, `AppData` temp, `$Recycle.Bin`) in settings
 - [x] File actions: Open, Show in folder (Ctrl+Enter), Copy path (Ctrl+Shift+C)
 - [ ] File actions: Open with…, Delete to Recycle Bin (needs an action menu; M7)
-- [x] Filters: `f ` files only, `d ` folders only, plus any Everything syntax (`ext:pdf`)
+- [x] Filters: `f ` files only, `d ` folders only, `ext:pdf` (plus any Everything syntax when it's running)
 - [x] Query-sequence handling so stale results never flash (UI) and stale searches skip (worker)
 - [x] Windows CI installs Everything and runs a real search test
 
 Check on a real Windows machine:
-- [ ] With Everything running, typing part of a file name finds it within a keystroke or two
-- [ ] With Everything closed, the "Start Everything" row appears and works
+- [ ] Without Everything: files in your user folder show up as you type (first launch needs a scan; check the log for its time)
+- [ ] A file you just saved or renamed shows up within a few seconds
+- [ ] With Everything running: files anywhere on your drives show up
 - [ ] Ctrl+Enter opens Explorer with the file selected; Ctrl+Shift+C copies the path
-- [ ] Nothing from `node_modules`, `.git` or Temp shows up
+- [ ] Nothing from AppData, `node_modules`, `.git` or Temp shows up
 
 ## M4 Claude
+Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
+"sort Downloads by type"), aware of what's on screen.
+
 - [ ] Detect `claude` install + login status; fix-it row if missing
+- [ ] Model setting: Sonnet 5.5 by default, Haiku 5.5 as an option (e.g. for quick questions); `--model` per run
+- [ ] Desktop context captured when the launcher opens: the window you were in (title, app), and for File Explorer its open folder and selected files (Shell COM: `IShellWindows`)
+- [ ] Desktop MCP server hosted by the launcher, so Claude can ask for context and act on demand: active window, Explorer folder/selection, open windows, search files/apps (our index), reveal/open
+- [ ] Opt-in screenshot of the active window for "what am I looking at" questions (vision), never sent automatically
+- [ ] Working directory = the open Explorer folder when there is one
 - [ ] Routing: no matches + Enter → AI; Tab → AI; `c ` prefix; "Ask Claude" row always last
 - [ ] Long-lived stream-json child process; warm spare process
 - [ ] Strip `ANTHROPIC_API_KEY` in subscription mode; key mode from Credential Manager
@@ -80,7 +90,7 @@ Check on a real Windows machine:
 - [ ] Follow-ups in the same conversation; Esc closes; new query = new chat
 - [ ] Cancel in-flight response (Ctrl+.)
 - [ ] **Spike D-007**: inline Approve / Deny for write/send/run tools
-- [ ] Read-only default tool set; working directory = home folder
+- [ ] Read-only by default; moving/renaming/deleting files asks first (Approve / Deny in the popup)
 - [ ] Verify claude.ai connectors (Gmail, Calendar, Drive) work from the launcher
 - [ ] Window grows into chat mode; shrinks back on new search
 

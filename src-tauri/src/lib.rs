@@ -4,6 +4,7 @@
 pub mod actions;
 pub mod ai;
 pub mod error;
+pub mod file_index;
 pub mod fuzzy;
 pub mod hotkey;
 pub mod icons;
@@ -86,6 +87,7 @@ pub fn run() {
             hotkey::init(handle, &settings.hotkeys);
             sync_launch_at_login(handle, settings.general.launch_at_login);
             start_app_index(handle);
+            start_file_index_unless_everything(handle);
 
             // Handy while developing; release builds start hidden in the tray.
             if cfg!(debug_assertions) {
@@ -108,6 +110,21 @@ fn start_app_index(app: &AppHandle) {
         Ok(mut slot) => *slot = watcher,
         Err(_) => tracing::warn!("could not keep the Start Menu watcher"),
     };
+}
+
+/// Builds the built-in file index right away unless Everything is running
+/// (then it starts later, only if a search finds Everything gone).
+fn start_file_index_unless_everything(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let shell = Arc::clone(&state.shell);
+    let files = Arc::clone(&state.files);
+    tauri::async_runtime::spawn(async move {
+        if shell.everything_running().await {
+            tracing::info!("Everything is running; using it for file search");
+        } else {
+            files.ensure_started();
+        }
+    });
 }
 
 /// Makes "start with Windows" match the setting. Skipped in debug builds so

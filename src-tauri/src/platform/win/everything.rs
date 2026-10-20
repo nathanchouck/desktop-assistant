@@ -30,6 +30,7 @@ extern "system" {
     fn Everything_GetResultPathW(index: u32) -> *const u16;
     fn Everything_GetResultDateModified(index: u32, out: *mut FileTime) -> Bool;
     fn Everything_IsFastSort(sort: u32) -> Bool;
+    fn Everything_GetMajorVersion() -> u32;
 }
 
 const ERROR_IPC: u32 = 2; // "Everything search client is not running"
@@ -91,6 +92,13 @@ pub fn search(query: &FileSearch) -> Result<Vec<FileHit>, PlatformError> {
         }
         Ok(hits)
     }
+}
+
+/// Whether Everything is running and answering. Must be called on the
+/// Everything worker thread.
+pub fn is_running() -> bool {
+    // SAFETY: a simple IPC round trip; returns 0 when Everything isn't there.
+    unsafe { Everything_GetMajorVersion() != 0 }
 }
 
 /// Copies a NUL-terminated UTF-16 string owned by the SDK.

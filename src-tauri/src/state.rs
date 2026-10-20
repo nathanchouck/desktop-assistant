@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::file_index::FileIndex;
 use crate::icons::IconCache;
-use crate::paths::AppPaths;
+use crate::paths::{self, AppPaths};
 use crate::platform::Shell;
 use crate::search::apps::{AppIndex, AppProvider};
 use crate::search::files::FileProvider;
@@ -20,6 +21,8 @@ pub struct AppState {
     pub shell: Arc<Shell>,
     pub icons: Arc<IconCache>,
     pub apps: Arc<AppIndex>,
+    /// Built-in file index, used when Everything isn't running.
+    pub files: Arc<FileIndex>,
     /// Keeps the Start Menu watcher alive.
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
 }
@@ -33,15 +36,24 @@ impl AppState {
         let shell = Arc::new(Shell::new());
         let icons = Arc::new(IconCache::new(paths.icon_cache_dir(), Arc::clone(&shell)));
         let apps = Arc::new(AppIndex::new(Arc::clone(&shell), Arc::clone(&icons)));
-        let files = FileProvider::new(
-            Arc::clone(&shell),
-            Arc::clone(&icons),
-            settings.search.exclusions.clone(),
+        let index_roots = paths::resolve_index_folders(
+            &settings.search.index_folders,
+            dirs::home_dir().as_deref(),
         );
+        let files = Arc::new(FileIndex::new(
+            &index_roots,
+            &settings.search.exclusions,
+            paths.file_index_file(),
+        ));
         let search = Aggregator::new(vec![
             Arc::new(CommandProvider),
             Arc::new(AppProvider::new(Arc::clone(&apps))),
-            Arc::new(files),
+            Arc::new(FileProvider::new(
+                Arc::clone(&shell),
+                Arc::clone(&icons),
+                Arc::clone(&files),
+                settings.search.exclusions.clone(),
+            )),
         ]);
         Self {
             paths,
@@ -52,6 +64,7 @@ impl AppState {
             shell,
             icons,
             apps,
+            files,
             watcher: Mutex::new(None),
         }
     }

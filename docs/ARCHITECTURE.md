@@ -38,7 +38,7 @@ generality.
 │  └──────┬───────┘                                                     │
 └─────────┼─────────────────────────────────────────────────────────────┘
           │
-          ├── Everything (IPC via the Everything SDK, compiled in)
+          ├── Everything, if running (IPC via the Everything SDK, compiled in)
           ├── claude.exe   (child process, stream-json over stdio)
           └── codex.exe    (child process, JSON events over stdio)
 ```
@@ -90,7 +90,7 @@ desktop-assistant/
 │       │   ├── commands.rs      # built-in commands (settings, logs, reindex, quit)
 │       │   ├── rank.rs          # final order: fuzzy + name bonuses + frecency
 │       │   ├── apps.rs          # app index, provider, Start Menu watcher
-│       │   └── files.rs         # file/folder results from Everything + setup row
+│       │   └── files.rs         # file/folder results: Everything, else the built-in index
 │       ├── ai/
 │       │   ├── mod.rs           # AiProvider trait, AiEvent, ProviderId, BillingMode
 │       │   ├── claude.rs        # (M4) Claude Code CLI adapter
@@ -102,6 +102,7 @@ desktop-assistant/
 │       │   ├── shortcut.rs      # Ctrl+Space (configurable) via global-shortcut
 │       │   ├── tap.rs           # pure "lone Windows key tap" state machine
 │       │   └── win_key.rs       # Windows-only LL keyboard hook thread
+│       ├── file_index/          # built-in file index: scan, snapshot, watch, top-k search
 │       ├── fuzzy.rs             # nucleo wrapper, scores normalized to 0..1
 │       ├── icons.rs             # icon cache (memory + disk PNG) + `icon` protocol
 │       ├── store/               # SQLite: frecency (later: history), migrations
@@ -208,23 +209,48 @@ pub enum AiEvent {
 - All shell COM work runs on STA threads (`platform/win/sta.rs`): one
   long-lived worker for listing and icons, a fresh thread per launch.
 
-### Files (Everything)
+### Files
 
-- `search/files.rs` turns the query into Everything syntax: `f `/`d `
-  prefixes become `file:`/`folder:`, Everything syntax (`ext:pdf`) passes
-  through, and each `search.exclusions` entry becomes `!path:"\<folder>\"`.
-  Queries under 2 characters skip file search.
-- Everything returns up to 100 hits, newest first (when its date index allows
-  a fast sort). We re-score by name (fuzzy, ignoring `ext:`-style tokens) ×
-  recency (halves every 30 days), then × 0.8 so an equally good app wins.
-- The SDK is C with global state that runs each query on the calling thread,
-  so all Everything calls go through one worker thread. Each search bumps a
-  generation counter; queued searches that are already out of date return
-  immediately instead of piling up while typing.
-- If Everything isn't running, the provider returns one setup row instead:
-  "Start Everything" (if installed) or "Install Everything" (download page).
+Two sources, one provider (`search/files.rs`). Each file search asks
+Everything first; if it isn't running (a near-instant failure), it uses the
+built-in index. Nothing has to be installed. (D-017)
+
+- Query: `f `/`d ` prefixes limit to files/folders. Queries under 2
+  characters skip file search. Everything gets the text as-is (its syntax
+  like `ext:pdf` works) plus one `!path:"\<folder>\"` per exclusion. The
+  built-in index understands names, `ext:` and the prefixes, and ignores
+  other Everything-only syntax.
+- Scoring, both sources: name (fuzzy, ignoring `ext:`-style tokens) ×
+  recency (halves every 30 days) × 0.8, so an equally good app wins. Up to
+  100 candidates are re-ranked with frecency like everything else.
+- Everything: the SDK is C with global state that runs each query on the
+  calling thread, so all calls go through one worker thread. Each search
+  bumps a generation counter; queued searches that are already out of date
+  return immediately instead of piling up while typing.
 - Actions: Open (ShellExecuteEx), Show in folder
   (`SHOpenFolderAndSelectItems`), Copy path (clipboard plugin).
+
+#### Built-in file index (`file_index/`)
+
+- Covers `search.index_folders` (default `~`, the user folder). Skips hidden
+  and system items (that covers AppData), dot-folders, symlinks/junctions,
+  and doesn't enter folders in `search.exclusions`. Caps at 2 million entries.
+- Shape: folder path → its direct children (`BTreeMap`), names as boxed
+  strings with kind and modified time. Search scores every entry under a
+  read lock and keeps the top 100 in a min-heap; ~15 ms for 300k names, run
+  with `spawn_blocking`.
+- Lifecycle, on its own thread: load the snapshot (`file-index.txt` in the
+  data folder) so search works instantly → start watching → full rescan to
+  catch changes made while closed → apply changes. Snapshot saved after each
+  scan and every 5 minutes if anything changed.
+- Watching: each root non-recursively, plus each indexed folder directly
+  inside a root recursively, so AppData's churn never reaches us. Changes are
+  batched (0.5 s quiet, 3 s max); each re-reads only the folder it happened
+  in, then indexes new folders and drops deleted ones. Events in folders that
+  aren't indexed are ignored. If the OS reports lost events, rescan
+  everything (at most every 10 minutes).
+- Started at launch only if Everything isn't running; otherwise the first
+  search that finds Everything gone starts it.
 
 ### Icons
 

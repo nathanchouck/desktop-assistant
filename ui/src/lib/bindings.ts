@@ -119,6 +119,11 @@ export type SearchSettings = {
 	 *  ("node_modules") or a partial path ("AppData\Local\Temp").
 	 */
 	exclusions: string[],
+	/**
+	 *  Folders the built-in file index covers when Everything isn't running.
+	 *  `~` is your user folder.
+	 */
+	index_folders: string[],
 	max_results: number,
 };
 

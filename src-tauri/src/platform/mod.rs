@@ -6,7 +6,6 @@
 #[cfg(windows)]
 mod win;
 
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -128,7 +127,22 @@ impl Shell {
         #[cfg(not(windows))]
         {
             let _ = (generation, search);
-            Ok(Vec::new())
+            Err(PlatformError::Unsupported)
+        }
+    }
+
+    /// Whether Everything is running (always false off Windows).
+    pub async fn everything_running(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.everything
+                .run(win::everything::is_running)
+                .await
+                .unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            false
         }
     }
 
@@ -185,20 +199,6 @@ impl Shell {
             Err(PlatformError::Unsupported)
         }
     }
-}
-
-/// Where Everything is installed, if it is (to offer starting it).
-pub fn everything_exe() -> Option<PathBuf> {
-    let candidates = [
-        std::env::var_os("ProgramFiles").map(|p| PathBuf::from(p).join("Everything")),
-        std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("Everything")),
-        std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join(r"Programs\Everything")),
-    ];
-    candidates
-        .into_iter()
-        .flatten()
-        .map(|dir| dir.join("Everything.exe"))
-        .find(|exe| exe.is_file())
 }
 
 #[cfg(windows)]

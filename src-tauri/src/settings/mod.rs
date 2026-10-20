@@ -93,6 +93,9 @@ pub struct SearchSettings {
     /// Folders whose contents never show up in file results: a folder name
     /// ("node_modules") or a partial path ("AppData\Local\Temp").
     pub exclusions: Vec<String>,
+    /// Folders the built-in file index covers when Everything isn't running.
+    /// `~` is your user folder.
+    pub index_folders: Vec<String>,
     pub max_results: u32,
 }
 
@@ -107,6 +110,7 @@ impl Default for SearchSettings {
             ]
             .map(String::from)
             .to_vec(),
+            index_folders: vec!["~".into()],
             max_results: 8,
         }
     }

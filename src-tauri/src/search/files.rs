@@ -1,9 +1,10 @@
-//! File and folder search through Everything (voidtools), which keeps an
-//! index of every file on NTFS drives and answers in milliseconds.
+//! File and folder search. Uses Everything (voidtools) when it's running,
+//! which covers every NTFS drive; otherwise the launcher's own index of the
+//! folders in `search.index_folders` (see `file_index`).
 //!
-//! Everything finds candidates (most recently modified first); we re-score
-//! them by how well the name matches and how recent they are. Files rank a
-//! little below apps with an equally good match.
+//! Either way we score candidates by how well the name matches and how
+//! recently the file changed. Files rank a little below apps with an equally
+//! good match.
 
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -11,23 +12,21 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 
 use super::{Action, ItemKind, ResultItem, SearchError, SearchProvider};
+use crate::file_index::{FileIndex, IndexEntry};
 use crate::fuzzy::FuzzyQuery;
 use crate::icons::{self, IconCache};
-use crate::platform::{self, FileHit, FileSearch, IconSource, PlatformError, Shell};
+use crate::platform::{FileHit, FileSearch, IconSource, PlatformError, Shell};
 
 const ID_PREFIX: &str = "file:";
-pub const SETUP_START_ID: &str = "setup:everything-start";
-pub const SETUP_INSTALL_ID: &str = "setup:everything-install";
-pub const EVERYTHING_DOWNLOAD_URL: &str = "https://www.voidtools.com/downloads/";
 
-/// Shorter queries match too much to be useful (and cost a round trip).
+/// Shorter queries match too much to be useful.
 const MIN_QUERY_CHARS: usize = 2;
-/// Candidates asked from Everything before re-scoring.
-const MAX_HITS: u32 = 100;
+/// Candidates gathered before the final ranking.
+const MAX_HITS: usize = 100;
 /// Files rank a little below an equally good app or command match.
 const FILE_WEIGHT: f32 = 0.8;
-/// Score when the name can't be fuzzy-matched (Everything-only syntax such
-/// as `ext:pdf`, or a match in the path).
+/// Name score when there's nothing to fuzzy-match (only `ext:pdf`, or an
+/// Everything match in the path).
 const UNSCORED: f32 = 0.5;
 /// Recency counts for this share of a file's score; it halves every 30 days.
 const RECENCY_SHARE: f32 = 0.2;
@@ -83,33 +82,102 @@ pub fn everything_search(kind: KindFilter, text: &str, exclusions: &[String]) ->
     search
 }
 
+/// What the built-in index understands of a query: name words, a kind
+/// filter, and `ext:` (e.g. `ext:pdf` or `ext:jpg;png`). Other
+/// Everything-only syntax is ignored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IndexQuery {
+    words: String,
+    kind: KindFilter,
+    extensions: Vec<String>,
+}
+
+impl IndexQuery {
+    fn parse(kind: KindFilter, text: &str) -> Self {
+        let mut words = Vec::new();
+        let mut extensions = Vec::new();
+        for token in text.split_whitespace() {
+            if let Some(exts) = token.strip_prefix("ext:") {
+                extensions.extend(
+                    exts.split([';', ','])
+                        .map(|e| e.trim_start_matches('.').to_lowercase())
+                        .filter(|e| !e.is_empty()),
+                );
+            } else if !token.contains(':') {
+                words.push(token);
+            }
+        }
+        Self {
+            words: words.join(" "),
+            kind,
+            extensions,
+        }
+    }
+
+    /// A scorer for index entries: `None` when the entry doesn't match.
+    fn scorer(&self, now: i64) -> impl FnMut(&IndexEntry) -> Option<f32> + use<'_> {
+        let mut fuzzy = (!self.words.is_empty()).then(|| FuzzyQuery::new(&self.words));
+        move |entry: &IndexEntry| {
+            match self.kind {
+                KindFilter::Files if entry.is_folder => return None,
+                KindFilter::Folders if !entry.is_folder => return None,
+                _ => {}
+            }
+            if !self.extensions.is_empty() {
+                let ext = extension(&entry.name);
+                if entry.is_folder || !self.extensions.contains(&ext) {
+                    return None;
+                }
+            }
+            let name_score = match fuzzy.as_mut() {
+                Some(f) => f.score(&entry.name)?,
+                None => UNSCORED,
+            };
+            Some(file_score(name_score, entry.modified, now))
+        }
+    }
+}
+
 pub struct FileProvider {
     shell: Arc<Shell>,
     icons: Arc<IconCache>,
+    index: Arc<FileIndex>,
     exclusions: Vec<String>,
     home: Option<String>,
 }
 
 impl FileProvider {
-    pub fn new(shell: Arc<Shell>, icons: Arc<IconCache>, exclusions: Vec<String>) -> Self {
+    pub fn new(
+        shell: Arc<Shell>,
+        icons: Arc<IconCache>,
+        index: Arc<FileIndex>,
+        exclusions: Vec<String>,
+    ) -> Self {
         Self {
             shell,
             icons,
+            index,
             exclusions,
             home: dirs::home_dir().map(|h| h.display().to_string()),
         }
     }
 
+    /// Searches the built-in index (starting it if needed) off the async
+    /// threads: scoring a few hundred thousand names takes ~15 ms.
+    async fn search_index(&self, kind: KindFilter, text: &str) -> Vec<FileHit> {
+        self.index.ensure_started();
+        let index = Arc::clone(&self.index);
+        let query = IndexQuery::parse(kind, text);
+        let now = unix_now();
+        tokio::task::spawn_blocking(move || index.search(query.scorer(now), MAX_HITS))
+            .await
+            .unwrap_or_default()
+    }
+
     fn to_items(&self, hits: Vec<FileHit>, text: &str, limit: usize) -> Vec<ResultItem> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs() as i64);
-        // Everything syntax (`ext:pdf`, `size:>1mb`) isn't part of the name.
-        let words: Vec<&str> = text
-            .split_whitespace()
-            .filter(|w| !w.contains(':'))
-            .collect();
-        let mut fuzzy = (!words.is_empty()).then(|| FuzzyQuery::new(&words.join(" ")));
+        let now = unix_now();
+        let words = IndexQuery::parse(KindFilter::Any, text).words;
+        let mut fuzzy = (!words.is_empty()).then(|| FuzzyQuery::new(&words));
 
         let mut items: Vec<ResultItem> = hits
             .into_iter()
@@ -118,9 +186,7 @@ impl FileProvider {
                     .as_mut()
                     .and_then(|f| f.score(&hit.name))
                     .unwrap_or(UNSCORED);
-                let recency = hit.modified.map_or(0.0, |m| recency(now - m));
-                let score =
-                    FILE_WEIGHT * name_score * (1.0 - RECENCY_SHARE + RECENCY_SHARE * recency);
+                let score = file_score(name_score, hit.modified, now);
                 let (icon_key, icon_source) = icon_for(&hit);
                 self.icons.register(&icon_key, icon_source);
                 ResultItem {
@@ -154,24 +220,36 @@ impl SearchProvider for FileProvider {
         let Some((kind, text)) = parse_query(query) else {
             return Ok(Vec::new());
         };
+        let started = Instant::now();
         let search = FileSearch {
             search: everything_search(kind, text, &self.exclusions),
-            max: MAX_HITS,
+            max: MAX_HITS as u32,
         };
-        let started = Instant::now();
-        match self.shell.search_files(search).await {
+        let hits = match self.shell.search_files(search).await {
             Ok(hits) => {
                 tracing::debug!("everything: {} hits in {:?}", hits.len(), started.elapsed());
-                Ok(self.to_items(hits, text, limit))
+                hits
             }
-            Err(PlatformError::EverythingNotRunning) => Ok(vec![setup_item()]),
-            Err(PlatformError::Superseded | PlatformError::Unsupported) => Ok(Vec::new()),
-            Err(e) => Err(SearchError::Provider {
-                provider: "files",
-                message: e.to_string(),
-            }),
-        }
+            Err(PlatformError::EverythingNotRunning | PlatformError::Unsupported) => {
+                let hits = self.search_index(kind, text).await;
+                tracing::debug!("file index: {} hits in {:?}", hits.len(), started.elapsed());
+                hits
+            }
+            Err(PlatformError::Superseded) => return Ok(Vec::new()),
+            Err(e) => {
+                return Err(SearchError::Provider {
+                    provider: "files",
+                    message: e.to_string(),
+                })
+            }
+        };
+        Ok(self.to_items(hits, text, limit))
     }
+}
+
+fn file_score(name_score: f32, modified: Option<i64>, now: i64) -> f32 {
+    let recency = modified.map_or(0.0, |m| recency(now - m));
+    FILE_WEIGHT * name_score * (1.0 - RECENCY_SHARE + RECENCY_SHARE * recency)
 }
 
 /// 1.0 for "just now", halving every 30 days.
@@ -180,14 +258,22 @@ fn recency(age_secs: i64) -> f32 {
     0.5_f32.powf(days / RECENCY_HALF_LIFE_DAYS)
 }
 
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+fn extension(name: &str) -> String {
+    name.rsplit_once('.')
+        .map(|(_, ext)| ext.to_lowercase())
+        .unwrap_or_default()
+}
+
 /// Most files share their extension's icon (one cache entry per type);
 /// programs, shortcuts and folders get their own.
 fn icon_for(hit: &FileHit) -> (String, IconSource) {
-    let ext = hit
-        .name
-        .rsplit_once('.')
-        .map(|(_, ext)| ext.to_lowercase())
-        .unwrap_or_default();
+    let ext = extension(&hit.name);
     let identity = if hit.is_folder || ext.is_empty() || OWN_ICON_EXTENSIONS.contains(&ext.as_str())
     {
         format!("path:{}", hit.path.to_lowercase())
@@ -215,32 +301,6 @@ fn display_dir(dir: &str, home: Option<&str>) -> String {
     dir.to_owned()
 }
 
-/// Shown instead of file results when Everything isn't running.
-fn setup_item() -> ResultItem {
-    let (id, title, subtitle) = if platform::everything_exe().is_some() {
-        (
-            SETUP_START_ID,
-            "Start Everything to search files",
-            "Everything is installed but not running",
-        )
-    } else {
-        (
-            SETUP_INSTALL_ID,
-            "Install Everything to search files",
-            "Free from voidtools.com",
-        )
-    };
-    ResultItem {
-        id: id.into(),
-        kind: ItemKind::Command,
-        title: title.into(),
-        subtitle: subtitle.into(),
-        icon: None,
-        score: 0.05,
-        actions: vec![Action::Run],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +314,22 @@ mod tests {
             is_folder,
             modified,
         }
+    }
+
+    fn entry(name: &str, is_folder: bool) -> IndexEntry {
+        IndexEntry {
+            name: name.into(),
+            is_folder,
+            modified: None,
+        }
+    }
+
+    fn provider() -> (tempfile::TempDir, FileProvider) {
+        let dir = tempfile::tempdir().unwrap();
+        let shell = Arc::new(Shell::new());
+        let icons = Arc::new(IconCache::new(dir.path().join("icons"), Arc::clone(&shell)));
+        let index = Arc::new(FileIndex::new(&[], &[], dir.path().join("index.txt")));
+        (dir, FileProvider::new(shell, icons, index, Vec::new()))
     }
 
     #[test]
@@ -287,6 +363,34 @@ mod tests {
     }
 
     #[test]
+    fn index_queries_understand_ext_and_kind() {
+        let q = IndexQuery::parse(KindFilter::Any, "scan ext:pdf;.PNG size:>1mb");
+        assert_eq!(q.words, "scan");
+        assert_eq!(q.extensions, ["pdf", "png"]);
+
+        let mut score = q.scorer(0);
+        assert!(score(&entry("scan.pdf", false)).is_some());
+        assert!(score(&entry("Scan.PNG", false)).is_some());
+        assert!(score(&entry("scan.docx", false)).is_none());
+        assert!(
+            score(&entry("scan.pdf", true)).is_none(),
+            "folders have no extension"
+        );
+
+        let folders = IndexQuery::parse(KindFilter::Folders, "proj");
+        let mut score = folders.scorer(0);
+        assert!(score(&entry("projects", true)).is_some());
+        assert!(score(&entry("projects.txt", false)).is_none());
+    }
+
+    #[test]
+    fn only_ext_still_matches() {
+        let q = IndexQuery::parse(KindFilter::Any, "ext:pdf");
+        assert!(q.words.is_empty());
+        assert!(q.scorer(0)(&entry("anything.pdf", false)).is_some());
+    }
+
+    #[test]
     fn shortens_home() {
         let home = Some(r"C:\Users\nathan");
         assert_eq!(
@@ -314,13 +418,8 @@ mod tests {
 
     #[test]
     fn better_names_and_newer_files_rank_higher() {
-        let dir = tempfile::tempdir().unwrap();
-        let icons = Arc::new(IconCache::new(dir.path().into(), Arc::new(Shell::new())));
-        let provider = FileProvider::new(Arc::new(Shell::new()), icons, Vec::new());
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let (_dir, provider) = provider();
+        let now = unix_now();
         let items = provider.to_items(
             vec![
                 hit(r"C:\x\old report.docx", false, Some(now - 400 * 86_400)),
@@ -330,8 +429,7 @@ mod tests {
             "report",
             8,
         );
-        let titles: Vec<&str> = items.iter().map(|i| i.title.as_str()).collect();
-        assert_eq!(titles[0], "report.docx");
+        assert_eq!(items[0].title, "report.docx");
         assert_eq!(items[0].id, r"file:C:\x\report.docx");
         assert_eq!(items[0].actions[0], Action::Open);
         assert!(items.iter().all(|i| i.score <= FILE_WEIGHT));
@@ -339,12 +437,33 @@ mod tests {
 
     #[test]
     fn everything_syntax_still_gets_a_score() {
-        let dir = tempfile::tempdir().unwrap();
-        let icons = Arc::new(IconCache::new(dir.path().into(), Arc::new(Shell::new())));
-        let provider = FileProvider::new(Arc::new(Shell::new()), icons, Vec::new());
+        let (_dir, provider) = provider();
         let items = provider.to_items(vec![hit(r"C:\x\scan.pdf", false, None)], "ext:pdf", 8);
         assert_eq!(items.len(), 1);
         assert!(items[0].score > 0.0);
+    }
+
+    /// Without Everything (always the case off Windows), results come from
+    /// the built-in index.
+    #[tokio::test]
+    async fn falls_back_to_the_built_in_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("home");
+        std::fs::create_dir_all(root.join("School")).unwrap();
+        std::fs::write(root.join("School/orbit notes.md"), b"x").unwrap();
+        let shell = Arc::new(Shell::new());
+        let icons = Arc::new(IconCache::new(dir.path().join("icons"), Arc::clone(&shell)));
+        let index = Arc::new(FileIndex::new(&[root], &[], dir.path().join("index.txt")));
+        let provider = FileProvider::new(shell, icons, Arc::clone(&index), Vec::new());
+
+        index.ensure_started();
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        while index.is_empty() && Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let items = provider.query("orbit", 8).await.unwrap();
+        assert_eq!(items[0].title, "orbit notes.md");
+        assert!(items[0].subtitle.ends_with("School"));
     }
 
     #[test]

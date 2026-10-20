@@ -109,3 +109,15 @@ voidtools.com wasn't reachable from the build environment; see
 `third_party/everything-sdk/README.md`. Considered: the pure-Rust
 `everything-ipc` crate (heavier, newer, less proven) and hand-writing the
 WM_COPYDATA protocol (error-prone without being able to test locally).
+
+## D-017 Built-in file index; Everything optional (updates D-003, D-016)
+Requiring a second background program for file search was poor design for a
+personal launcher. The launcher already runs all the time, so it keeps its
+own index of the user's folders: scanned on a background thread, saved to
+disk so it's searchable the moment the app starts, and kept current by
+watching for changes. Fuzzy-scoring 300k names takes ~15 ms, inside the
+per-keystroke budget. Everything is still used whenever it's running, since
+it covers every drive. Considered: the Windows Search index (already
+running, but slow per query and limited to indexed locations) and reading
+the NTFS master file table ourselves (what Everything does: needs admin
+rights, so effectively another service).

@@ -12,9 +12,10 @@ not meant to be distributed.
 ## Status
 
 Milestones 0–3 done: a glass launcher that opens with Ctrl+Space or a tap of
-the Windows key, finds and launches your installed apps and searches every
-file on your drives through Everything (with icons, fuzzy matching, and
-ranking by what you use), and lives in the tray. Anything else shows an
+the Windows key, finds and launches your installed apps, and searches your
+files with its own index (or every drive through Everything, if it's
+running), with icons, fuzzy matching and ranking by what you use. It lives
+in the tray. Anything else shows an
 "Ask Claude" row. Next up is M4 (asking Claude). See the roadmap.
 
 ## Getting the app
@@ -47,6 +48,7 @@ See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for the other commands.
 ## Requirements (target machine)
 
 - Windows 11 (Windows 10 works, but without the Acrylic glass effect)
-- [Everything](https://www.voidtools.com/) 1.4+ running (provides file search)
+- Optional: [Everything](https://www.voidtools.com/) 1.4+ running, to search
+  every drive (otherwise the built-in index covers your user folder)
 - [Claude Code](https://code.claude.com) installed, signed in with `claude login`
 - Optional: [Codex CLI](https://github.com/openai/codex) signed in with ChatGPT
