@@ -33,4 +33,12 @@ impl AppPaths {
     pub fn log_dir(&self) -> PathBuf {
         self.data_dir.join("logs")
     }
+
+    pub fn database_file(&self) -> PathBuf {
+        self.data_dir.join("data.db")
+    }
+
+    pub fn icon_cache_dir(&self) -> PathBuf {
+        self.data_dir.join("icons")
+    }
 }

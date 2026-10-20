@@ -4,6 +4,7 @@
   import ResultList from "./components/ResultList.svelte";
   import Footer from "./components/Footer.svelte";
   import { commands, events } from "./lib/bindings";
+  import { intentFor } from "./lib/keys";
   import { SearchStore } from "./lib/stores/search.svelte";
 
   const search = new SearchStore();
@@ -11,25 +12,22 @@
   let content: HTMLDivElement;
 
   function onkeydown(e: KeyboardEvent) {
-    switch (e.key) {
-      case "ArrowDown":
-        search.move(1);
+    const intent = intentFor(e);
+    if (!intent) return;
+    e.preventDefault();
+    switch (intent.type) {
+      case "move":
+        search.move(intent.delta);
         break;
-      case "ArrowUp":
-        search.move(-1);
+      case "activate":
+        void search.activate(intent.index, intent.admin);
         break;
-      case "Enter":
-        void search.activate();
-        break;
-      case "Escape":
+      case "escape":
         // First Esc clears the query; the next one hides the launcher.
         if (search.query) search.clear();
         else void commands.launcherHide();
         break;
-      default:
-        return;
     }
-    e.preventDefault();
   }
 
   onMount(() => {
@@ -70,7 +68,10 @@
         onselect={(i) => (search.selected = i)}
         onactivate={(i) => search.activate(i)}
       />
-      <Footer notice={search.notice} />
+      <Footer
+        notice={search.notice}
+        canElevate={search.current?.actions.includes("run_as_admin") ?? false}
+      />
     {/if}
   </div>
 </main>

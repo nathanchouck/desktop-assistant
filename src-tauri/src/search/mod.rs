@@ -1,7 +1,9 @@
 //! Search: providers produce results, the aggregator merges them.
 
+pub mod apps;
 pub mod commands;
 pub mod item;
+pub mod rank;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,6 +17,9 @@ pub use item::{Action, ItemKind, ResultItem};
 /// Time each provider gets per keystroke. Slower providers are skipped for
 /// that keystroke rather than holding up the results.
 pub const PROVIDER_BUDGET: Duration = Duration::from_millis(40);
+/// Providers return this many times the visible limit, so frecency can lift
+/// a weaker match that's opened often.
+const CANDIDATE_FACTOR: usize = 4;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SearchError {
@@ -51,18 +56,26 @@ impl Aggregator {
         self
     }
 
-    /// Runs every provider in parallel, merges by score, and always appends an
-    /// "Ask <provider>" row so unmatched text can go to the AI.
-    pub async fn search(&self, raw: &str, limit: usize, ai: ProviderId) -> Vec<ResultItem> {
+    /// Runs every provider in parallel, ranks the merged results (see
+    /// `rank.rs`), and always appends an "Ask <provider>" row so unmatched
+    /// text can go to the AI. `frecency` gives each id's open history.
+    pub async fn search(
+        &self,
+        raw: &str,
+        limit: usize,
+        ai: ProviderId,
+        frecency: &(dyn Fn(&str) -> f64 + Sync),
+    ) -> Vec<ResultItem> {
         let query = raw.trim();
         if query.is_empty() {
             return Vec::new();
         }
 
+        let pool = limit.saturating_mul(CANDIDATE_FACTOR);
         let runs = self.providers.iter().map(|p| {
             let p = Arc::clone(p);
             async move {
-                match tokio::time::timeout(self.budget, p.query(query, limit)).await {
+                match tokio::time::timeout(self.budget, p.query(query, pool)).await {
                     Ok(Ok(items)) => items,
                     Ok(Err(e)) => {
                         tracing::warn!("{e}");
@@ -77,7 +90,7 @@ impl Aggregator {
         });
 
         let mut items: Vec<ResultItem> = join_all(runs).await.into_iter().flatten().collect();
-        items.sort_by(|a, b| b.score.total_cmp(&a.score));
+        rank::rank(&mut items, query, frecency);
         items.truncate(limit);
         items.push(ask_ai_item(query, ai));
         items
@@ -94,6 +107,7 @@ fn ask_ai_item(query: &str, ai: ProviderId) -> ResultItem {
         kind: ItemKind::AskAi,
         title: format!("Ask {name}: {query}"),
         subtitle: "Tab".into(),
+        icon: None,
         score: 0.0,
         actions: vec![Action::AskAi],
     }
@@ -121,6 +135,7 @@ mod tests {
                     kind: ItemKind::Command,
                     title: format!("{} {i}", self.0),
                     subtitle: String::new(),
+                    icon: None,
                     score,
                     actions: vec![Action::Run],
                 })
@@ -143,6 +158,10 @@ mod tests {
         }
     }
 
+    fn no_history(_: &str) -> f64 {
+        0.0
+    }
+
     fn agg(providers: Vec<Arc<dyn SearchProvider>>) -> Aggregator {
         Aggregator::new(providers).with_budget(Duration::from_millis(50))
     }
@@ -154,7 +173,10 @@ mod tests {
     #[tokio::test]
     async fn empty_query_returns_nothing() {
         let a = agg(vec![Arc::new(Fixed("a", vec![1.0], Duration::ZERO))]);
-        assert!(a.search("   ", 8, ProviderId::Claude).await.is_empty());
+        assert!(a
+            .search("   ", 8, ProviderId::Claude, &no_history)
+            .await
+            .is_empty());
     }
 
     #[tokio::test]
@@ -163,7 +185,7 @@ mod tests {
             Arc::new(Fixed("a", vec![0.2, 0.9], Duration::ZERO)),
             Arc::new(Fixed("b", vec![0.5], Duration::ZERO)),
         ]);
-        let items = a.search("x", 8, ProviderId::Claude).await;
+        let items = a.search("x", 8, ProviderId::Claude, &no_history).await;
         assert_eq!(ids(&items), ["a:1", "b:0", "a:0", "ask-ai"]);
         assert_eq!(items[3].title, "Ask Claude: x");
     }
@@ -175,9 +197,17 @@ mod tests {
             vec![0.1, 0.2, 0.3],
             Duration::ZERO,
         ))]);
-        let items = a.search("x", 2, ProviderId::Chatgpt).await;
+        let items = a.search("x", 2, ProviderId::Chatgpt, &no_history).await;
         assert_eq!(ids(&items), ["a:2", "a:1", "ask-ai"]);
         assert_eq!(items[2].title, "Ask ChatGPT: x");
+    }
+
+    #[tokio::test]
+    async fn history_reorders_results() {
+        let a = agg(vec![Arc::new(Fixed("a", vec![0.9, 0.8], Duration::ZERO))]);
+        let used = |id: &str| if id == "a:1" { 20.0 } else { 0.0 };
+        let items = a.search("x", 8, ProviderId::Claude, &used).await;
+        assert_eq!(ids(&items), ["a:1", "a:0", "ask-ai"]);
     }
 
     #[tokio::test]
@@ -187,7 +217,7 @@ mod tests {
             Arc::new(Fixed("slow", vec![1.0], Duration::from_secs(5))),
             Arc::new(Failing),
         ]);
-        let items = a.search("x", 8, ProviderId::Claude).await;
+        let items = a.search("x", 8, ProviderId::Claude, &no_history).await;
         assert_eq!(ids(&items), ["fast:0", "ask-ai"]);
     }
 }

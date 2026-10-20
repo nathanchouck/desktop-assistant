@@ -87,9 +87,9 @@ desktop-assistant/
 │       ├── search/
 │       │   ├── mod.rs           # SearchProvider trait, Aggregator
 │       │   ├── item.rs          # ResultItem, ItemKind, Action
-│       │   ├── commands.rs      # built-in commands (settings, logs, quit)
-│       │   ├── rank.rs          # (M2) fuzzy score + frecency blend
-│       │   ├── apps.rs          # (M2) Start Menu .lnk + Store apps
+│       │   ├── commands.rs      # built-in commands (settings, logs, reindex, quit)
+│       │   ├── rank.rs          # final order: fuzzy + name bonuses + frecency
+│       │   ├── apps.rs          # app index, provider, Start Menu watcher
 │       │   └── everything.rs    # (M3) Everything SDK wrapper
 │       ├── ai/
 │       │   ├── mod.rs           # AiProvider trait, AiEvent, ProviderId, BillingMode
@@ -102,9 +102,12 @@ desktop-assistant/
 │       │   ├── shortcut.rs      # Ctrl+Space (configurable) via global-shortcut
 │       │   ├── tap.rs           # pure "lone Windows key tap" state machine
 │       │   └── win_key.rs       # Windows-only LL keyboard hook thread
-│       ├── store/               # (M2) SQLite: history, frecency, migrations
+│       ├── fuzzy.rs             # nucleo wrapper, scores normalized to 0..1
+│       ├── icons.rs             # icon cache (memory + disk PNG) + `icon` protocol
+│       ├── store/               # SQLite: frecency (later: history), migrations
 │       ├── integrations/        # (M6) mcp_registry.rs
-│       └── platform/windows/    # (M2) ShellExecute, icon extraction
+│       └── platform/            # `Shell`: list/launch apps, icons; stubs off Windows
+│           └── win/             # COM on STA threads: AppsFolder, ShellExecuteEx, icons
 ├── ui/
 │   ├── index.html
 │   ├── vite.config.ts           # also the Vitest config
@@ -119,7 +122,7 @@ desktop-assistant/
 └── .github/workflows/           # test.yml (linux), build.yml (windows installer)
 ```
 
-Rule: platform-specific code lives in `platform/windows/` or behind
+Rule: platform-specific code lives in `platform/win/` or behind
 `#[cfg(windows)]` inside `hotkey/` and `search/everything.rs`. Everything else
 compiles and tests on Linux, so CI and cloud sessions can run the test suite.
 
@@ -132,10 +135,10 @@ pub struct ResultItem {
     pub kind: ItemKind,      // App | File | Folder | Command | AskAi
     pub title: String,
     pub subtitle: String,    // path, description
+    pub icon: Option<String>,// key for the `icon` protocol; None = glyph by kind
     #[serde(skip)]
     pub score: f32,          // ordering only; never sent to the UI
     pub actions: Vec<Action>,// first = default (Enter)
-    // (M2) icon: resolved lazily; UI shows a placeholder first
 }
 
 // search/mod.rs
@@ -170,20 +173,55 @@ pub enum AiEvent {
    drops responses older than the latest `seq`.
 2. Prefix check first: `c ` forces Claude, `g ` forces ChatGPT, `>` lists
    commands. Forced AI skips search.
-3. The aggregator runs all providers in parallel with a 40 ms budget each.
+3. The aggregator runs all providers in parallel with a 40 ms budget each,
+   asking each for 4× the visible limit so frecency can lift weaker matches.
    Late providers are dropped for this keystroke, not awaited.
 4. Results are merged, ranked (`rank.rs`), and capped at 8 visible rows. An
    "Ask Claude: <query>" row is always appended last.
-5. Enter:
-   - If there are real matches, run the top item's default action.
-   - If the only row is Ask AI, send to the default AI provider.
-   - Tab always sends to AI. Shift+Tab switches provider.
-6. Launching an item records it in `store` (frecency), then hides the window.
+5. Keys (`ui/src/lib/keys.ts`):
+   - Enter runs the selected item's default action; Ctrl+1..9 runs row N.
+   - Ctrl+Shift+Enter runs as administrator (desktop apps only).
+   - If the only row is Ask AI, Enter sends to the default AI provider.
+   - Tab always sends to AI. Shift+Tab switches provider. (M4/M5)
+6. `item_activate(id, action)` → `actions.rs`: launch/run, record the open in
+   `store` (frecency), hide the window.
+
+### Apps
+
+- `AppIndex` holds the Start menu's "All apps" (the AppsFolder) in memory:
+  desktop programs and Store apps, each with a display name and a "target"
+  (its AppsFolder parsing name: an AppUserModelID or a path). Uninstallers,
+  readmes and web links are filtered out. The exe name becomes a keyword
+  when it isn't already in the name ("procexp64").
+- Indexed at startup, when either Start Menu folder changes (2 s debounce),
+  when the launcher opens and the index is over 30 minutes old (catches
+  Store installs), and on "Reindex Apps".
+- Launch = `ShellExecuteEx` on the `shell:AppsFolder\<target>` item, the same
+  path Start uses, with the `runas` verb for admin. Declining UAC isn't an
+  error.
+- All shell COM work runs on STA threads (`platform/win/sta.rs`): one
+  long-lived worker for listing and icons, a fresh thread per launch.
+
+### Icons
+
+Result rows reference icons by key (FNV-1a hash of the app target). The UI
+loads `convertFileSrc(key, "icon")`, served by the `icon` URI protocol from
+memory → `%LOCALAPPDATA%\desktop-assistant\icons\<key>.png` → extracted from
+the shell on demand (`IShellItemImageFactory`, 64 px). Failures are
+remembered for the session; Reindex clears the cache. Keys are validated as
+16 lowercase hex chars before touching the disk.
 
 ### Ranking
 
-`score = fuzzy_score * (1 + frecency_boost)`, where frecency decays with a
-two-week half-life. Exact prefix match on an app name is pinned to the top.
+`(fuzzy + name_bonus) × (1 + frecency_boost)`, sorted best first.
+
+- `fuzzy`: provider score in 0..1 (nucleo, normalized to the query matched
+  against itself).
+- `name_bonus`: +0.3 if the name starts with the query, +0.15 if any word does.
+- `frecency_boost`: 0..1 on a log scale of the decayed open count (two-week
+  half-life), maxing out around 20 recent opens.
+- Typing a result's whole name always ranks it first.
+
 Tune in `rank.rs` only; providers return raw fuzzy scores.
 
 ## AI flow

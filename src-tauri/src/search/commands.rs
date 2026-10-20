@@ -3,21 +3,32 @@
 use async_trait::async_trait;
 
 use super::{Action, ItemKind, ResultItem, SearchError, SearchProvider};
+use crate::fuzzy::FuzzyQuery;
+
+/// Keyword matches count a little less than the title.
+const KEYWORD_WEIGHT: f32 = 0.9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinCommand {
     OpenSettings,
     OpenLogFolder,
+    ReindexApps,
     Quit,
 }
 
 impl BuiltinCommand {
-    pub const ALL: [Self; 3] = [Self::OpenSettings, Self::OpenLogFolder, Self::Quit];
+    pub const ALL: [Self; 4] = [
+        Self::OpenSettings,
+        Self::OpenLogFolder,
+        Self::ReindexApps,
+        Self::Quit,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::OpenSettings => "cmd:settings",
             Self::OpenLogFolder => "cmd:logs",
+            Self::ReindexApps => "cmd:reindex",
             Self::Quit => "cmd:quit",
         }
     }
@@ -26,10 +37,11 @@ impl BuiltinCommand {
         Self::ALL.into_iter().find(|c| c.id() == id)
     }
 
-    fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
             Self::OpenSettings => "Open Settings",
             Self::OpenLogFolder => "Open Log Folder",
+            Self::ReindexApps => "Reindex Apps",
             Self::Quit => "Quit Desktop Assistant",
         }
     }
@@ -39,6 +51,7 @@ impl BuiltinCommand {
         match self {
             Self::OpenSettings => &["preferences", "config", "options"],
             Self::OpenLogFolder => &["debug", "logs"],
+            Self::ReindexApps => &["refresh", "rescan", "rebuild"],
             Self::Quit => &["exit", "close"],
         }
     }
@@ -53,37 +66,33 @@ impl SearchProvider for CommandProvider {
     }
 
     async fn query(&self, query: &str, limit: usize) -> Result<Vec<ResultItem>, SearchError> {
-        let q = query.to_lowercase();
+        let mut fuzzy = FuzzyQuery::new(query);
         let mut items: Vec<ResultItem> = BuiltinCommand::ALL
             .into_iter()
             .filter_map(|cmd| {
-                let score = score(&q, cmd.title(), cmd.keywords())?;
+                let title = fuzzy.score(cmd.title());
+                let keyword = cmd
+                    .keywords()
+                    .iter()
+                    .filter_map(|k| fuzzy.score(k))
+                    .map(|s| s * KEYWORD_WEIGHT)
+                    .reduce(f32::max);
+                let score = title.into_iter().chain(keyword).reduce(f32::max)?;
                 Some(ResultItem {
                     id: cmd.id().into(),
                     kind: ItemKind::Command,
                     title: cmd.title().into(),
                     subtitle: "Command".into(),
+                    icon: None,
                     score,
                     actions: vec![Action::Run],
                 })
             })
             .collect();
+        items.sort_by(|a, b| b.score.total_cmp(&a.score));
         items.truncate(limit);
         Ok(items)
     }
-}
-
-/// Simple word matching. Real fuzzy ranking arrives with the app launcher (M2).
-fn score(q: &str, title: &str, keywords: &[&str]) -> Option<f32> {
-    let title = title.to_lowercase();
-    if title.starts_with(q) {
-        return Some(0.9);
-    }
-    let words = title.split_whitespace().chain(keywords.iter().copied());
-    if words.into_iter().any(|w| w.starts_with(q)) {
-        return Some(0.7);
-    }
-    title.contains(q).then_some(0.4)
 }
 
 #[cfg(test)]
@@ -101,11 +110,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn matches_title_prefix_word_and_keyword() {
-        assert_eq!(titles("open s").await, ["Open Settings"]);
-        assert_eq!(titles("quit").await, ["Quit Desktop Assistant"]);
-        assert_eq!(titles("exit").await, ["Quit Desktop Assistant"]);
-        assert_eq!(titles("log").await, ["Open Log Folder"]);
+    async fn matches_title_and_keywords() {
+        assert_eq!(titles("open s").await[0], "Open Settings");
+        assert_eq!(titles("quit").await[0], "Quit Desktop Assistant");
+        assert_eq!(titles("exit").await[0], "Quit Desktop Assistant");
+        assert_eq!(titles("log").await[0], "Open Log Folder");
+        assert_eq!(titles("reindex").await[0], "Reindex Apps");
     }
 
     #[tokio::test]

@@ -1,8 +1,12 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
+use crate::icons::IconCache;
 use crate::paths::AppPaths;
+use crate::platform::Shell;
+use crate::search::apps::{AppIndex, AppProvider};
 use crate::search::{commands::CommandProvider, Aggregator};
 use crate::settings::Settings;
+use crate::store::Store;
 use crate::window::LauncherState;
 
 /// Shared app state, managed by Tauri and available to every command.
@@ -11,15 +15,37 @@ pub struct AppState {
     pub settings: RwLock<Settings>,
     pub search: Aggregator,
     pub launcher: LauncherState,
+    pub store: Arc<Store>,
+    pub shell: Arc<Shell>,
+    pub icons: Arc<IconCache>,
+    pub apps: Arc<AppIndex>,
+    /// Keeps the Start Menu watcher alive.
+    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
 }
 
 impl AppState {
     pub fn new(paths: AppPaths, settings: Settings) -> Self {
+        let store = Store::open(&paths.database_file()).unwrap_or_else(|e| {
+            tracing::error!("{e}; history won't be saved this session");
+            Store::in_memory()
+        });
+        let shell = Arc::new(Shell::new());
+        let icons = Arc::new(IconCache::new(paths.icon_cache_dir(), Arc::clone(&shell)));
+        let apps = Arc::new(AppIndex::new(Arc::clone(&shell), Arc::clone(&icons)));
+        let search = Aggregator::new(vec![
+            Arc::new(CommandProvider),
+            Arc::new(AppProvider::new(Arc::clone(&apps))),
+        ]);
         Self {
             paths,
             settings: RwLock::new(settings),
-            search: Aggregator::new(vec![Arc::new(CommandProvider)]),
+            search,
             launcher: LauncherState::default(),
+            store: Arc::new(store),
+            shell,
+            icons,
+            apps,
+            watcher: Mutex::new(None),
         }
     }
 

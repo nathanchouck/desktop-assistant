@@ -75,3 +75,16 @@ on for Windows 11. Win-up is never swallowed or replayed any more, which also
 removes the stuck-key risk D-011 had to guard against. Remaining gap: while
 an elevated (admin) window has focus, Windows doesn't send keys to our hook
 at all, so Start opens normally there.
+
+## D-013 Apps from the AppsFolder, not by scanning .lnk files
+The shell's AppsFolder is exactly Start's "All apps" list: desktop programs
+and Store apps together, with display names and a launchable id for each.
+Scanning Start Menu shortcuts would miss Store apps and need a second code
+path (package manager APIs) to cover them. Launching through the same
+AppsFolder item also handles Store apps, pinned AUMIDs and `runas` uniformly.
+
+## D-014 Icons over a custom protocol, not data URLs in results
+Results are sent on every keystroke; inlining base64 PNGs would bloat each
+response and re-decode images constantly. Rows carry a short key instead and
+the webview fetches `icon://` URLs, which it caches like any image. Icons are
+extracted lazily, so only rows that are actually shown cost anything.

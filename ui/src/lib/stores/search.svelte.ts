@@ -1,4 +1,4 @@
-import { commands, type ResultItem } from "../bindings";
+import { commands, type Action, type ResultItem } from "../bindings";
 import { LatestOnly } from "../latest";
 
 /** State for the search box and results list. */
@@ -10,6 +10,7 @@ export class SearchStore {
 
   /** Bar + results when there is text; just the bar otherwise. */
   expanded = $derived(this.query.trim().length > 0);
+  current = $derived<ResultItem | undefined>(this.items[this.selected]);
 
   #latest = new LatestOnly();
 
@@ -45,22 +46,26 @@ export class SearchStore {
     this.selected = (this.selected + delta + n) % n;
   }
 
-  /** Enter: run the selected item's default action. */
-  async activate(index = this.selected): Promise<void> {
+  /** Enter: run the item's default action, or "run as administrator". */
+  async activate(index = this.selected, admin = false): Promise<void> {
     const item = this.items[index];
     if (!item) return;
-    switch (item.kind) {
-      case "command": {
-        const res = await commands.commandRun(item.id);
-        if (res.status === "error") this.notice = res.error.message;
-        else this.clear();
-        break;
-      }
-      case "ask_ai":
-        this.notice = "Asking AI arrives in milestone 4.";
-        break;
-      default:
-        this.notice = `Opening ${item.kind} items arrives in a later milestone.`;
+    if (item.kind === "ask_ai") {
+      this.notice = "Asking AI arrives in milestone 4.";
+      return;
     }
+    const action = pickAction(item, admin);
+    if (!action) {
+      this.notice = `${item.title} can't run as administrator.`;
+      return;
+    }
+    const res = await commands.itemActivate(item.id, action);
+    if (res.status === "error") this.notice = res.error.message;
+    else this.clear();
   }
+}
+
+function pickAction(item: ResultItem, admin: boolean): Action | undefined {
+  if (admin) return item.actions.includes("run_as_admin") ? "run_as_admin" : undefined;
+  return item.actions[0];
 }

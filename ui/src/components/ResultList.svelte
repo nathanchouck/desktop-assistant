@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ResultItem } from "../lib/bindings";
+  import ItemIcon from "./ItemIcon.svelte";
 
   interface Props {
     items: ResultItem[];
@@ -9,14 +10,6 @@
   }
   let { items, selected, onselect, onactivate }: Props = $props();
   let list: HTMLUListElement;
-
-  const badge: Record<ResultItem["kind"], string> = {
-    app: "App",
-    file: "File",
-    folder: "Folder",
-    command: "Cmd",
-    ask_ai: "AI",
-  };
 
   // Keep the highlighted row visible when there are more rows than fit.
   $effect(() => {
@@ -36,9 +29,13 @@
       onmousemove={() => onselect(i)}
       onclick={() => onactivate(i)}
     >
-      <span class="badge" class:ai={item.kind === "ask_ai"}>{badge[item.kind]}</span>
+      <ItemIcon kind={item.kind} icon={item.icon} />
       <span class="title">{item.title}</span>
-      <span class="subtitle">{item.subtitle}</span>
+      {#if i === selected || i >= 9}
+        <span class="subtitle">{item.subtitle}</span>
+      {:else}
+        <span class="subtitle">Ctrl {i + 1}</span>
+      {/if}
     </li>
   {/each}
 </ul>
@@ -66,16 +63,6 @@
   li.selected {
     background: var(--selection-sheen), var(--selection);
     border-color: var(--selection-border);
-  }
-  .badge {
-    flex: none;
-    width: 44px;
-    text-align: center;
-    font-size: var(--font-size-sub);
-    color: var(--text-muted);
-  }
-  .badge.ai {
-    color: var(--accent);
   }
   .title {
     flex: 1;

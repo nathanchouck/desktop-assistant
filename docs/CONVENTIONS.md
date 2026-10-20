@@ -13,7 +13,7 @@ How code in this repo should look, and the step-by-step for common changes.
 | `cargo test --manifest-path src-tauri/Cargo.toml` | Rust tests |
 | `npx tauri build` | release installer (on Windows) |
 | `npx tauri icon src-tauri/icons/app-icon.png -o src-tauri/icons` | regenerate icons |
-| `cargo clippy --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets` | lint the Windows-only code from Linux (`rustup target add x86_64-pc-windows-msvc` once) |
+| `scripts/check-windows.sh` | lint the Windows build from Linux (`rustup target add x86_64-pc-windows-msvc` once); fakes the C compiler for bundled SQLite since lint never links |
 
 Debugging tips:
 - `DA_KEEP_OPEN=1` stops the launcher hiding when it loses focus (for devtools).

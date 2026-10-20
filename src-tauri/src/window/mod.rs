@@ -27,6 +27,9 @@ const TOP_FRACTION: f64 = 0.22;
 /// hide-on-blur fires just before the toggle. A toggle this soon after a hide
 /// is treated as "close", not "reopen".
 const REOPEN_GUARD: Duration = Duration::from_millis(250);
+/// Opening the launcher re-reads the app list if it's older than this, to
+/// catch Store installs (which don't touch the watched Start Menu folders).
+const APPS_MAX_AGE: Duration = Duration::from_secs(30 * 60);
 
 /// Window facts other modules need.
 pub struct LauncherState {
@@ -97,9 +100,13 @@ pub fn show(app: &AppHandle, started: Instant) {
         tracing::warn!("launcher window missing");
         return;
     };
-    let height = app
-        .try_state::<AppState>()
+    let state = app.try_state::<AppState>();
+    let height = state
+        .as_ref()
         .map_or(DEFAULT_HEIGHT, |s| s.launcher.height());
+    if let Some(state) = &state {
+        state.apps.refresh_if_stale(APPS_MAX_AGE);
+    }
     if let Err(e) = place_on_cursor_monitor(app, &window, height) {
         tracing::debug!("could not position launcher: {e}");
     }

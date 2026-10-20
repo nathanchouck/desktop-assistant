@@ -20,6 +20,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &item(BuiltinCommand::OpenSettings.id(), "Settings")?,
             &item(BuiltinCommand::OpenLogFolder.id(), "Open Log Folder")?,
+            &item(BuiltinCommand::ReindexApps.id(), "Reindex Apps")?,
             &PredefinedMenuItem::separator(app)?,
             &item(BuiltinCommand::Quit.id(), "Quit")?,
         ],

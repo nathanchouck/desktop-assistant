@@ -13,6 +13,10 @@ pub enum AppError {
     Open { path: String, reason: String },
     #[error("the app is still starting up")]
     NotReady,
+    #[error("could not open the app: {0}")]
+    Launch(String),
+    #[error("unknown result: {0}")]
+    UnknownItem(String),
 }
 
 /// What the UI receives when a command fails. Keeps internal error types

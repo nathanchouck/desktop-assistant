@@ -19,7 +19,7 @@ Tick boxes as work lands.
 - [x] Acrylic via `window-vibrancy`; opaque fallback when unavailable
 - [x] Glass design tokens + SearchBar + ResultList + footer with key hints
 - [x] Ctrl+Space global shortcut toggles the window
-- [x] **Windows-key tap override** (`WH_KEYBOARD_LL`, combos pass through, masked Win-up to suppress Start)
+- [x] **Windows-key tap override** (`WH_KEYBOARD_LL`, combos pass through, mask key on Win-down keeps Start closed; D-012)
 - [x] Hide on blur, on Esc (first Esc clears), and after launching
 - [x] Tray icon: Open, Settings, Open Log Folder, Quit (Reindex moves to M2)
 - [x] Single-instance guard (second launch shows the running launcher)
@@ -28,22 +28,30 @@ Tick boxes as work lands.
 - [ ] Measure hotkey-to-visible (< 50 ms): logged at debug level; needs a number from a real machine
 
 Check on a real Windows machine:
-- [ ] Glass looks right in light and dark mode (tune `--surface` in `tokens.css`)
-- [ ] Windows key tap opens the launcher and Start stays closed
-- [ ] Win+E, Win+V, Win+Shift+S, Win+L still work
-- [ ] Launcher takes keyboard focus when opened from the Windows key and Ctrl+Space
-- [ ] Ctrl+Space doesn't clash with your keyboard layout's input switching
+- [x] Glass looks right in light and dark mode (tune `--surface` in `tokens.css`)
+- [x] Windows key tap opens the launcher
+- [ ] Start/search stays closed every time (was slipping through now and then; fixed per D-012, re-check)
+- [x] Win+E, Win+V, Win+Shift+S, Win+L still work
+- [x] Launcher takes keyboard focus when opened from the Windows key and Ctrl+Space
+- [x] Ctrl+Space doesn't clash with your keyboard layout's input switching
 
-## M2 App launcher
-- [ ] Tray menu: Reindex
-- [ ] Index Start Menu `.lnk` (user + all users) and Store apps (`shell:AppsFolder`)
-- [ ] Icon extraction + on-disk icon cache
-- [ ] `nucleo` fuzzy matching, acronyms ("vsc" → Visual Studio Code)
-- [ ] SQLite store + frecency recording
-- [ ] Ranker: fuzzy × frecency, exact-prefix pin
-- [ ] Launch via ShellExecute; "Run as administrator" secondary action
-- [ ] Re-index when Start Menu folders change (file watcher)
-- [ ] Keyboard nav: ↑/↓, Enter, Ctrl+1..8, Esc
+## M2 App launcher ✅ (pending on-device check)
+- [x] Tray menu + built-in command: Reindex Apps
+- [x] Index the Start menu's "All apps" (`shell:AppsFolder`): desktop programs and Store apps
+- [x] Icon extraction + on-disk icon cache, served via an `icon` protocol
+- [x] `nucleo` fuzzy matching, acronyms ("vsc" → Visual Studio Code), exe-name keywords
+- [x] SQLite store + frecency recording
+- [x] Ranker: fuzzy + name-prefix bonus × frecency; exact name always first
+- [x] Launch via ShellExecuteEx; Ctrl+Shift+Enter runs as administrator
+- [x] Re-index when Start Menu folders change (watcher), and when stale on open
+- [x] Keyboard nav: ↑/↓, Enter, Ctrl+1..9, Esc
+
+Check on a real Windows machine:
+- [ ] Your apps all show up (and no junk like uninstallers)
+- [ ] Icons look sharp in light and dark mode
+- [ ] Launched apps come to the front
+- [ ] Ctrl+Shift+Enter shows the UAC prompt for desktop apps
+- [ ] Apps you open often move up within a day of use
 
 ## M3 File search (Everything)
 - [ ] Everything SDK wrapper (64-bit DLL bundled), in `spawn_blocking`

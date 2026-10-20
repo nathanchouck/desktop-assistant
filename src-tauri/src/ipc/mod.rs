@@ -11,7 +11,7 @@ use tauri_specta::{collect_commands, collect_events, Builder};
 use crate::actions;
 use crate::ai::AiEvent;
 use crate::error::IpcError;
-use crate::search::{commands::BuiltinCommand, ResultItem};
+use crate::search::{Action, ResultItem};
 use crate::settings::Settings;
 use crate::state::AppState;
 use crate::window;
@@ -58,20 +58,23 @@ async fn search_query(
 ) -> Result<SearchResponse, IpcError> {
     let settings = state.settings();
     let limit = settings.search.max_results as usize;
+    let store = &state.store;
     let items = state
         .search
-        .search(&query, limit, settings.ai.default_provider)
+        .search(&query, limit, settings.ai.default_provider, &|id| {
+            store.frecency(id)
+        })
         .await;
     Ok(SearchResponse { seq, items })
 }
 
+/// Runs an action on a result (open an app, run a command, ...).
 #[tauri::command]
 #[specta::specta]
-fn command_run(app: AppHandle, id: String) -> Result<(), IpcError> {
-    let cmd = BuiltinCommand::from_id(&id).ok_or_else(|| IpcError {
-        message: format!("unknown command: {id}"),
-    })?;
-    actions::run_builtin(&app, cmd).map_err(Into::into)
+async fn item_activate(app: AppHandle, id: String, action: Action) -> Result<(), IpcError> {
+    actions::activate(&app, &id, action)
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -97,7 +100,7 @@ pub fn builder() -> Builder<Wry> {
             app_info,
             settings_get,
             search_query,
-            command_run,
+            item_activate,
             launcher_hide,
             launcher_set_height
         ])

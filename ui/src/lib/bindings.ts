@@ -10,7 +10,8 @@ export const commands = {
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
 	settingsGet: () => __TAURI_INVOKE<Settings>("settings_get"),
 	searchQuery: (query: string, seq: number) => typedError<SearchResponse, IpcError>(__TAURI_INVOKE("search_query", { query, seq })),
-	commandRun: (id: string) => typedError<null, IpcError>(__TAURI_INVOKE("command_run", { id })),
+	/**  Runs an action on a result (open an app, run a command, ...). */
+	itemActivate: (id: string, action: Action) => typedError<null, IpcError>(__TAURI_INVOKE("item_activate", { id, action })),
 	launcherHide: () => __TAURI_INVOKE<void>("launcher_hide"),
 	/**  The UI reports its content height so the window can fit it. */
 	launcherSetHeight: (height: number) => __TAURI_INVOKE<void>("launcher_set_height", { height }),
@@ -98,6 +99,11 @@ export type ResultItem = {
 	kind: ItemKind,
 	title: string,
 	subtitle: string,
+	/**
+	 *  Key for the `icon` protocol, if this result has a real icon. Rows
+	 *  without one show a glyph for their kind.
+	 */
+	icon: string | null,
 	actions: Action[],
 };
 

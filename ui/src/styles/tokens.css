@@ -42,6 +42,7 @@
   /* Layout: the results area is a fixed height so the window only changes
    * size between "search bar only" and "bar + results". */
   --row-height: 38px;
+  --icon-size: 24px;
   --results-rows: 9;
   --footer-height: 34px;
 

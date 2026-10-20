@@ -11,9 +11,10 @@ not meant to be distributed.
 
 ## Status
 
-Milestones 0–1 done: a glass launcher that opens with Ctrl+Space or a tap of
-the Windows key, lives in the tray, and searches built-in commands. Anything
-else shows an "Ask Claude" row. Next up is M2 (finding and launching apps).
+Milestones 0–2 done: a glass launcher that opens with Ctrl+Space or a tap of
+the Windows key, finds and launches your installed apps (with icons, fuzzy
+matching, and ranking by what you use), and lives in the tray. Anything else
+shows an "Ask Claude" row. Next up is M3 (file search with Everything).
 See the roadmap.
 
 ## Getting the app

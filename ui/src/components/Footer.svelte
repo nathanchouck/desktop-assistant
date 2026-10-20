@@ -2,14 +2,16 @@
   interface Props {
     /** Shown instead of the key hints when set (errors, "coming soon"). */
     notice: string | null;
+    /** The selected result can run as administrator. */
+    canElevate: boolean;
   }
-  let { notice }: Props = $props();
+  let { notice, canElevate }: Props = $props();
 
-  const hints: [string, string][] = [
-    ["↑↓", "Navigate"],
+  const hints = $derived<[string, string][]>([
     ["↵", "Open"],
+    ...(canElevate ? ([["Ctrl ⇧ ↵", "Admin"]] as [string, string][]) : []),
     ["Esc", "Clear"],
-  ];
+  ]);
 </script>
 
 <footer>

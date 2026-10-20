@@ -4,15 +4,20 @@
 pub mod actions;
 pub mod ai;
 pub mod error;
+pub mod fuzzy;
 pub mod hotkey;
+pub mod icons;
 pub mod ipc;
 pub mod logging;
 pub mod paths;
+pub mod platform;
 pub mod search;
 pub mod settings;
 pub mod state;
+pub mod store;
 pub mod window;
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use tauri::{AppHandle, Manager};
@@ -53,6 +58,19 @@ pub fn run() {
             None,
         ))
         .invoke_handler(builder.invoke_handler())
+        // App icons for the UI: <img src={convertFileSrc(key, "icon")}>.
+        .register_asynchronous_uri_scheme_protocol("icon", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let key = request.uri().path().trim_start_matches('/').to_owned();
+            tauri::async_runtime::spawn(async move {
+                let icons = app.try_state::<AppState>().map(|s| Arc::clone(&s.icons));
+                let png = match icons {
+                    Some(icons) => icons.png(&key).await,
+                    None => None,
+                };
+                responder.respond(icons::protocol_response(png));
+            });
+        })
         .setup(move |app| {
             builder.mount_events(app);
             app.manage(state);
@@ -66,6 +84,7 @@ pub fn run() {
             }
             hotkey::init(handle, &settings.hotkeys);
             sync_launch_at_login(handle, settings.general.launch_at_login);
+            start_app_index(handle);
 
             // Handy while developing; release builds start hidden in the tray.
             if cfg!(debug_assertions) {
@@ -76,6 +95,18 @@ pub fn run() {
         .on_window_event(window::on_window_event)
         .run(tauri::generate_context!())
         .expect("error while running Desktop Assistant");
+}
+
+/// Indexes installed apps in the background and re-indexes when the Start
+/// Menu changes.
+fn start_app_index(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    state.apps.refresh_in_background();
+    let watcher = search::apps::watch_start_menu(Arc::clone(&state.apps));
+    match state.watcher.lock() {
+        Ok(mut slot) => *slot = watcher,
+        Err(_) => tracing::warn!("could not keep the Start Menu watcher"),
+    };
 }
 
 /// Makes "start with Windows" match the setting. Skipped in debug builds so

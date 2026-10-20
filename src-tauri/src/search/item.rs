@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -12,7 +12,7 @@ pub enum ItemKind {
 
 /// Something the user can do with a result. The first action is the default
 /// (Enter); the rest appear in the action menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     Open,
@@ -32,6 +32,9 @@ pub struct ResultItem {
     pub kind: ItemKind,
     pub title: String,
     pub subtitle: String,
+    /// Key for the `icon` protocol, if this result has a real icon. Rows
+    /// without one show a glyph for their kind.
+    pub icon: Option<String>,
     /// Match score in 0..=1 from the provider; the ranker adjusts it. Used
     /// only for ordering in Rust, so it is not sent to the UI.
     #[serde(skip)]
