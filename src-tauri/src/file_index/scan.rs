@@ -108,13 +108,14 @@ mod tests {
 
         let rules = Rules::new(&["node_modules".into()]);
         let tree = walk(root, &rules, usize::MAX);
+        // Join segment by segment so keys use the platform separator, like
+        // the index does (a "a/b" literal would mix separators on Windows).
         let key = |p: &str| {
-            let path = if p.is_empty() {
-                root.to_path_buf()
-            } else {
-                root.join(p)
-            };
-            path.to_string_lossy().into_owned()
+            p.split('/')
+                .filter(|s| !s.is_empty())
+                .fold(root.to_path_buf(), |path, segment| path.join(segment))
+                .to_string_lossy()
+                .into_owned()
         };
 
         assert_eq!(names(&tree[&key("")]), ["docs", "site"]);
