@@ -3,6 +3,7 @@
   import SearchBar from "./components/SearchBar.svelte";
   import ResultList from "./components/ResultList.svelte";
   import ChatPane from "./components/ChatPane.svelte";
+  import SettingsPane from "./components/SettingsPane.svelte";
   import Footer from "./components/Footer.svelte";
   import { commands, events, type IndexStatus } from "./lib/bindings";
   import { hasClaudePrefix, looksLikeAQuestion, modelLabel, stripClaudePrefix } from "./lib/chat";
@@ -10,17 +11,26 @@
   import { chatHints, chatIntentFor, intentFor, searchHints } from "./lib/keys";
   import { ChatStore } from "./lib/stores/chat.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
+  import { SettingsStore } from "./lib/stores/settings.svelte";
+  import { tick } from "svelte";
 
   /** A finished chat is put away if the launcher stayed hidden this long. */
   const CHAT_RESET_MS = 5 * 60 * 1000;
 
   const chat = new ChatStore();
-  const search = new SearchStore((text) => {
-    search.clear();
-    void chat.ask(text);
-  });
-  let bar: SearchBar;
+  const settings = new SettingsStore();
+  const search = new SearchStore(
+    (text) => {
+      search.clear();
+      void chat.ask(text);
+    },
+    () => void openSettings(),
+  );
+  let bar: SearchBar | undefined = $state();
   let pane: ChatPane | undefined = $state();
+  let settingsPane: SettingsPane | undefined = $state();
+  /** The settings menu is showing (over search or a chat). */
+  let settingsOpen = $state(false);
   let content: HTMLDivElement;
   let hiddenAt = 0;
   let indexStatus = $state<IndexStatus | null>(null);
@@ -36,17 +46,34 @@
     }
   });
 
-  const expanded = $derived(chat.active || search.expanded);
+  const expanded = $derived(settingsOpen || chat.active || search.expanded);
   const notice = $derived(
-    chat.active
-      ? `Claude${chat.transcript.model ? ` · ${modelLabel(chat.transcript.model)}` : ""}`
-      : (search.notice ?? indexNotice(indexStatus)),
+    settingsOpen
+      ? "Changes are saved as you make them"
+      : chat.active
+        ? `Claude${chat.transcript.model ? ` · ${modelLabel(chat.transcript.model)}` : ""}`
+        : (search.notice ?? indexNotice(indexStatus)),
   );
   const hints = $derived(
-    chat.active
-      ? chatHints({ running: chat.transcript.running, pending: chat.pending !== undefined })
-      : searchHints(search.current?.actions ?? []),
+    settingsOpen
+      ? ([["Esc", "Close"]] as [string, string][])
+      : chat.active
+        ? chatHints({ running: chat.transcript.running, pending: chat.pending !== undefined })
+        : searchHints(search.current?.actions ?? []),
   );
+
+  async function openSettings() {
+    await settings.load();
+    settingsOpen = true;
+    await tick();
+    settingsPane?.focus();
+  }
+
+  async function closeSettings() {
+    settingsOpen = false;
+    await tick();
+    bar?.focusAndSelect();
+  }
 
   function onSearchKey(e: KeyboardEvent) {
     const intent = intentFor(e);
@@ -66,6 +93,9 @@
         break;
       case "ask":
         search.ask(hasClaudePrefix(search.query) ? stripClaudePrefix(search.query) : search.query);
+        break;
+      case "settings":
+        void openSettings();
         break;
       case "escape":
         // First Esc clears the query; the next one hides the launcher.
@@ -105,7 +135,8 @@
   function onShown() {
     const idle = Date.now() - hiddenAt > CHAT_RESET_MS;
     if (chat.active && idle && !chat.transcript.running && !chat.pending) void chat.close();
-    bar.focusAndSelect();
+    if (settingsOpen) settingsPane?.focus();
+    else bar?.focusAndSelect();
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
   }
 
@@ -129,6 +160,7 @@
       events.aiStream.listen((e) => chat.onEvent(e.payload)),
       events.fileIndexChanged.listen((e) => (indexStatus = e.payload.status)),
       events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
+      events.showSettings.listen(() => void openSettings()),
     ];
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
 
@@ -142,17 +174,32 @@
 
 <main>
   <div class="content" bind:this={content}>
-    <!-- One input for both modes: a search, or a follow-up while chatting. -->
-    <SearchBar
-      bind:this={bar}
-      chat={chat.active}
-      value={chat.active ? chat.draft : search.query}
-      activeIndex={!chat.active && search.items.length > 0 ? search.selected : null}
-      oninput={(v) => (chat.active ? (chat.draft = v) : search.setQuery(v))}
-      onkeydown={(e) => (chat.active ? onChatKey(e) : onSearchKey(e))}
-    />
+    {#if settingsOpen}
+      <div class="settings-head">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <line x1="4" y1="7" x2="20" y2="7" />
+          <circle cx="9" cy="7" r="2.4" />
+          <line x1="4" y1="17" x2="20" y2="17" />
+          <circle cx="15" cy="17" r="2.4" />
+        </svg>
+        <span>Settings</span>
+        <button type="button" onclick={() => void closeSettings()}>Done</button>
+      </div>
+    {:else}
+      <!-- One input for both modes: a search, or a follow-up while chatting. -->
+      <SearchBar
+        bind:this={bar}
+        chat={chat.active}
+        value={chat.active ? chat.draft : search.query}
+        activeIndex={!chat.active && search.items.length > 0 ? search.selected : null}
+        oninput={(v) => (chat.active ? (chat.draft = v) : search.setQuery(v))}
+        onkeydown={(e) => (chat.active ? onChatKey(e) : onSearchKey(e))}
+      />
+    {/if}
     {#if expanded}
-      {#if chat.active}
+      {#if settingsOpen}
+        <SettingsPane bind:this={settingsPane} store={settings} onclose={() => void closeSettings()} />
+      {:else if chat.active}
         <ChatPane bind:this={pane} transcript={chat.transcript} onanswer={(allow) => chat.answer(allow)} />
       {:else}
         <ResultList
@@ -181,5 +228,33 @@
   .content {
     display: flex;
     flex-direction: column;
+  }
+  .settings-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    font-size: var(--font-size-input);
+  }
+  .settings-head span {
+    flex: 1;
+  }
+  .settings-head .icon {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    fill: var(--text-muted);
+    stroke: var(--text-muted);
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .settings-head button {
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--keycap-border);
+    border-radius: var(--radius-keycap);
+    background: var(--keycap);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--font-size-sub);
   }
 </style>

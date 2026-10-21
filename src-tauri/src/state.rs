@@ -31,6 +31,9 @@ pub struct ToolFiles {
 pub struct AppState {
     pub paths: AppPaths,
     pub settings: RwLock<Settings>,
+    /// The search settings the running file index was built with; others
+    /// apply after a restart.
+    pub startup_search: crate::settings::SearchSettings,
     pub search: Aggregator,
     pub launcher: LauncherState,
     pub store: Arc<Store>,
@@ -93,6 +96,7 @@ impl AppState {
             desktop: Arc::new(DesktopTracker::new()),
             sent_context: Mutex::new(None),
             paths,
+            startup_search: settings.search.clone(),
             settings: RwLock::new(settings),
             search,
             launcher: LauncherState::default(),

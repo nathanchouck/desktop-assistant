@@ -25,8 +25,10 @@ folder and the selected files, so "move these into a folder called Taxes"
 just works. It can also search with the launcher's index, open or reveal
 files, and (each time you approve) look at a screenshot of your window.
 Needs [Claude Code](https://code.claude.com) installed and signed in; the
-launcher offers to fix either if not. Next: ChatGPT through Codex (M5). See
-the roadmap.
+launcher offers to fix either if not.
+
+Settings: type "settings" (or press Ctrl+,) in the launcher. Changes save as
+you make them. Next: ChatGPT through Codex (M5). See the roadmap.
 
 ## Getting the app
 

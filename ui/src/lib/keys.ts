@@ -7,6 +7,8 @@ export type Intent =
   | { type: "activate"; index?: number; action?: Action }
   /** Send the query to the AI, whatever the results. */
   | { type: "ask" }
+  /** Open the settings menu (Ctrl+,). */
+  | { type: "settings" }
   | { type: "escape" };
 
 interface KeyLike {
@@ -35,6 +37,7 @@ export function intentFor(e: KeyLike): Intent | null {
     case "Escape":
       return { type: "escape" };
   }
+  if (ctrlOnly && e.key === ",") return { type: "settings" };
   if (ctrlShift && e.key.toLowerCase() === "c") {
     return { type: "activate", action: "copy_path" };
   }
@@ -111,4 +114,33 @@ export function chatIntentFor(e: KeyLike): ChatIntent | null {
     }
   }
   return null;
+}
+
+interface ComboLike {
+  code: string;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+}
+
+const MODIFIER_CODES = /^(Control|Alt|Shift|Meta|OS)(Left|Right)?$/;
+
+/**
+ * The shortcut a key press makes, in the form the settings file uses
+ * ("Ctrl+Space", "Alt+Shift+K"). `null` while only modifiers are down, or
+ * for a plain key without modifiers (except F1 to F24), which would be
+ * typed everywhere else.
+ */
+export function shortcutFromEvent(e: ComboLike): string | null {
+  if (MODIFIER_CODES.test(e.code)) return null;
+  const key = e.code.replace(/^Key(?=[A-Z]$)/, "").replace(/^Digit(?=\d$)/, "");
+  const mods = [
+    e.ctrlKey && "Ctrl",
+    e.altKey && "Alt",
+    e.shiftKey && "Shift",
+    e.metaKey && "Super",
+  ].filter((m): m is string => Boolean(m));
+  if (mods.length === 0 && !/^F([1-9]|1\d|2[0-4])$/.test(key)) return null;
+  return [...mods, key].join("+");
 }

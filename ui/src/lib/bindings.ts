@@ -9,6 +9,20 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
 	settingsGet: () => __TAURI_INVOKE<Settings>("settings_get"),
+	/**
+	 *  Saves settings from the settings menu and applies what can change live:
+	 *  the shortcut, the Windows key, starting at login. Claude and search
+	 *  options are read fresh each time, so they apply at once too.
+	 */
+	settingsSet: (settings: Settings) => typedError<SettingsSaved, IpcError>(__TAURI_INVOKE("settings_set", { settings })),
+	appStatus: () => typedError<AppStatus, IpcError>(__TAURI_INVOKE("app_status")),
+	/**  Restarts the launcher (to re-index with new folders). */
+	appRestart: () => typedError<null, IpcError>(__TAURI_INVOKE("app_restart")),
+	/**
+	 *  Pauses the launcher's shortcut while the settings menu records a new one,
+	 *  so pressing the old one doesn't hide the launcher.
+	 */
+	shortcutPause: (paused: boolean) => __TAURI_INVOKE<void>("shortcut_pause", { paused }),
 	searchQuery: (query: string, seq: number) => typedError<SearchResponse, IpcError>(__TAURI_INVOKE("search_query", { query, seq })),
 	/**  How far along the built-in file index is (for the footer). */
 	fileIndexStatus: () => __TAURI_INVOKE<IndexStatus>("file_index_status"),
@@ -49,6 +63,7 @@ export const events = {
 	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
+	showSettings: makeEvent<ShowSettings>("show-settings"),
 };
 
 /* Types */
@@ -94,6 +109,15 @@ export type AppInfo = {
 	log_dir: string,
 	/**  True when the OS blur is active behind the window. */
 	glass: boolean,
+};
+
+/**  What the settings menu shows under "Status". */
+export type AppStatus = {
+	claude: ClaudeStatus,
+	file_index: IndexStatus,
+	/**  Everything is running, so file search covers every drive. */
+	everything: boolean,
+	win_key: WinKeyStatus,
 };
 
 /**  Who approves actions that change things (writing files, running commands). */
@@ -146,6 +170,14 @@ export type ClaudeSettings = {
 	 */
 	warm_start: boolean,
 };
+
+/**  Whether Claude Code can answer. */
+export type ClaudeStatus = "ready" | "not_installed" | "signed_out" | 
+/**
+ *  The check didn't work (timed out, odd output): assume it can answer
+ *  and let a real error say otherwise.
+ */
+"unknown";
 
 /**
  *  The file index's progress changed (sent a few times a second while it
@@ -251,6 +283,27 @@ export type Settings = {
 	ai: AiSettings,
 	search: SearchSettings,
 	general: GeneralSettings,
+};
+
+/**  The result of saving settings. */
+export type SettingsSaved = {
+	/**
+	 *  Index folders or exclusions differ from what the running index uses;
+	 *  they apply after a restart.
+	 */
+	restart_needed: boolean,
+};
+
+/**  Open the settings menu (from the tray). */
+export type ShowSettings = null;
+
+/**  The Windows key override, for the settings menu. */
+export type WinKeyStatus = {
+	enabled: boolean,
+	/**  The keyboard hook is installed. */
+	running: boolean,
+	/**  Seconds since the hook last saw a Windows key press. */
+	last_seen_secs: number | null,
 };
 
 /* Tauri Specta runtime */

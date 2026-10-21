@@ -96,7 +96,7 @@ Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
 - [x] **Spike D-007**: inline Approve / Deny for write/send/run tools (D-018)
 - [x] Moving/renaming/deleting files asks first (Approve / Deny in the popup); `approvals = "auto"` hands routine ones to Claude Code's auto mode
 - [x] Window grows into chat mode; shrinks back on new search
-- [x] Windows key: a lone tap is hidden from Windows entirely, so Start can't open (D-022)
+- [x] Windows key: a lone tap is hidden from Windows entirely, so Start can't open (D-022); the hook re-installs itself every 5 s (D-025)
 
 Check on a real Windows machine:
 - [ ] claude.ai connectors (Gmail, Calendar, Drive) work from the launcher: "what's on my calendar today?"
@@ -114,12 +114,14 @@ Check on a real Windows machine:
 - [ ] Approvals / sandbox mapping (per D-007)
 
 ## M6 Settings & integrations
-- [ ] Settings window (glass, same tokens): hotkeys, Win-key override toggle, default provider, billing mode per provider, exclusions, startup
-- [ ] Apply settings live (today hotkeys and file exclusions are read at startup)
-- [ ] Hotkey recorder control
+- [x] Settings menu in the launcher (D-026): shortcut, Windows key, start at login, Claude model / approvals / screen context / warm start / billing, index folders, exclusions, results shown
+- [x] Apply settings live (index folders and exclusions offer a restart instead)
+- [x] Hotkey recorder control
+- [ ] Default provider and ChatGPT billing in the menu (with M5)
 - [ ] API keys stored in Credential Manager
 - [ ] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs
-- [ ] Status page: Everything / Claude / Codex health, index counts, log folder link
+- [x] Status lines in settings: Claude Code sign-in, index count or Everything, Windows key hook
+- [ ] Codex health (with M5)
 - [ ] Settings file in a synced folder (OneDrive) option
 
 ## M7 Polish & reliability

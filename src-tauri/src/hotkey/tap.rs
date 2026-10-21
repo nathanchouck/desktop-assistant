@@ -81,6 +81,11 @@ pub struct TapDetector {
 }
 
 impl TapDetector {
+    /// No Windows key is held (safe to re-install the hook).
+    pub fn is_idle(&self) -> bool {
+        !self.down.iter().any(|&d| d)
+    }
+
     pub fn on_event(&mut self, event: KeyEvent) -> Verdict {
         match event {
             KeyEvent::WinDown {
@@ -260,6 +265,16 @@ mod tests {
         let v = run(&[down(Left), E, up(Left), down(Left), up(Left)]);
         assert_eq!(v[2], MaskedRelease);
         assert_eq!(&v[3..], [Swallow, Tap]);
+    }
+
+    #[test]
+    fn idle_only_when_no_windows_key_is_held() {
+        let mut d = TapDetector::default();
+        assert!(d.is_idle());
+        d.on_event(down(Left));
+        assert!(!d.is_idle());
+        d.on_event(up(Left));
+        assert!(d.is_idle());
     }
 
     #[test]

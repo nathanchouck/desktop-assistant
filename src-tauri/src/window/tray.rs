@@ -19,6 +19,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &item(OPEN_ID, "Open Launcher")?,
             &PredefinedMenuItem::separator(app)?,
             &item(BuiltinCommand::OpenSettings.id(), "Settings")?,
+            &item(BuiltinCommand::OpenSettingsFile.id(), "Open Settings File")?,
             &item(BuiltinCommand::OpenLogFolder.id(), "Open Log Folder")?,
             &item(BuiltinCommand::ReindexApps.id(), "Reindex Apps")?,
             &PredefinedMenuItem::separator(app)?,

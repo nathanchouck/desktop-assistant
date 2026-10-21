@@ -237,7 +237,7 @@ fn start_file_index_unless_everything(app: &AppHandle) {
 
 /// Makes "start with Windows" match the setting. Skipped in debug builds so
 /// a dev binary never gets registered to run at login.
-fn sync_launch_at_login(app: &AppHandle, enabled: bool) {
+pub(crate) fn sync_launch_at_login(app: &AppHandle, enabled: bool) {
     use tauri_plugin_autostart::ManagerExt;
 
     if cfg!(debug_assertions) {

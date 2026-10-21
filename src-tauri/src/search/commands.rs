@@ -11,26 +11,32 @@ const KEYWORD_WEIGHT: f32 = 0.9;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinCommand {
     OpenSettings,
+    OpenSettingsFile,
     OpenLogFolder,
     ReindexApps,
     SignInToClaude,
     InstallClaude,
+    Restart,
     Quit,
 }
 
 impl BuiltinCommand {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::OpenSettings,
+        Self::OpenSettingsFile,
         Self::OpenLogFolder,
         Self::ReindexApps,
         Self::SignInToClaude,
         Self::InstallClaude,
+        Self::Restart,
         Self::Quit,
     ];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::OpenSettings => "cmd:settings",
+            Self::OpenSettingsFile => "cmd:settings-file",
+            Self::Restart => "cmd:restart",
             Self::OpenLogFolder => "cmd:logs",
             Self::ReindexApps => "cmd:reindex",
             Self::SignInToClaude => "cmd:claude-sign-in",
@@ -45,7 +51,9 @@ impl BuiltinCommand {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::OpenSettings => "Open Settings",
+            Self::OpenSettings => "Settings",
+            Self::OpenSettingsFile => "Open Settings File",
+            Self::Restart => "Restart Desktop Assistant",
             Self::OpenLogFolder => "Open Log Folder",
             Self::ReindexApps => "Reindex Apps",
             Self::SignInToClaude => "Sign In to Claude Code",
@@ -58,6 +66,8 @@ impl BuiltinCommand {
     fn keywords(self) -> &'static [&'static str] {
         match self {
             Self::OpenSettings => &["preferences", "config", "options"],
+            Self::OpenSettingsFile => &["toml", "config file", "edit settings"],
+            Self::Restart => &["reload", "relaunch"],
             Self::OpenLogFolder => &["debug", "logs"],
             Self::ReindexApps => &["refresh", "rescan", "rebuild"],
             Self::SignInToClaude => &["login", "log in", "claude account"],
@@ -121,7 +131,10 @@ mod tests {
 
     #[tokio::test]
     async fn matches_title_and_keywords() {
-        assert_eq!(titles("open s").await[0], "Open Settings");
+        assert_eq!(titles("settings").await[0], "Settings");
+        assert_eq!(titles("preferences").await[0], "Settings");
+        assert_eq!(titles("settings file").await[0], "Open Settings File");
+        assert_eq!(titles("restart").await[0], "Restart Desktop Assistant");
         assert_eq!(titles("quit").await[0], "Quit Desktop Assistant");
         assert_eq!(titles("exit").await[0], "Quit Desktop Assistant");
         assert_eq!(titles("log").await[0], "Open Log Folder");

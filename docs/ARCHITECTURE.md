@@ -427,6 +427,11 @@ it events and carries out its verdicts. (D-022)
   runs at time-critical priority: Windows skips a hook that answers late
   (`LowLevelHooksTimeout`), which is how a tap used to reach Start while the
   app was busy. Parallel file search leaves a core free for the same reason.
+- Windows also removes a late hook for good, silently, and calls the newest
+  hook first. So a timer on the hook thread re-installs it every 5 s while no
+  Windows key is held: it comes back if removed, and stays ahead of hooks
+  other apps install later (D-025). Settings shows whether it's running and
+  when it last saw the key.
 - Limits: it can't see keys while an elevated (admin) window has focus unless
   this app also runs elevated. Ctrl+Esc and the Start button still open
   Start. `hotkeys.win_key_override = false` turns it off (applied at startup).
@@ -458,6 +463,21 @@ is moved to `settings.toml.bad` and replaced with defaults.
 | Idle CPU | ~0% |
 
 Blow a budget means fix it before adding features on top.
+
+## Settings menu
+
+Opened from the launcher (the "Settings" command, Ctrl+, in search, or the
+tray's Settings): `SettingsPane` replaces the results area, the way the chat
+does. Every change is saved at once through `settings_set`, which applies
+what it can live: the shortcut (re-registered; if the new one can't be,
+nothing changes and the menu says why), the Windows key hook (started or
+stopped), start at login. Claude and search options are read fresh on each
+use, so they apply at once too. Index folders and exclusions shape the
+running index, so the menu offers a restart for them (`app_restart` closes
+Claude Code first). The shortcut recorder pauses the current shortcut while
+it listens. `app_status` feeds the status lines: Claude Code's sign-in, the
+index or Everything, and the Windows key hook. "Open Settings File" is still
+there for hand edits (read at startup).
 
 ## UI / theme
 

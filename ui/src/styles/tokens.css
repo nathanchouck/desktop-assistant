@@ -32,6 +32,10 @@
   --danger: #d64545;
   --success: #2f9e5b;
 
+  /* Settings */
+  --switch-off: rgba(20, 30, 60, 0.18);
+  --switch-knob: #ffffff;
+
   /* Chat */
   --code: rgba(20, 30, 60, 0.06);
   --approval: rgba(79, 124, 255, 0.08);
@@ -96,6 +100,8 @@
     --success: #4cc27e;
 
     --code: rgba(255, 255, 255, 0.07);
+    --switch-off: rgba(255, 255, 255, 0.2);
+    --switch-knob: #f2f3f5;
     --approval: rgba(124, 156, 255, 0.1);
     --approval-border: rgba(124, 156, 255, 0.4);
   }

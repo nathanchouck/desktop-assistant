@@ -5,6 +5,7 @@ use std::path::Path;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
+use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult};
 use crate::platform::PlatformError;
@@ -68,7 +69,21 @@ pub fn run_builtin(app: &AppHandle, cmd: BuiltinCommand) -> AppResult<()> {
     tracing::info!("running {}", cmd.id());
     let state = app.try_state::<AppState>().ok_or(AppError::NotReady)?;
     match cmd {
-        BuiltinCommand::OpenSettings => open_path(app, &state.paths.settings_file())?,
+        BuiltinCommand::OpenSettings => {
+            // The settings menu lives in the launcher: show it there.
+            window::show(app, std::time::Instant::now());
+            if let Err(e) = crate::ipc::ShowSettings.emit(app) {
+                tracing::warn!("could not open settings: {e}");
+            }
+            return Ok(());
+        }
+        BuiltinCommand::OpenSettingsFile => open_path(app, &state.paths.settings_file())?,
+        BuiltinCommand::Restart => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                restart(&app).await;
+            });
+        }
         BuiltinCommand::OpenLogFolder => open_path(app, &state.paths.log_dir())?,
         BuiltinCommand::ReindexApps => {
             state.icons.clear();
@@ -95,6 +110,14 @@ pub fn run_builtin(app: &AppHandle, cmd: BuiltinCommand) -> AppResult<()> {
     }
     window::hide(app);
     Ok(())
+}
+
+/// Restarts the launcher, closing Claude Code first so it isn't left behind.
+pub async fn restart(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        state.chat.shut_down().await;
+    }
+    app.restart();
 }
 
 fn open_path(app: &AppHandle, path: &Path) -> AppResult<()> {

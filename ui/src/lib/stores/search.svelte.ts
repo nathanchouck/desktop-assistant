@@ -1,6 +1,9 @@
 import { commands, type Action, type ResultItem, type SearchUpdated } from "../bindings";
 import { LatestOnly } from "../latest";
 
+/** The "Settings" command opens the menu in the launcher. */
+const SETTINGS_ID = "cmd:settings";
+
 /** Rows that stand in for "Ask Claude" when it can't answer yet. */
 const FIX_ROWS = ["cmd:claude-install", "cmd:claude-sign-in"];
 
@@ -17,10 +20,13 @@ export class SearchStore {
 
   #latest = new LatestOnly();
   #onAsk: (text: string) => void;
+  #onSettings: () => void;
 
-  /** `onAsk` gets the query when it should go to the AI. */
-  constructor(onAsk: (text: string) => void) {
+  /** `onAsk` gets the query when it should go to the AI; `onSettings` opens
+   *  the settings menu (the "Settings" command). */
+  constructor(onAsk: (text: string) => void, onSettings: () => void = () => {}) {
     this.#onAsk = onAsk;
+    this.#onSettings = onSettings;
   }
 
   async setQuery(query: string): Promise<void> {
@@ -85,6 +91,10 @@ export class SearchStore {
     const item = this.items[index];
     if (!item) return;
     if (item.kind === "ask_ai") return this.ask();
+    if (item.id === SETTINGS_ID) {
+      this.clear();
+      return this.#onSettings();
+    }
     const chosen = action ?? item.actions[0];
     if (!chosen || !item.actions.includes(chosen)) {
       this.notice = `That doesn't apply to ${item.title}.`;

@@ -25,6 +25,16 @@ pub fn parse(text: &str) -> Result<Shortcut, HotkeyError> {
         })
 }
 
+pub fn unregister(app: &AppHandle, text: &str) -> Result<(), HotkeyError> {
+    let shortcut = parse(text)?;
+    app.global_shortcut()
+        .unregister(shortcut)
+        .map_err(|e| HotkeyError::Register {
+            shortcut: text.into(),
+            reason: e.to_string(),
+        })
+}
+
 pub fn register(app: &AppHandle, text: &str) -> Result<(), HotkeyError> {
     let shortcut = parse(text)?;
     app.global_shortcut()

@@ -211,3 +211,22 @@ Claude, and an unclaimed spare is closed after 2 minutes. The spare is
 started with the options the question would use; if those changed in the
 meantime (another Explorer folder, another model), it's replaced rather
 than used with stale settings.
+
+## D-025 Re-install the Windows key hook every few seconds
+Start kept opening on a real PC even with D-022. The likely cause: since
+Windows 7, a low-level hook that once answers too slowly is removed for
+good without notice (and every tap then goes straight to Start), and
+Windows calls the newest hook first, so another app's hook installed later
+sees the key before ours. Re-installing every 5 s while no Windows key is
+held covers both: a removed hook comes back within seconds, and ours is
+the newest again. It costs a couple of system calls. The settings menu
+shows whether the hook is running and when it last saw the key, to tell
+these apart from anything else.
+
+## D-026 Settings live in the launcher, saved as you change them
+A separate settings window would be one more window to manage for a few
+switches. The menu replaces the results area like the chat does, so it
+works with the keyboard and the same look. Changes save immediately (no
+Save button) and apply live where they can; the two that shape the file
+index offer a restart instead of half-applying. The TOML file stays the
+source of truth and is still one command away.

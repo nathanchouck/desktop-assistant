@@ -16,6 +16,7 @@ use crate::ai::{claude, AiEvent, ProviderId};
 use crate::desktop::{self, DesktopContext};
 use crate::error::IpcError;
 use crate::file_index::IndexStatus;
+use crate::hotkey;
 use crate::search::{Action, AskRow, Frecency, ResultItem};
 use crate::settings::Settings;
 use crate::state::AppState;
@@ -52,6 +53,104 @@ fn app_info(state: State<'_, AppState>) -> AppInfo {
 #[specta::specta]
 fn settings_get(state: State<'_, AppState>) -> Settings {
     state.settings()
+}
+
+/// The result of saving settings.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct SettingsSaved {
+    /// Index folders or exclusions differ from what the running index uses;
+    /// they apply after a restart.
+    pub restart_needed: bool,
+}
+
+/// Saves settings from the settings menu and applies what can change live:
+/// the shortcut, the Windows key, starting at login. Claude and search
+/// options are read fresh each time, so they apply at once too.
+#[tauri::command]
+#[specta::specta]
+async fn settings_set(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> Result<SettingsSaved, IpcError> {
+    let old = state.settings();
+    // The shortcut first: if it can't be registered, nothing is saved.
+    if settings.hotkeys.toggle != old.hotkeys.toggle {
+        hotkey::change_toggle(&app, &old.hotkeys.toggle, &settings.hotkeys.toggle).map_err(
+            |e| IpcError {
+                message: e.to_string(),
+            },
+        )?;
+    }
+    if settings.hotkeys.win_key_override != old.hotkeys.win_key_override {
+        hotkey::set_win_key(&app, settings.hotkeys.win_key_override);
+    }
+    if settings.general.launch_at_login != old.general.launch_at_login {
+        crate::sync_launch_at_login(&app, settings.general.launch_at_login);
+    }
+    crate::settings::save(&state.paths.settings_file(), &settings).map_err(|e| IpcError {
+        message: e.to_string(),
+    })?;
+    let claude_changed = settings.ai.claude.path != old.ai.claude.path
+        || settings.ai.claude.billing != old.ai.claude.billing;
+    if let Ok(mut current) = state.settings.write() {
+        *current = settings.clone();
+    }
+    if claude_changed {
+        crate::check_claude_status(&app, true);
+    }
+    let running = &state.startup_search;
+    Ok(SettingsSaved {
+        restart_needed: settings.search.index_folders != running.index_folders
+            || settings.search.exclusions != running.exclusions,
+    })
+}
+
+/// What the settings menu shows under "Status".
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct AppStatus {
+    pub claude: ClaudeStatus,
+    pub file_index: IndexStatus,
+    /// Everything is running, so file search covers every drive.
+    pub everything: bool,
+    pub win_key: hotkey::WinKeyStatus,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn app_status(app: AppHandle, state: State<'_, AppState>) -> Result<AppStatus, IpcError> {
+    crate::check_claude_status(&app, false);
+    let settings = state.settings();
+    Ok(AppStatus {
+        claude: state.claude_status.get(),
+        file_index: state.files.status(),
+        everything: state.shell.everything_running().await,
+        win_key: hotkey::win_key_status(settings.hotkeys.win_key_override),
+    })
+}
+
+/// Pauses the launcher's shortcut while the settings menu records a new one,
+/// so pressing the old one doesn't hide the launcher.
+#[tauri::command]
+#[specta::specta]
+fn shortcut_pause(app: AppHandle, state: State<'_, AppState>, paused: bool) {
+    let toggle = state.settings().hotkeys.toggle;
+    let result = if paused {
+        hotkey::shortcut::unregister(&app, &toggle)
+    } else {
+        hotkey::shortcut::register(&app, &toggle)
+    };
+    if let Err(e) = result {
+        tracing::debug!("{e}");
+    }
+}
+
+/// Restarts the launcher (to re-index with new folders).
+#[tauri::command]
+#[specta::specta]
+async fn app_restart(app: AppHandle) -> Result<(), IpcError> {
+    actions::restart(&app).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -300,6 +399,10 @@ pub struct FileIndexChanged {
     pub status: IndexStatus,
 }
 
+/// Open the settings menu (from the tray).
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+pub struct ShowSettings;
+
 /// Sent each time the launcher appears, so the UI can focus the search box.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 pub struct LauncherShown;
@@ -309,6 +412,10 @@ pub fn builder() -> Builder<Wry> {
         .commands(collect_commands![
             app_info,
             settings_get,
+            settings_set,
+            app_status,
+            app_restart,
+            shortcut_pause,
             search_query,
             file_index_status,
             item_activate,
@@ -326,7 +433,8 @@ pub fn builder() -> Builder<Wry> {
             LauncherShown,
             AiStream,
             FileIndexChanged,
-            SearchUpdated
+            SearchUpdated,
+            ShowSettings
         ])
 }
 

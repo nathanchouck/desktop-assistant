@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatHints, chatIntentFor, intentFor, searchHints } from "./keys";
+import { chatHints, chatIntentFor, intentFor, searchHints, shortcutFromEvent } from "./keys";
 
 const key = (k: string, mods: Partial<{ ctrl: boolean; shift: boolean; alt: boolean }> = {}) => ({
   key: k,
@@ -44,6 +44,11 @@ describe("intentFor", () => {
 
   it("maps Escape", () => {
     expect(intentFor(key("Escape"))).toEqual({ type: "escape" });
+  });
+
+  it("opens settings with Ctrl+comma", () => {
+    expect(intentFor(key(",", { ctrl: true }))).toEqual({ type: "settings" });
+    expect(intentFor(key(","))).toBeNull();
   });
 
   it("asks the AI with Tab", () => {
@@ -93,5 +98,28 @@ describe("hints", () => {
     expect(chatHints({ running: true, pending: true })[0]).toEqual(["Ctrl Y", "Approve"]);
     expect(chatHints({ running: true, pending: false })).toEqual([["Esc", "Stop"]]);
     expect(chatHints({ running: false, pending: false })[0]).toEqual(["↵", "Send"]);
+  });
+});
+
+describe("shortcutFromEvent", () => {
+  const press = (code: string, mods: Partial<{ ctrl: boolean; alt: boolean; shift: boolean; meta: boolean }> = {}) => ({
+    code,
+    ctrlKey: mods.ctrl ?? false,
+    altKey: mods.alt ?? false,
+    shiftKey: mods.shift ?? false,
+    metaKey: mods.meta ?? false,
+  });
+
+  it("writes shortcuts the way the settings file does", () => {
+    expect(shortcutFromEvent(press("Space", { ctrl: true }))).toBe("Ctrl+Space");
+    expect(shortcutFromEvent(press("KeyK", { alt: true, shift: true }))).toBe("Alt+Shift+K");
+    expect(shortcutFromEvent(press("Digit1", { ctrl: true }))).toBe("Ctrl+1");
+    expect(shortcutFromEvent(press("F12"))).toBe("F12");
+  });
+
+  it("waits for a real key and needs a modifier", () => {
+    expect(shortcutFromEvent(press("ControlLeft", { ctrl: true }))).toBeNull();
+    expect(shortcutFromEvent(press("KeyK"))).toBeNull();
+    expect(shortcutFromEvent(press("Space"))).toBeNull();
   });
 });
