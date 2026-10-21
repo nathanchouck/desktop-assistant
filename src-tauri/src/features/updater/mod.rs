@@ -71,7 +71,7 @@ pub fn plugin(
         option_env!("TAURI_UPDATER_PUBKEY"),
     );
     config.plugins.0.insert("updater".into(), section);
-    // Only the Windows build has TLS for the updater and installers to run.
+    // Releases only carry a Windows installer, so other builds never check.
     let _ = SET_UP.set(cfg!(windows) && pubkey.is_some());
     tauri_plugin_updater::Builder::new().build()
 }
