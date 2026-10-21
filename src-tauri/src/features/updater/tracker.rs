@@ -112,6 +112,7 @@ impl Tracker {
 
     /// The check found `version`. True when it should be downloaded; false
     /// when it's the one already downloaded (or the check was overtaken).
+    /// An older download stays installable until the new one is in.
     pub fn found(&mut self, version: &str) -> bool {
         if self.phase != UpdatePhase::Checking {
             return false;
@@ -120,7 +121,6 @@ impl Tracker {
             self.phase = UpdatePhase::Ready { version: ready };
             return false;
         }
-        self.ready = None;
         self.phase = UpdatePhase::Downloading {
             version: version.to_owned(),
             percent: None,
@@ -155,19 +155,29 @@ impl Tracker {
         changed
     }
 
-    /// The download finished and its signature checked out.
-    pub fn downloaded(&mut self) {
-        if let UpdatePhase::Downloading { version, .. } = &self.phase {
-            let version = version.clone();
-            self.ready = Some(version.clone());
-            self.phase = UpdatePhase::Ready { version };
-        }
+    /// The download finished and its signature checked out. False when it
+    /// came too late to use (an install already started): drop it.
+    pub fn downloaded(&mut self) -> bool {
+        let UpdatePhase::Downloading { version, .. } = &self.phase else {
+            return false;
+        };
+        let version = version.clone();
+        self.ready = Some(version.clone());
+        self.phase = UpdatePhase::Ready { version };
+        true
     }
 
+    /// The download failed (or its signature didn't check out). An older
+    /// download is still ready; the reason is in the log.
     pub fn download_failed(&mut self, reason: &str) {
         if let UpdatePhase::Downloading { version, .. } = &self.phase {
-            self.phase = UpdatePhase::Failed {
-                message: format!("Couldn't download v{version}: {reason}"),
+            self.phase = match &self.ready {
+                Some(ready) => UpdatePhase::Ready {
+                    version: ready.clone(),
+                },
+                None => UpdatePhase::Failed {
+                    message: format!("Couldn't download v{version}: {reason}"),
+                },
             };
         }
     }
@@ -347,10 +357,18 @@ mod tests {
         t.start_check();
         t.check_failed("offline");
         assert_eq!(t.phase(), &ready("0.2.0"));
-        // A newer release replaces it.
+        // A newer release replaces it once downloaded; until then the
+        // older one can still be installed, also if that download fails.
         t.start_check();
         assert!(t.found("0.3.0"));
-        assert_eq!(t.ready(), None);
+        assert_eq!(t.ready(), Some("0.2.0"));
+        t.download_failed("signed for another version");
+        assert_eq!(t.phase(), &ready("0.2.0"));
+        t.start_check();
+        assert!(t.found("0.3.0"));
+        t.downloaded();
+        assert_eq!(t.phase(), &ready("0.3.0"));
+        assert_eq!(t.ready(), Some("0.3.0"));
     }
 
     #[test]
@@ -399,9 +417,23 @@ mod tests {
         assert!(!t.found("0.3.0"));
         assert!(matches!(t.phase(), UpdatePhase::Installing { .. }));
         // Download events outside a download do nothing either.
-        t.downloaded();
+        assert!(!t.downloaded());
         assert!(!t.progress(1, Some(2)));
         assert!(matches!(t.phase(), UpdatePhase::Installing { .. }));
+    }
+
+    #[test]
+    fn installing_the_older_download_drops_the_newer_one() {
+        let mut t = enabled();
+        t.start_check();
+        t.found("0.2.0");
+        assert!(t.downloaded());
+        t.start_check();
+        assert!(t.found("0.3.0"));
+        assert_eq!(t.start_install().as_deref(), Some("0.2.0"));
+        assert!(!t.downloaded(), "too late: 0.2.0 is installing");
+        t.install_failed();
+        assert_eq!(t.phase(), &ready("0.2.0"));
     }
 
     #[test]

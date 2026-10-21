@@ -51,12 +51,18 @@ struct Downloaded {
     bytes: Vec<u8>,
 }
 
+/// Where updating stands and the download it calls ready, under one
+/// lock so the bytes installed are always the version shown.
+struct State {
+    tracker: Tracker,
+    downloaded: Option<Arc<Downloaded>>,
+}
+
 pub struct Updates {
     app: OnceLock<AppHandle>,
     /// `updates.json` in the data folder.
     file: PathBuf,
-    tracker: Mutex<Tracker>,
-    downloaded: Mutex<Option<Arc<Downloaded>>>,
+    state: Mutex<State>,
     saved: Mutex<Saved>,
     last_attempt: Mutex<Option<Attempt>>,
     /// The toast waiting for the launcher to open, so a newer one replaces it.
@@ -76,8 +82,10 @@ impl Updates {
         Self {
             app: OnceLock::new(),
             file,
-            tracker: Mutex::new(Tracker::new()),
-            downloaded: Mutex::new(None),
+            state: Mutex::new(State {
+                tracker: Tracker::new(),
+                downloaded: None,
+            }),
             saved: Mutex::new(saved),
             last_attempt: Mutex::new(None),
             announcement: Mutex::new(None),
@@ -90,7 +98,7 @@ impl Updates {
     pub fn attach(&self, app: &AppHandle, set_up: bool) {
         let _ = self.app.set(app.clone());
         if set_up {
-            lock(&self.tracker).enable();
+            lock(&self.state).tracker.enable();
         }
         let installing = lock(&self.saved).installing.take();
         if installing.is_some() {
@@ -123,7 +131,7 @@ impl Updates {
         // Read before the state: a change counts up after it's made, so
         // this state is at least as new as its revision says.
         let revision = self.revision.load(Ordering::SeqCst);
-        let phase = lock(&self.tracker).phase().clone();
+        let phase = lock(&self.state).tracker.phase().clone();
         UpdateStatus {
             current_version: self.current_version(),
             summary: phase.summary(),
@@ -137,7 +145,7 @@ impl Updates {
 
     /// The downloaded version waiting to be installed, if any.
     pub fn ready(&self) -> Option<String> {
-        lock(&self.tracker).ready().map(str::to_owned)
+        lock(&self.state).tracker.ready().map(str::to_owned)
     }
 
     pub fn last_attempt(&self) -> Option<Attempt> {
@@ -151,7 +159,7 @@ impl Updates {
             return CheckResult::NotSetUp;
         };
         {
-            let mut tracker = lock(&self.tracker);
+            let tracker = &mut lock(&self.state).tracker;
             if *tracker.phase() == UpdatePhase::NotSetUp {
                 return CheckResult::NotSetUp;
             }
@@ -172,30 +180,30 @@ impl Updates {
         match result {
             Ok(None) => {
                 tracing::info!("no update available");
-                let mut tracker = lock(&self.tracker);
-                tracker.up_to_date();
-                if *tracker.phase() == UpdatePhase::UpToDate {
-                    lock(&self.downloaded).take();
+                {
+                    let mut state = lock(&self.state);
+                    state.tracker.up_to_date();
+                    if *state.tracker.phase() == UpdatePhase::UpToDate {
+                        state.downloaded = None;
+                    }
                 }
-                drop(tracker);
                 self.remember_check(now);
             }
             Ok(Some(update)) => {
                 tracing::info!("update {} available", update.version);
-                let download = lock(&self.tracker).found(&update.version);
+                let download = lock(&self.state).tracker.found(&update.version);
                 self.remember_check(now);
                 if download {
-                    lock(&self.downloaded).take();
                     tauri::async_runtime::spawn(Arc::clone(self).download(update));
                 }
             }
             Err(e) => {
                 tracing::warn!("update check failed: {e}");
-                lock(&self.tracker).check_failed(&describe(&e));
+                lock(&self.state).tracker.check_failed(&describe(&e));
             }
         }
         self.emit();
-        CheckResult::Done(lock(&self.tracker).phase().clone())
+        CheckResult::Done(lock(&self.state).tracker.phase().clone())
     }
 
     async fn download(self: Arc<Self>, mut update: Update) {
@@ -207,7 +215,7 @@ impl Updates {
             .download(
                 move |chunk, total| {
                     received += chunk as u64;
-                    let changed = lock(&progress.tracker).progress(received, total);
+                    let changed = lock(&progress.state).tracker.progress(received, total);
                     if changed {
                         progress.emit();
                     }
@@ -218,8 +226,18 @@ impl Updates {
         match result {
             Ok(bytes) => {
                 tracing::info!("update {version} downloaded and verified");
-                *lock(&self.downloaded) = Some(Arc::new(Downloaded { update, bytes }));
-                lock(&self.tracker).downloaded();
+                let kept = {
+                    let mut state = lock(&self.state);
+                    let kept = state.tracker.downloaded();
+                    if kept {
+                        state.downloaded = Some(Arc::new(Downloaded { update, bytes }));
+                    }
+                    kept
+                };
+                // Overtaken (an install of an older download started).
+                if !kept {
+                    return;
+                }
                 self.emit();
                 self.announce(
                     format!("Update ready: v{version} — restart to install"),
@@ -233,7 +251,7 @@ impl Updates {
                     at: unix_now(),
                     failed: true,
                 });
-                lock(&self.tracker).download_failed(&describe(&e));
+                lock(&self.state).tracker.download_failed(&describe(&e));
                 self.emit();
             }
         }
@@ -246,11 +264,15 @@ impl Updates {
         let Some(app) = self.app.get() else {
             return Err("the app is still starting".into());
         };
-        let Some(downloaded) = lock(&self.downloaded).clone() else {
-            return Err("no update has been downloaded".into());
-        };
-        let Some(version) = lock(&self.tracker).start_install() else {
-            return Err("an install is already starting".into());
+        let (version, downloaded) = {
+            let mut state = lock(&self.state);
+            let Some(downloaded) = state.downloaded.clone() else {
+                return Err("no update has been downloaded".into());
+            };
+            let Some(version) = state.tracker.start_install() else {
+                return Err("an install is already starting".into());
+            };
+            (version, downloaded)
         };
         self.emit();
         lock(&self.saved).installing = Some(version.clone());
@@ -273,7 +295,7 @@ impl Updates {
         tracing::warn!("could not install update {version}: {error}");
         lock(&self.saved).installing = None;
         self.save();
-        lock(&self.tracker).install_failed();
+        lock(&self.state).tracker.install_failed();
         self.emit();
         Err(error)
     }
@@ -355,12 +377,13 @@ fn describe(e: &tauri_plugin_updater::Error) -> String {
         Error::TargetNotFound(_) | Error::TargetsNotFound(_) => {
             "the release has no update for this kind of install (use the -setup.exe)".into()
         }
-        Error::Minisign(_)
-        | Error::Base64(_)
-        | Error::SignatureUtf8(_)
-        | Error::SignedVersionMismatch { .. }
-        | Error::MissingSignedVersion => {
+        Error::Minisign(_) | Error::Base64(_) | Error::SignatureUtf8(_) => {
             "its signature doesn't match this build's key, so it wasn't used".into()
+        }
+        // `requireSignedVersion`: latest.json names another version than
+        // the one the installer was signed for (tampered with, or stale).
+        Error::SignedVersionMismatch { .. } | Error::MissingSignedVersion => {
+            "it isn't signed for the version announced, so it wasn't used".into()
         }
         other => other.to_string(),
     }
@@ -387,7 +410,7 @@ mod tests {
             describe(&Error::TargetsNotFound(vec!["windows-x86_64".into()])),
             "the release has no update for this kind of install (use the -setup.exe)"
         );
-        assert!(describe(&Error::MissingSignedVersion).contains("signature"));
+        assert!(describe(&Error::MissingSignedVersion).contains("isn't signed"));
         assert_eq!(
             describe(&Error::EmptyEndpoints),
             "Updater does not have any endpoints set."
