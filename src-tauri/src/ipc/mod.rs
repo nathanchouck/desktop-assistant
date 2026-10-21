@@ -449,6 +449,7 @@ pub fn builder() -> Builder<Wry> {
             // [history]
             // [clipboard]
             // [color]
+            crate::features::color::ColorPicked,
             // [updater]
             // [ai_commands]
             // [google]
