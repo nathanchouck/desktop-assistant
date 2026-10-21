@@ -17,10 +17,16 @@ export const commands = {
 	launcherHide: () => __TAURI_INVOKE<void>("launcher_hide"),
 	/**  The UI reports its content height so the window can fit it. */
 	launcherSetHeight: (height: number) => __TAURI_INVOKE<void>("launcher_set_height", { height }),
-	/**  Asks Claude, starting a new conversation. Returns its id. */
-	aiAsk: (text: string) => typedError<number, IpcError>(__TAURI_INVOKE("ai_ask", { text })),
-	/**  Sends a follow-up in the current conversation. */
-	aiFollowUp: (text: string) => typedError<number, IpcError>(__TAURI_INVOKE("ai_follow_up", { text })),
+	/**
+	 *  Asks Claude, starting a new conversation in the folder File Explorer
+	 *  showed (else your home folder).
+	 */
+	aiAsk: (text: string) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_ask", { text })),
+	/**
+	 *  Sends a follow-up in the current conversation, with the desktop
+	 *  context if it changed since the last message.
+	 */
+	aiFollowUp: (text: string) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_follow_up", { text })),
 	/**  Approves or denies a pending action. */
 	aiApprove: (id: string, allow: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("ai_approve", { id, allow })),
 	/**  Stops the current answer; the conversation stays open. */
@@ -91,6 +97,16 @@ export type Approvals =
 /**  Claude Code's auto mode decides, and asks you only when it isn't sure. */
 "auto";
 
+/**  A question was sent. */
+export type AskReply = {
+	conversation: number,
+	/**
+	 *  What Claude was told about the screen, in a few words
+	 *  ("Downloads · 2 selected"). `None` when nothing was added.
+	 */
+	context: string | null,
+};
+
 /**  How a provider is paid for. */
 export type BillingMode = 
 /**
@@ -112,6 +128,12 @@ export type ClaudeSettings = {
 	approvals: Approvals,
 	/**  Full path to `claude` (or its `cli.js`). Empty: find it automatically. */
 	path: string,
+	/**
+	 *  Tell Claude which window you were in when you opened the launcher,
+	 *  and for File Explorer the folder and selected files. Explorer's
+	 *  folder also becomes Claude's working folder.
+	 */
+	desktop_context: boolean,
 };
 
 /**

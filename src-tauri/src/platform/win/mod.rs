@@ -1,6 +1,7 @@
 //! Windows shell integration via COM (the `windows` crate), plus Everything.
 
 mod apps;
+pub mod desktop;
 pub mod everything;
 mod icon;
 mod launch;

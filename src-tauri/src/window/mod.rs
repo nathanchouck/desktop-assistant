@@ -105,6 +105,10 @@ pub fn show(app: &AppHandle, started: Instant) {
         .as_ref()
         .map_or(DEFAULT_HEIGHT, |s| s.launcher.height());
     if let Some(state) = &state {
+        // Before the launcher takes focus, while your window is still in front.
+        if state.settings().ai.claude.desktop_context {
+            state.desktop.capture(&state.shell);
+        }
         state.apps.refresh_if_stale(APPS_MAX_AGE);
     }
     if let Err(e) = place_on_cursor_monitor(app, &window, height) {

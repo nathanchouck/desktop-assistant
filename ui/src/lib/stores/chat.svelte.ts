@@ -40,7 +40,8 @@ export class ChatStore {
     // yet), this one starts the conversation instead.
     if (this.#conversation === null) return this.#start(text);
     const res = await commands.aiFollowUp(text);
-    if (res.status === "error") this.#fail(res.error.message);
+    if (res.status === "error") return this.#fail(res.error.message);
+    this.#noteContext(res.data.context);
   }
 
   /** Handles an event from the backend for whichever conversation is shown. */
@@ -84,8 +85,22 @@ export class ChatStore {
     const held = this.#buffer ?? [];
     this.#buffer = null;
     if (res.status === "error") return this.#fail(res.error.message);
-    this.#conversation = res.data;
+    this.#conversation = res.data.conversation;
+    this.#noteContext(res.data.context);
     for (const message of held) this.onEvent(message);
+  }
+
+  /** Shows under your last message what Claude was told about the screen. */
+  #noteContext(context: string | null): void {
+    if (!context) return;
+    const entries = this.transcript.entries;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry?.kind === "user") {
+        entry.context = context;
+        return;
+      }
+    }
   }
 
   #fail(message: string): void {

@@ -58,6 +58,9 @@
   {#each transcript.entries as entry, i (i)}
     {#if entry.kind === "user"}
       <p class="user">{entry.text}</p>
+      {#if entry.context}
+        <p class="context" title="What Claude was told about your screen">Sees: {entry.context}</p>
+      {/if}
     {:else if entry.kind === "assistant"}
       <div class="answer">{@html renderMarkdown(entry.text)}</div>
     {:else if entry.kind === "tool"}
@@ -117,6 +120,15 @@
     background: var(--selection-sheen), var(--selection);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  .context {
+    margin: calc(-1 * var(--space-1)) 0 var(--space-2);
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sub);
+    color: var(--text-faint);
   }
   .answer {
     margin: var(--space-2) 0;

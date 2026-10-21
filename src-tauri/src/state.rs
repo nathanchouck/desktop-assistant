@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::ai::chat::Chat;
 use crate::ai::AiEvent;
+use crate::desktop::{DesktopContext, DesktopTracker};
 use crate::file_index::FileIndex;
 use crate::icons::IconCache;
 use crate::paths::{self, AppPaths};
@@ -30,6 +31,11 @@ pub struct AppState {
     /// Keeps the Start Menu watcher alive.
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
     pub chat: Arc<Chat>,
+    /// What was on screen when the launcher last opened.
+    pub desktop: Arc<DesktopTracker>,
+    /// The desktop context last sent in the current conversation, so a
+    /// follow-up only repeats it when it changed.
+    pub sent_context: Mutex<Option<DesktopContext>>,
     /// Chat events, taken once at startup and forwarded to the UI.
     pub chat_events: Mutex<Option<mpsc::UnboundedReceiver<(u32, AiEvent)>>>,
 }
@@ -66,6 +72,8 @@ impl AppState {
         Self {
             chat: Arc::new(Chat::new(chat_tx)),
             chat_events: Mutex::new(Some(chat_rx)),
+            desktop: Arc::new(DesktopTracker::new()),
+            sent_context: Mutex::new(None),
             paths,
             settings: RwLock::new(settings),
             search,

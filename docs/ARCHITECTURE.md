@@ -103,6 +103,7 @@ desktop-assistant/
 │       │   ├── shortcut.rs      # Ctrl+Space (configurable) via global-shortcut
 │       │   ├── tap.rs           # pure "lone Windows key tap" state machine
 │       │   └── win_key.rs       # Windows-only LL keyboard hook thread
+│       ├── desktop.rs           # desktop context for Claude: capture on open, prompt text
 │       ├── file_index/          # built-in file index: scan, snapshot, watch, top-k search
 │       ├── fuzzy.rs             # nucleo wrapper, scores normalized to 0..1
 │       ├── icons.rs             # icon cache (memory + disk PNG) + `icon` protocol
@@ -110,7 +111,8 @@ desktop-assistant/
 │       ├── integrations/        # (M6) mcp_registry.rs
 │       └── platform/            # `Shell`: apps, files, icons, open/reveal; stubs off Windows
 │           └── win/             # COM on STA threads: AppsFolder, ShellExecuteEx, icons,
-│                                #   everything.rs (SDK bindings)
+│                                #   everything.rs (SDK bindings), desktop.rs (foreground
+│                                #   window, Explorer folder + selection)
 ├── src-tauri/third_party/everything-sdk/  # vendored Everything SDK C source (MIT)
 ├── ui/
 │   ├── index.html
@@ -306,13 +308,25 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
 - **One process per conversation:**
   `claude -p --input-format stream-json --output-format stream-json --verbose
   --include-partial-messages --permission-prompt-tool stdio --model <model>`,
-  with the working folder set to your home folder and a short system prompt
+  with the working folder set to Explorer's folder (else your home folder)
+  and a short system prompt
   appended (it's in a popup, keep answers short, act on files when asked).
   Never `--bare`, which ignores the subscription login. The process stays up
   between turns, so follow-ups are written to stdin and start instantly.
   After 10 minutes idle it is shut down; the next follow-up starts a new one
-  with `--resume <session id>`, so the conversation carries on. A new
+  with `--resume <session id>` in the conversation's original folder (Claude
+  Code keeps sessions per folder), so the conversation carries on. A new
   question kills the old process.
+- **Desktop context (D-021):** as the launcher opens, before it takes focus,
+  `desktop.rs` records the window in front (title, program). For File
+  Explorer or the desktop it then asks the shell, in the background, for the
+  folder shown and the selected files (`IShellWindows` → the window's
+  `IShellBrowser` → `IFolderView`; with Windows 11 tabs, the visible tab).
+  Asking waits up to 0.8 s for that. The context goes in front of the message
+  as a `<desktop_context>` block (a follow-up repeats it only if it changed),
+  Explorer's folder becomes the new conversation's working folder, and the
+  chat shows "Sees: Downloads · 2 selected" under your message.
+  `ai.claude.desktop_context = false` turns it off.
 - **Model:** `ai.claude.model`, "sonnet" (Sonnet 5.5) by default, or "haiku"
   (Haiku 5.5) for quick questions. Any alias or full model id works.
 - **Billing mode:** in subscription mode the child env drops

@@ -3,6 +3,7 @@
 
 pub mod actions;
 pub mod ai;
+pub mod desktop;
 pub mod error;
 pub mod file_index;
 pub mod fuzzy;

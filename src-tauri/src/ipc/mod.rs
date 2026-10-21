@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use specta_typescript::Typescript;
@@ -11,6 +12,7 @@ use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 use crate::actions;
 use crate::ai::{claude, AiEvent};
+use crate::desktop::{self, DesktopContext};
 use crate::error::IpcError;
 use crate::file_index::IndexStatus;
 use crate::search::{Action, Frecency, ResultItem};
@@ -112,28 +114,75 @@ fn launcher_set_height(app: AppHandle, height: u32) {
     window::set_height(&app, height);
 }
 
-/// Asks Claude, starting a new conversation. Returns its id.
-#[tauri::command]
-#[specta::specta]
-async fn ai_ask(state: State<'_, AppState>, text: String) -> Result<u32, IpcError> {
-    let (launch, options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
-    state
-        .chat
-        .start(&text, &launch, options)
-        .await
-        .map_err(ai_err)
+/// How long asking waits for File Explorer's folder and selection.
+const CONTEXT_WAIT: Duration = Duration::from_millis(800);
+
+/// A question was sent.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct AskReply {
+    pub conversation: u32,
+    /// What Claude was told about the screen, in a few words
+    /// ("Downloads · 2 selected"). `None` when nothing was added.
+    pub context: Option<String>,
 }
 
-/// Sends a follow-up in the current conversation.
+/// The desktop context to send now: `None` when it's off, or when it's
+/// the same as the last one sent in this conversation (`fresh: false`).
+async fn context_to_send(state: &AppState, fresh: bool) -> Option<DesktopContext> {
+    if !state.settings().ai.claude.desktop_context {
+        return None;
+    }
+    let context = state.desktop.current(CONTEXT_WAIT).await;
+    context.window.as_ref()?;
+    let mut sent = state.sent_context.lock().ok()?;
+    if !fresh && sent.as_ref() == Some(&context) {
+        return None;
+    }
+    *sent = Some(context.clone());
+    Some(context)
+}
+
+/// Asks Claude, starting a new conversation in the folder File Explorer
+/// showed (else your home folder).
 #[tauri::command]
 #[specta::specta]
-async fn ai_follow_up(state: State<'_, AppState>, text: String) -> Result<u32, IpcError> {
-    let (launch, options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
-    state
+async fn ai_ask(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
+    let (launch, mut options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    let context = context_to_send(&state, true).await;
+    if let Some(folder) = context.as_ref().and_then(DesktopContext::folder) {
+        if Path::new(folder).is_dir() {
+            options.cwd = PathBuf::from(folder);
+        }
+    }
+    let message = desktop::with_context(&text, context.as_ref());
+    let conversation = state
         .chat
-        .follow_up(&text, &launch, options)
+        .start(&message, &launch, options)
         .await
-        .map_err(ai_err)
+        .map_err(ai_err)?;
+    Ok(AskReply {
+        conversation,
+        context: context.as_ref().and_then(DesktopContext::summary),
+    })
+}
+
+/// Sends a follow-up in the current conversation, with the desktop
+/// context if it changed since the last message.
+#[tauri::command]
+#[specta::specta]
+async fn ai_follow_up(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
+    let (launch, options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    let context = context_to_send(&state, false).await;
+    let message = desktop::with_context(&text, context.as_ref());
+    let conversation = state
+        .chat
+        .follow_up(&message, &launch, options)
+        .await
+        .map_err(ai_err)?;
+    Ok(AskReply {
+        conversation,
+        context: context.as_ref().and_then(DesktopContext::summary),
+    })
 }
 
 /// Approves or denies a pending action.

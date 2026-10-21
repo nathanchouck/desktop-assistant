@@ -36,6 +36,38 @@ pub struct FileHit {
     pub modified: Option<i64>,
 }
 
+/// The window that was in front when the launcher opened.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ForegroundWindow {
+    /// The window handle, as a number.
+    pub handle: isize,
+    pub title: String,
+    /// Window class, e.g. `CabinetWClass` for File Explorer.
+    pub class: String,
+    /// The program's file name, e.g. `explorer.exe`.
+    pub app: String,
+}
+
+/// Whether a window class is File Explorer or the desktop, the windows
+/// that have a folder and selection to read.
+pub fn is_shell_view(class: &str) -> bool {
+    matches!(
+        class,
+        "CabinetWClass" | "ExploreWClass" | "Progman" | "WorkerW"
+    )
+}
+
+/// What a File Explorer window (or the desktop) shows.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExplorerView {
+    /// `None` for places that aren't folders on disk (This PC, Home).
+    pub folder: Option<String>,
+    /// Paths of selected items (at most 50).
+    pub selection: Vec<String>,
+    /// How many items are selected, including any past the first 50.
+    pub selected: usize,
+}
+
 /// Where an icon comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IconSource {
@@ -184,6 +216,37 @@ impl Shell {
         {
             let _ = path;
             Err(PlatformError::Unsupported)
+        }
+    }
+
+    /// The window in front, unless it's the launcher. Instant; call it before
+    /// the launcher takes focus.
+    pub fn foreground_window(&self) -> Option<ForegroundWindow> {
+        #[cfg(windows)]
+        {
+            win::desktop::foreground_window()
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
+    }
+
+    /// The folder and selection of `window` when it's File Explorer or the
+    /// desktop (`None` for other windows). Asks Explorer over COM, so it
+    /// can take a moment.
+    pub async fn explorer_view(
+        &self,
+        window: ForegroundWindow,
+    ) -> Result<Option<ExplorerView>, PlatformError> {
+        #[cfg(windows)]
+        {
+            win::sta::run_once(move || win::desktop::explorer_view(&window).map_err(os)).await?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = window;
+            Ok(None)
         }
     }
 

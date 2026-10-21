@@ -37,6 +37,9 @@ struct Conversation {
     process: Option<Arc<Process>>,
     /// Remembered so a new process can resume the same session.
     session: Arc<StdMutex<Option<String>>>,
+    /// Claude Code keeps sessions per working folder, so a resumed process
+    /// must start in the same one.
+    cwd: std::path::PathBuf,
     last_used: Instant,
 }
 
@@ -102,6 +105,7 @@ impl Chat {
             id,
             process: Some(process),
             session,
+            cwd: options.cwd.clone(),
             last_used: Instant::now(),
         });
         Ok(id)
@@ -126,6 +130,7 @@ impl Chat {
             Some(process) => process,
             None => {
                 options.resume = conversation.session.lock().ok().and_then(|s| s.clone());
+                options.cwd = conversation.cwd.clone();
                 let process = self.spawn(
                     conversation.id,
                     launch,
@@ -458,11 +463,16 @@ mod tests {
         collect_until_done(&mut rx).await;
         chat.shut_down_if_idle(Duration::ZERO).await;
 
+        // Follow-ups pass today's options; the restart must still use the
+        // conversation's own folder or Claude Code can't find the session.
+        let elsewhere = tempfile::tempdir().unwrap();
         let again = chat
-            .follow_up("again", &launch, options(dir.path()))
+            .follow_up("again", &launch, options(elsewhere.path()))
             .await
             .unwrap();
         assert_eq!(again, id, "same conversation");
+        let cwd = chat.current.lock().await.as_ref().unwrap().cwd.clone();
+        assert_eq!(cwd, dir.path());
         let events = collect_until_done(&mut rx).await;
         assert!(events.contains(&AiEvent::TextDelta {
             text: "hello from the launcher".into()

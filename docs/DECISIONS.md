@@ -155,3 +155,17 @@ are rare and cheap. Considered: just raising the budget (every keystroke
 would wait for the slowest provider) and incremental narrowing (re-score
 only the previous matches as you type; faster, but more state to keep
 right).
+
+## D-021 Desktop context goes in the message, captured as the launcher opens
+"Move this file here" needs to know what was on screen. The window in front
+is read the moment the launcher is asked to open, before it takes focus
+(after that, the launcher is the foreground window). Explorer's folder and
+selection need a cross-process COM call, so that part runs in the background
+and asking waits for it briefly instead of slowing the launcher down. The
+context is put in front of the message rather than in the system prompt,
+because it changes each time the launcher opens while the conversation (and
+its process) carries on. It's on by default since it's the point of the
+feature, shown under each message ("Sees: …") so it's never hidden, and can
+be turned off in settings. Considered: an MCP tool Claude calls to fetch the
+context (still planned, for a fresh read), but on its own Claude would often
+not think to call it.

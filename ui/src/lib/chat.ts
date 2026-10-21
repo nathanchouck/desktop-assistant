@@ -2,7 +2,8 @@ import type { AiEvent } from "./bindings";
 
 /** One line of the conversation as the chat pane shows it. */
 export type Entry =
-  | { kind: "user"; text: string }
+  /** `context`: what Claude was told about the screen, e.g. "Downloads · 2 selected". */
+  | { kind: "user"; text: string; context?: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; name: string; summary: string; state: "running" | "ok" | "failed" }
   | {

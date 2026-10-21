@@ -93,6 +93,10 @@ pub struct ClaudeSettings {
     pub approvals: Approvals,
     /// Full path to `claude` (or its `cli.js`). Empty: find it automatically.
     pub path: String,
+    /// Tell Claude which window you were in when you opened the launcher,
+    /// and for File Explorer the folder and selected files. Explorer's
+    /// folder also becomes Claude's working folder.
+    pub desktop_context: bool,
 }
 
 impl Default for ClaudeSettings {
@@ -102,6 +106,7 @@ impl Default for ClaudeSettings {
             model: "sonnet".into(),
             approvals: Approvals::Ask,
             path: String::new(),
+            desktop_context: true,
         }
     }
 }
