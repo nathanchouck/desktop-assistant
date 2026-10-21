@@ -392,7 +392,10 @@ impl SearchProvider for ScriptProvider {
     async fn activate(&self, id: &str, action: Action) -> Result<Activation, SearchError> {
         match id {
             OPEN_FOLDER_ID => return self.open_folder().await,
-            RELOAD_ID => return Ok(notice(reload_message(&self.library.rescan().await))),
+            RELOAD_ID => {
+                let index = self.library.rescan().await;
+                return Ok(notice(reload_message(&index)));
+            }
             _ => {}
         }
         let (file, argument) = parse_id(id).ok_or_else(|| failed(format!("{id} isn't a script")))?;

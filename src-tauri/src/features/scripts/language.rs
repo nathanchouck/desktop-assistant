@@ -229,11 +229,9 @@ fn windows_powershell(places: &Places) -> Option<PathBuf> {
 /// `bash.exe` in System32 (and its WindowsApps alias) starts WSL, which
 /// can't run a script by its Windows path, so it never counts.
 pub fn is_wsl_launcher(path: &Path) -> bool {
-    let dir = path
-        .parent()
-        .and_then(Path::file_name)
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    // Split by hand so Windows paths read the same in tests on Linux.
+    let text = path.to_string_lossy();
+    let dir = text.rsplit(['\\', '/']).nth(1).unwrap_or("");
     dir.eq_ignore_ascii_case("System32") || dir.eq_ignore_ascii_case("WindowsApps")
 }
 
