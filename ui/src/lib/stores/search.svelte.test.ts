@@ -7,7 +7,7 @@ const commands = vi.hoisted(() => ({
 }));
 vi.mock("../bindings", () => ({ commands }));
 
-const { SearchStore } = await import("./search.svelte");
+const { SearchStore, SLOW_ACTION_MS } = await import("./search.svelte");
 
 const row = (id: string, kind: ResultItem["kind"] = "file", extra: Partial<ResultItem> = {}): ResultItem => ({
   id,
@@ -174,6 +174,31 @@ describe("SearchStore", () => {
     reply({ type: "open_settings" });
     await store.activate();
     expect(onSettings).toHaveBeenCalled();
+  });
+
+  it("says a slow action is running, until it's done", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = await storeWith([row("script:backup.ps1", "script", { title: "Backup", actions: ["copy"] })]);
+      let finish: (value: unknown) => void = () => {};
+      commands.itemActivate.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+      const running = store.activate();
+      vi.advanceTimersByTime(SLOW_ACTION_MS - 1);
+      expect(store.notice).toBeNull();
+      vi.advanceTimersByTime(1);
+      expect(store.notice).toBe("Running Backup…");
+      finish({ status: "ok", data: { type: "notice", message: "Backup failed: disk full" } });
+      await running;
+      expect(store.notice).toBe("Backup failed: disk full");
+
+      // A quick one never says so.
+      reply({ type: "hide" });
+      await store.activate();
+      vi.advanceTimersByTime(SLOW_ACTION_MS * 2);
+      expect(store.notice).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("refreshes in place, keeping the highlighted row", async () => {
