@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::ai::chat::Chat;
 use crate::ai::claude::StatusCache;
+use crate::ai::codex::CodexStatus;
 use crate::ai::AiEvent;
 use crate::desktop::{DesktopContext, DesktopTracker};
 use crate::file_index::FileIndex;
@@ -27,6 +28,8 @@ pub struct ToolFiles {
     pub mcp_config: PathBuf,
     /// For `--settings`: which of the launcher's tools need approval.
     pub settings: PathBuf,
+    /// The server itself; Codex gets it per thread over stdin.
+    pub endpoint: crate::mcp::Endpoint,
 }
 
 /// Shared app state, managed by Tauri and available to every command.
@@ -52,6 +55,8 @@ pub struct AppState {
     /// Whether Claude Code is installed and signed in, checked in the
     /// background so searching never waits.
     pub claude_status: Arc<StatusCache>,
+    /// The same for Codex and its ChatGPT sign-in.
+    pub codex_status: Arc<StatusCache<CodexStatus>>,
     /// What was on screen when the launcher last opened.
     pub desktop: Arc<DesktopTracker>,
     /// The desktop context last sent in the current conversation, so a
@@ -107,6 +112,7 @@ impl AppState {
         Self {
             chat: Arc::new(Chat::new(chat_tx)),
             claude_status: Arc::new(StatusCache::new()),
+            codex_status: Arc::new(StatusCache::new()),
             tool_files: std::sync::OnceLock::new(),
             chat_events: Mutex::new(Some(chat_rx)),
             desktop,

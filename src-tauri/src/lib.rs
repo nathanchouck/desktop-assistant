@@ -99,6 +99,7 @@ pub fn run() {
             start_chat(handle);
             start_launcher_tools(handle);
             check_claude_status(handle, true);
+            check_codex_status(handle, true);
             features::start(handle);
 
             // Handy while developing; release builds start hidden in the tray.
@@ -137,8 +138,34 @@ pub(crate) fn check_claude_status(app: &AppHandle, force: bool) {
     });
 }
 
-/// Starts the MCP server that gives Claude the launcher's tools, and writes
-/// the files that point Claude Code at it.
+/// The same for Codex and its ChatGPT sign-in (`codex login status`).
+pub(crate) fn check_codex_status(app: &AppHandle, force: bool) {
+    let state = app.state::<AppState>();
+    let cache = Arc::clone(&state.codex_status);
+    if !(force || cache.is_stale()) || !cache.begin_check() {
+        return;
+    }
+    let settings = state.settings().ai.chatgpt;
+    tauri::async_runtime::spawn(async move {
+        let status = ai::codex::check_status(&settings).await;
+        tracing::info!("Codex status: {status:?}");
+        cache.finish_check(status);
+    });
+}
+
+/// Re-checks the AIs a question would go to when the launcher opens:
+/// Claude Code always, Codex when ChatGPT is the default (otherwise its
+/// check waits for the settings menu or a ChatGPT chat).
+pub(crate) fn check_ai_status(app: &AppHandle, force: bool) {
+    check_claude_status(app, force);
+    let state = app.state::<AppState>();
+    if state.settings().ai.default_provider == ai::ProviderId::Chatgpt {
+        check_codex_status(app, force);
+    }
+}
+
+/// Starts the MCP server that gives Claude and ChatGPT the launcher's
+/// tools, and writes the files that point Claude Code at it.
 fn start_launcher_tools(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -158,6 +185,7 @@ fn start_launcher_tools(app: &AppHandle) {
             Ok(state::ToolFiles {
                 mcp_config,
                 settings,
+                endpoint: endpoint.clone(),
             })
         });
         match written {
@@ -182,9 +210,11 @@ fn start_chat(app: &AppHandle) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             while let Some((conversation, event)) = events.recv().await {
-                // An error may mean Claude Code was signed out or removed.
+                // An error may mean Claude Code or Codex was signed out or
+                // removed.
                 if matches!(event, ai::AiEvent::Error { .. }) {
                     check_claude_status(&app, true);
+                    check_codex_status(&app, true);
                 }
                 if let Err(e) = (ipc::AiStream {
                     conversation,

@@ -1,9 +1,10 @@
 //! Commands the UI can call. Keep these thin: validate, delegate, convert errors.
 //! After changing anything here, run `npm run bindings`.
 
+mod chat;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use specta_typescript::Typescript;
@@ -12,12 +13,13 @@ use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 use crate::actions;
 use crate::ai::claude::ClaudeStatus;
-use crate::ai::{claude, AiEvent, ProviderId};
+use crate::ai::codex::CodexStatus;
+use crate::ai::{self, AiError, AiEvent, ProviderId};
 use crate::desktop::{self, DesktopContext};
 use crate::error::IpcError;
 use crate::file_index::IndexStatus;
 use crate::hotkey;
-use crate::search::{Action, Activation, AskRow, Frecency, ResultItem};
+use crate::search::{self, Action, Activation, Frecency, ResultItem};
 use crate::settings::Settings;
 use crate::state::AppState;
 use crate::window;
@@ -93,11 +95,17 @@ async fn settings_set(
     })?;
     let claude_changed = settings.ai.claude.path != old.ai.claude.path
         || settings.ai.claude.billing != old.ai.claude.billing;
+    let codex_changed = settings.ai.chatgpt.path != old.ai.chatgpt.path
+        || settings.ai.chatgpt.billing != old.ai.chatgpt.billing
+        || settings.ai.default_provider != old.ai.default_provider;
     if let Ok(mut current) = state.settings.write() {
         *current = settings.clone();
     }
     if claude_changed {
         crate::check_claude_status(&app, true);
+    }
+    if codex_changed {
+        crate::check_codex_status(&app, true);
     }
     let running = &state.startup_search;
     Ok(SettingsSaved {
@@ -110,6 +118,8 @@ async fn settings_set(
 #[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct AppStatus {
     pub claude: ClaudeStatus,
+    /// Codex's install and ChatGPT sign-in ("Codex health").
+    pub chatgpt: CodexStatus,
     pub file_index: IndexStatus,
     /// Everything is running, so file search covers every drive.
     pub everything: bool,
@@ -120,9 +130,11 @@ pub struct AppStatus {
 #[specta::specta]
 async fn app_status(app: AppHandle, state: State<'_, AppState>) -> Result<AppStatus, IpcError> {
     crate::check_claude_status(&app, false);
+    crate::check_codex_status(&app, false);
     let settings = state.settings();
     Ok(AppStatus {
         claude: state.claude_status.get(),
+        chatgpt: state.codex_status.get(),
         file_index: state.files.status(),
         everything: state.shell.everything_running().await,
         win_key: hotkey::win_key_status(settings.hotkeys.win_key_override),
@@ -162,14 +174,22 @@ async fn search_query(
     seq: u32,
 ) -> Result<SearchResponse, IpcError> {
     let settings = state.settings();
+    // `c `/`g ` + a question is for that AI alone: no search, just its row.
+    if let Some((provider, question)) = ai::forced_provider(&query) {
+        match provider {
+            ProviderId::Claude => crate::check_claude_status(&app, false),
+            ProviderId::Chatgpt => crate::check_codex_status(&app, false),
+        }
+        let row = search::ask_ai_item(question, chat::ask_row(&state, provider));
+        return Ok(SearchResponse {
+            seq,
+            items: vec![row],
+        });
+    }
     let limit = settings.search.max_results as usize;
     let store = Arc::clone(&state.store);
     let frecency: Frecency = Arc::new(move |id| store.frecency(id));
-    let ask = match (settings.ai.default_provider, state.claude_status.get()) {
-        (ProviderId::Claude, ClaudeStatus::NotInstalled) => AskRow::InstallClaude,
-        (ProviderId::Claude, ClaudeStatus::SignedOut) => AskRow::SignInToClaude,
-        (provider, _) => AskRow::Ask(provider),
-    };
+    let ask = chat::ask_row(&state, settings.ai.default_provider);
     let outcome = state.search.search(&query, limit, ask, frecency).await;
     // A slow provider (big file index, busy disk) sends its results later
     // instead of dropping them.
@@ -217,120 +237,82 @@ fn launcher_set_height(app: AppHandle, height: u32) {
     window::set_height(&app, height);
 }
 
-/// How long asking waits for File Explorer's folder and selection.
-const CONTEXT_WAIT: Duration = Duration::from_millis(800);
-
 /// A question was sent.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct AskReply {
     pub conversation: u32,
-    /// What Claude was told about the screen, in a few words
+    /// What the AI was told about the screen, in a few words
     /// ("Downloads · 2 selected"). `None` when nothing was added.
     pub context: Option<String>,
+    /// Who answers this conversation (fixed when it starts).
+    pub provider: ProviderId,
 }
 
-/// The desktop context to send now: `None` when it's off, or when it's
-/// the same as the last one sent in this conversation (`fresh: false`).
-async fn context_to_send(state: &AppState, fresh: bool) -> Option<DesktopContext> {
-    if !state.settings().ai.claude.desktop_context {
-        return None;
-    }
-    let context = state.desktop.current(CONTEXT_WAIT).await;
-    context.window.as_ref()?;
-    let mut sent = state.sent_context.lock().ok()?;
-    if !fresh && sent.as_ref() == Some(&context) {
-        return None;
-    }
-    *sent = Some(context.clone());
-    Some(context)
-}
-
-/// Points Claude Code at the launcher's MCP server once it's running.
-fn add_launcher_tools(state: &AppState, options: &mut claude::Options) {
-    if let Some(files) = state.tool_files.get() {
-        options.mcp_config = Some(files.mcp_config.clone());
-        options.settings = Some(files.settings.clone());
-    }
-}
-
-/// How a new conversation starts: the settings, the launcher's tools, and
-/// Explorer's folder (from `context`) as the working folder.
-fn new_conversation(
-    state: &AppState,
-    context: Option<&DesktopContext>,
-) -> Result<(claude::Launch, claude::Options), IpcError> {
-    let (launch, mut options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
-    add_launcher_tools(state, &mut options);
-    if let Some(folder) = context.and_then(DesktopContext::folder) {
-        if Path::new(folder).is_dir() {
-            options.cwd = PathBuf::from(folder);
-        }
-    }
-    Ok((launch, options))
-}
-
-/// Starts Claude Code ahead of a question you seem to be typing, so the
-/// answer starts sooner. Does nothing if it's off, Claude Code can't
-/// answer, or a matching one is already waiting.
+/// Starts the AI ahead of a question you seem to be typing, so the answer
+/// starts sooner: `provider`, else the default one. Does nothing if that's
+/// off, the AI can't answer, or a matching one is already waiting.
 #[tauri::command]
 #[specta::specta]
-async fn ai_warm(state: State<'_, AppState>) -> Result<(), IpcError> {
-    let settings = state.settings().ai.claude;
-    let ready = matches!(
-        state.claude_status.get(),
-        ClaudeStatus::Ready | ClaudeStatus::Unknown
-    );
-    if !settings.warm_start || !ready {
+async fn ai_warm(state: State<'_, AppState>, provider: Option<ProviderId>) -> Result<(), IpcError> {
+    let settings = state.settings().ai;
+    let provider = provider.unwrap_or(settings.default_provider);
+    if !settings.warm_start(provider) || !chat::ready(&state, provider) {
         return Ok(());
     }
-    let context = if settings.desktop_context {
-        Some(state.desktop.current(CONTEXT_WAIT).await)
+    let context = if settings.desktop_context(provider) {
+        Some(state.desktop.current(chat::CONTEXT_WAIT).await)
     } else {
         None
     };
-    let (launch, options) = new_conversation(&state, context.as_ref())?;
-    if let Err(e) = state.chat.warm(&launch, options).await {
-        tracing::debug!("could not warm up Claude Code: {e}");
+    let setup = chat::new_conversation(&state, provider, context.as_ref()).map_err(ai_err)?;
+    if let Err(e) = state.chat.warm(setup).await {
+        tracing::debug!("could not warm up {}: {e}", provider.name());
     }
     Ok(())
 }
 
-/// Asks Claude, starting a new conversation in the folder File Explorer
-/// showed (else your home folder).
+/// Asks `provider` (else the default AI), starting a new conversation in
+/// the folder File Explorer showed (else your home folder).
 #[tauri::command]
 #[specta::specta]
-async fn ai_ask(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
-    let context = context_to_send(&state, true).await;
-    let (launch, options) = new_conversation(&state, context.as_ref())?;
+async fn ai_ask(
+    state: State<'_, AppState>,
+    text: String,
+    provider: Option<ProviderId>,
+) -> Result<AskReply, IpcError> {
+    let provider = provider.unwrap_or(state.settings().ai.default_provider);
+    let context = chat::context_to_send(&state, provider, true).await;
+    let setup = chat::new_conversation(&state, provider, context.as_ref()).map_err(ai_err)?;
     let message = desktop::with_context(&text, context.as_ref());
-    let conversation = state
-        .chat
-        .start(&message, &launch, options)
-        .await
-        .map_err(ai_err)?;
+    let conversation = state.chat.start(&message, setup).await.map_err(ai_err)?;
     Ok(AskReply {
         conversation,
         context: context.as_ref().and_then(DesktopContext::summary),
+        provider,
     })
 }
 
-/// Sends a follow-up in the current conversation, with the desktop
-/// context if it changed since the last message.
+/// Sends a follow-up in the current conversation (to the AI it started
+/// with), with the desktop context if it changed since the last message.
 #[tauri::command]
 #[specta::specta]
 async fn ai_follow_up(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
-    let (launch, mut options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
-    add_launcher_tools(&state, &mut options);
-    let context = context_to_send(&state, false).await;
+    let provider = state
+        .chat
+        .provider()
+        .await
+        .ok_or_else(|| ai_err(AiError::NoConversation))?;
+    let context = chat::context_to_send(&state, provider, false).await;
     let message = desktop::with_context(&text, context.as_ref());
     let conversation = state
         .chat
-        .follow_up(&message, &launch, options)
+        .follow_up(&message, |provider| chat::setup_for(&state, provider))
         .await
         .map_err(ai_err)?;
     Ok(AskReply {
         conversation,
         context: context.as_ref().and_then(DesktopContext::summary),
+        provider,
     })
 }
 

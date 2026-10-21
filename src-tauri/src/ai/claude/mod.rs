@@ -2,46 +2,28 @@
 //! command line for a conversation. `protocol.rs` speaks its stream-json.
 
 pub mod protocol;
+pub mod session;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::Serialize;
 
+pub use super::launch::Launch;
+use super::launch::{find_node, has_extension, path_dirs, shim_target};
+use super::status::Readiness;
+pub use super::status::StatusCache;
 use super::{AiError, Approvals, BillingMode};
 use crate::settings::ClaudeSettings;
 
-/// How to start Claude Code on this machine.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Launch {
-    /// A native `claude` executable (the official installer).
-    Exe(PathBuf),
-    /// An npm install, started as `node cli.js` rather than through its
-    /// `claude.cmd` shim (which would go through cmd.exe and its quoting).
-    Node { node: PathBuf, cli: PathBuf },
-}
-
-impl Launch {
-    fn command(&self) -> tokio::process::Command {
-        match self {
-            Launch::Exe(exe) => tokio::process::Command::new(exe),
-            Launch::Node { node, cli } => {
-                let mut cmd = tokio::process::Command::new(node);
-                cmd.arg(cli);
-                cmd
-            }
-        }
-    }
-}
+/// How messages name it.
+pub const NAME: &str = "Claude Code";
 
 /// Finds Claude Code: `override_path` if set, else PATH, else the usual
 /// install locations.
 pub fn locate(override_path: &str) -> Option<Launch> {
-    let path_dirs: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
+    let path_dirs = path_dirs();
     locate_in(
         override_path,
         &path_dirs,
@@ -54,11 +36,6 @@ pub fn locate(override_path: &str) -> Option<Launch> {
 const NAMES: &[&str] = &["claude.exe", "claude.cmd"];
 #[cfg(not(windows))]
 const NAMES: &[&str] = &["claude"];
-
-#[cfg(windows)]
-const NODE: &str = "node.exe";
-#[cfg(not(windows))]
-const NODE: &str = "node";
 
 fn locate_in(
     override_path: &str,
@@ -137,38 +114,6 @@ fn from_file(path: PathBuf, path_dirs: &[PathBuf]) -> Option<Launch> {
         }
         _ => Some(Launch::Exe(path)),
     }
-}
-
-fn has_extension(path: &Path, extensions: &[&str]) -> bool {
-    path.extension()
-        .is_some_and(|e| extensions.iter().any(|x| e.eq_ignore_ascii_case(x)))
-}
-
-/// The program an npm `.cmd` shim runs: the last quoted path relative to
-/// the shim's folder (`%dp0%\...` or `%~dp0\...`) that's an exe or a script.
-fn shim_target(shim: &str, dir: &Path) -> Option<PathBuf> {
-    shim.split('"')
-        .skip(1)
-        .step_by(2)
-        .filter_map(|quoted| {
-            let rest = quoted
-                .strip_prefix("%dp0%")
-                .or_else(|| quoted.strip_prefix("%~dp0"))?;
-            let relative = rest.trim_start_matches(['\\', '/']);
-            let path = relative
-                .split(['\\', '/'])
-                .filter(|part| !part.is_empty())
-                .fold(dir.to_path_buf(), |path, part| path.join(part));
-            has_extension(&path, &["exe", "js", "mjs", "cjs"]).then_some(path)
-        })
-        .last()
-}
-
-fn find_node(near: Option<&Path>, path_dirs: &[PathBuf]) -> Option<PathBuf> {
-    near.into_iter()
-        .chain(path_dirs.iter().map(PathBuf::as_path))
-        .map(|dir| dir.join(NODE))
-        .find(|p| p.is_file())
 }
 
 /// Everything that decides how a conversation's process starts.
@@ -330,73 +275,13 @@ pub fn sign_in(settings: &ClaudeSettings) -> Result<tokio::process::Child, AiErr
     let launch = locate(&settings.path).ok_or(AiError::NotInstalled)?;
     let mut cmd = base_command(&launch, BillingMode::Subscription, CREATE_NEW_CONSOLE)?;
     cmd.args(["auth", "login", "--claudeai"]);
-    cmd.spawn().map_err(|e| AiError::Spawn(e.to_string()))
+    cmd.spawn().map_err(|e| AiError::Spawn(NAME, e.to_string()))
 }
 
-/// The last status check, so searching never waits for one.
-pub struct StatusCache {
-    last: Mutex<Option<(ClaudeStatus, Instant)>>,
-    checking: std::sync::atomic::AtomicBool,
-}
-
-/// Re-check this often when everything was fine...
-const RECHECK_READY: Duration = Duration::from_secs(30 * 60);
-/// ...and this often while something needs fixing, so a fix shows up soon.
-const RECHECK_BROKEN: Duration = Duration::from_secs(15);
-
-impl Default for StatusCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl StatusCache {
-    pub fn new() -> Self {
-        Self {
-            last: Mutex::new(None),
-            checking: std::sync::atomic::AtomicBool::new(false),
-        }
-    }
-
-    /// Claims the right to run a check; `false` if one is already running.
-    pub fn begin_check(&self) -> bool {
-        !self
-            .checking
-            .swap(true, std::sync::atomic::Ordering::AcqRel)
-    }
-
-    /// Stores a check's result and releases the claim.
-    pub fn finish_check(&self, status: ClaudeStatus) {
-        self.set(status);
-        self.checking
-            .store(false, std::sync::atomic::Ordering::Release);
-    }
-
-    /// The last result; `Unknown` before the first check finishes.
-    pub fn get(&self) -> ClaudeStatus {
-        self.last
-            .lock()
-            .ok()
-            .and_then(|last| last.map(|(status, _)| status))
-            .unwrap_or(ClaudeStatus::Unknown)
-    }
-
-    pub fn set(&self, status: ClaudeStatus) {
-        if let Ok(mut last) = self.last.lock() {
-            *last = Some((status, Instant::now()));
-        }
-    }
-
-    /// Whether it's time to check again.
-    pub fn is_stale(&self) -> bool {
-        let Ok(last) = self.last.lock() else {
-            return true;
-        };
-        match *last {
-            None => true,
-            Some((ClaudeStatus::Ready, at)) => at.elapsed() > RECHECK_READY,
-            Some((_, at)) => at.elapsed() > RECHECK_BROKEN,
-        }
+impl Readiness for ClaudeStatus {
+    const UNKNOWN: Self = ClaudeStatus::Unknown;
+    fn is_ready(self) -> bool {
+        self == ClaudeStatus::Ready
     }
 }
 
@@ -437,6 +322,7 @@ pub fn system_prompt(home: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::launch::NODE;
     use std::fs;
 
     fn options() -> Options {

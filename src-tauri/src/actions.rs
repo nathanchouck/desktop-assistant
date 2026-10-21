@@ -17,6 +17,8 @@ use crate::state::AppState;
 use crate::window;
 
 const CLAUDE_INSTALL_PAGE: &str = "https://code.claude.com/docs/en/setup";
+/// The Codex README's install steps (Windows installer, npm).
+const CODEX_INSTALL_PAGE: &str = "https://github.com/openai/codex#installing-and-running-codex-cli";
 /// Between bringing your window back and pasting into it.
 const PASTE_DELAY: std::time::Duration = std::time::Duration::from_millis(60);
 
@@ -189,21 +191,25 @@ pub fn run_builtin(app: &AppHandle, cmd: BuiltinCommand) -> AppResult<()> {
                 crate::check_claude_status(&app, true);
             });
         }
-        BuiltinCommand::InstallClaude => {
-            app.opener()
-                .open_url(CLAUDE_INSTALL_PAGE, None::<&str>)
-                .map_err(|e| AppError::Open {
-                    path: CLAUDE_INSTALL_PAGE.into(),
-                    reason: e.to_string(),
-                })?;
+        BuiltinCommand::InstallClaude => open_url(app, CLAUDE_INSTALL_PAGE)?,
+        BuiltinCommand::SignInToChatgpt => {
+            let mut login = crate::ai::codex::sign_in(&state.settings().ai.chatgpt)
+                .map_err(|e| AppError::Launch(e.to_string()))?;
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = login.wait().await;
+                crate::check_codex_status(&app, true);
+            });
         }
+        BuiltinCommand::InstallCodex => open_url(app, CODEX_INSTALL_PAGE)?,
         BuiltinCommand::Quit => app.exit(0),
     }
     window::hide(app);
     Ok(())
 }
 
-/// Restarts the launcher, closing Claude Code first so it isn't left behind.
+/// Restarts the launcher, closing Claude Code or Codex first so it isn't
+/// left behind.
 pub async fn restart(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         state.chat.shut_down().await;

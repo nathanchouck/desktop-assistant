@@ -27,11 +27,11 @@ const SCREENSHOT_MAX_SIDE: u32 = 1568;
 const SEARCH_DEFAULT: usize = 15;
 const SEARCH_MAX: usize = 50;
 
-const CONTEXT: &str = "get_desktop_context";
-const SEARCH: &str = "search";
-const OPEN: &str = "open";
-const REVEAL: &str = "reveal";
-const SCREENSHOT: &str = "screenshot";
+pub const CONTEXT: &str = "get_desktop_context";
+pub const SEARCH: &str = "search";
+pub const OPEN: &str = "open";
+pub const REVEAL: &str = "reveal";
+pub const SCREENSHOT: &str = "screenshot";
 
 /// The tool's full name as Claude Code knows it.
 pub fn qualified(tool: &str) -> String {
@@ -49,6 +49,14 @@ pub fn claude_settings() -> Value {
     })
 }
 
+/// Whether the AI answering now may see the screen (Claude and ChatGPT each
+/// have their own switch).
+async fn screen_context_on(state: &AppState) -> bool {
+    let ai = state.settings().ai;
+    let provider = state.chat.provider().await.unwrap_or(ai.default_provider);
+    ai.desktop_context(provider)
+}
+
 pub struct LauncherTools {
     app: AppHandle,
 }
@@ -63,7 +71,7 @@ impl LauncherTools {
     }
 
     async fn desktop_context(&self, state: &AppState) -> ToolOutput {
-        if !state.settings().ai.claude.desktop_context {
+        if !screen_context_on(state).await {
             return ToolOutput::error("The user turned desktop context off in settings.");
         }
         let context = state.desktop.refreshed(&state.shell).await;
@@ -122,7 +130,7 @@ impl LauncherTools {
     }
 
     async fn screenshot(&self, state: &AppState) -> ToolOutput {
-        if !state.settings().ai.claude.desktop_context {
+        if !screen_context_on(state).await {
             return ToolOutput::error("The user turned desktop context off in settings.");
         }
         let context = state.desktop.current(std::time::Duration::ZERO).await;
