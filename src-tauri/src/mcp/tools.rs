@@ -29,8 +29,8 @@ const SEARCH_MAX: usize = 50;
 
 pub const CONTEXT: &str = "get_desktop_context";
 pub const SEARCH: &str = "search";
-pub const OPEN: &str = "open";
-pub const REVEAL: &str = "reveal";
+const OPEN: &str = "open";
+const REVEAL: &str = "reveal";
 pub const SCREENSHOT: &str = "screenshot";
 
 /// The tool's full name as Claude Code knows it.

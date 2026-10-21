@@ -99,7 +99,6 @@ pub fn sign_in(settings: &ChatGptSettings) -> Result<tokio::process::Child, AiEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn reads_the_login_status() {
@@ -132,6 +131,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn checks_status_with_the_real_command_line() {
+        use std::fs;
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("codex");
