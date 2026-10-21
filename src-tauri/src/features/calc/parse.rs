@@ -89,7 +89,7 @@ pub fn prepare(query: &str) -> Option<Prepared> {
         return None;
     }
     let mut tokens = tokenize(query)?;
-    if depth(&tokens) > MAX_DEPTH {
+    if depth(&tokens) > MAX_DEPTH || (!forced && starts_hyphenated(&tokens)) {
         return None;
     }
 
@@ -183,6 +183,16 @@ fn looks_like_an_identifier(query: &str) -> bool {
     let padded = groups[1..].iter().any(|g| g.len() >= 2 && g.starts_with('0'));
     let phone = sep == '-' && groups.len() == 2 && groups[0].len() == 3 && groups[1].len() == 4;
     groups.len() >= 3 || padded || phone
+}
+
+/// "k-9", "t-1000": a name with a hyphen, not "k minus 9".
+fn starts_hyphenated(tokens: &[Token]) -> bool {
+    matches!(tokens, [word, dash, next, ..]
+        if word.kind == Kind::Word
+            && dash.is_op("-")
+            && dash.glued
+            && next.glued
+            && !FUNCTIONS.iter().any(|f| word.is(f)))
 }
 
 /// Splits the query into numbers, words, operators and currency symbols.
@@ -772,7 +782,7 @@ mod tests {
 
     #[test]
     fn one_letter_prefixes_belong_to_other_features() {
-        for query in ["c 2+2", "g 5 + 5", "f 2024-1", "d 10 * 3", "x 2*3"] {
+        for query in ["c 2+2", "g 5 + 5", "f 2024-1", "d 10 * 3", "x 2*3", "k-9", "t-1000"] {
             assert_eq!(prepare(query), None, "{query:?}");
         }
     }
