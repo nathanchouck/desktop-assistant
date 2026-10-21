@@ -3,6 +3,7 @@ import type { Quicklink } from "./bindings";
 /** Prefixes other parts of the launcher already answer to. */
 const RESERVED: Record<string, string> = {
   c: "asks Claude",
+  g: "asks ChatGPT",
   f: "searches files",
   d: "searches folders",
 };

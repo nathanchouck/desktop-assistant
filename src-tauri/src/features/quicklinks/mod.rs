@@ -42,7 +42,8 @@ impl Default for QuicklinkSettings {
         Self {
             enabled: true,
             links: vec![
-                link("g", "Google", "https://www.google.com/search?q={query}"),
+                // "g " asks ChatGPT, so Google is "gg".
+                link("gg", "Google", "https://www.google.com/search?q={query}"),
                 link(
                     "yt",
                     "YouTube",
@@ -76,7 +77,7 @@ const ID_PREFIX: &str = "link:";
 const SEARCH_SCORE: f32 = 1.5;
 /// A link without `{query}` whose keyword you typed.
 const LINK_SCORE: f32 = 1.2;
-/// "yt" alone: below a good app match ("g" is also how Git Bash starts).
+/// "yt" alone: below a good app match ("gh" is also how GitHub Desktop starts).
 const KEYWORD_SCORE: f32 = 0.5;
 
 /// This feature's search results.
@@ -212,7 +213,7 @@ mod tests {
         assert_eq!(
             keywords,
             [
-                "g",
+                "gg",
                 "yt",
                 "gh",
                 "maps",
@@ -246,7 +247,7 @@ mod tests {
             }
         );
         // Text with a colon survives the id.
-        let items = p.query("g 10:30 am in tokyo", 32).await.unwrap();
+        let items = p.query("gg 10:30 am in tokyo", 32).await.unwrap();
         assert_eq!(
             p.activate(&items[0].id, Action::Open).await.unwrap(),
             Activation::OpenUrl {
