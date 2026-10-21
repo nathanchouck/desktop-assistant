@@ -4,16 +4,14 @@ use super::Quicklink;
 
 /// Replaced by what you type after the keyword.
 pub const PLACEHOLDER: &str = "{query}";
-/// Typing at least this much of a link's name finds it too ("youtu").
-const MIN_NAME_PREFIX: usize = 3;
 
 /// What a query asks of one quicklink.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Match<'a> {
     /// "yt lofi": search the link for this text.
     Search(&'a Quicklink, &'a str),
-    /// "yt" (`exact`), or the start of its name ("youtu").
-    Link(&'a Quicklink, bool),
+    /// "yt": the keyword alone.
+    Link(&'a Quicklink),
 }
 
 /// Whether the link can be used: a keyword without spaces or colons (ids
@@ -38,29 +36,24 @@ pub fn takes_text(link: &Quicklink) -> bool {
     link.url.contains(PLACEHOLDER)
 }
 
-/// The quicklinks `query` points at, best first.
-pub fn find<'a>(links: &'a [Quicklink], query: &'a str) -> Vec<Match<'a>> {
+/// The quicklink `query` starts with, if any. The first one wins if a
+/// keyword was given twice (the settings menu doesn't allow it).
+pub fn find<'a>(links: &'a [Quicklink], query: &'a str) -> Option<Match<'a>> {
     let query = query.trim();
     let (word, rest) = match query.split_once(char::is_whitespace) {
         Some((word, rest)) => (word, rest.trim()),
         None => (query, ""),
     };
-    let lower = query.to_lowercase();
-    let mut found = Vec::new();
-    for link in links.iter().filter(|l| is_usable(l)) {
-        if word.eq_ignore_ascii_case(link.keyword.trim()) {
-            if rest.is_empty() {
-                found.push(Match::Link(link, true));
-            } else if takes_text(link) {
-                found.push(Match::Search(link, rest));
-            }
-        } else if lower.chars().count() >= MIN_NAME_PREFIX
-            && link.name.to_lowercase().starts_with(&lower)
-        {
-            found.push(Match::Link(link, false));
-        }
+    let link = links
+        .iter()
+        .find(|l| is_usable(l) && word.eq_ignore_ascii_case(l.keyword.trim()))?;
+    if rest.is_empty() {
+        Some(Match::Link(link))
+    } else if takes_text(link) {
+        Some(Match::Search(link, rest))
+    } else {
+        None
     }
-    found
 }
 
 /// The link's address with `text` in place of `{query}`.
@@ -122,36 +115,36 @@ mod tests {
         let links = links();
         assert_eq!(
             find(&links, "yt lofi beats"),
-            [Match::Search(&links[0], "lofi beats")]
+            Some(Match::Search(&links[0], "lofi beats"))
         );
         assert_eq!(
             find(&links, "YT  cats "),
-            [Match::Search(&links[0], "cats")]
+            Some(Match::Search(&links[0], "cats"))
         );
         assert_eq!(
             find(&links, "gh tauri"),
-            [Match::Search(&links[1], "tauri")]
+            Some(Match::Search(&links[1], "tauri"))
         );
     }
 
     #[test]
-    fn keyword_alone_or_name_finds_the_link() {
+    fn keyword_alone_finds_the_link() {
         let links = links();
-        assert_eq!(find(&links, "yt"), [Match::Link(&links[0], true)]);
-        assert_eq!(find(&links, "youtu"), [Match::Link(&links[0], false)]);
-        assert_eq!(find(&links, "mail"), [Match::Link(&links[2], true)]);
-        assert_eq!(find(&links, "gma"), [Match::Link(&links[2], false)]);
-        // Too short to mean the name; a link without {query} takes no text.
-        assert!(find(&links, "yo").is_empty());
-        assert!(find(&links, "mail inbox").is_empty());
-        assert!(find(&links, "ytlofi").is_empty());
+        assert_eq!(find(&links, "yt"), Some(Match::Link(&links[0])));
+        assert_eq!(find(&links, "mail"), Some(Match::Link(&links[2])));
+        // Names and partial keywords don't count; a link without {query}
+        // takes no text.
+        assert_eq!(find(&links, "youtube"), None);
+        assert_eq!(find(&links, "y"), None);
+        assert_eq!(find(&links, "mail inbox"), None);
+        assert_eq!(find(&links, "ytlofi"), None);
     }
 
     #[test]
     fn unusable_links_are_skipped() {
         let links = links();
-        assert!(find(&links, "bad x").is_empty());
-        assert!(find(&links, "two words x").is_empty());
+        assert_eq!(find(&links, "bad x"), None);
+        assert_eq!(find(&links, "two words x"), None);
         assert!(!is_web_url("javascript:alert(1)"));
         assert!(!is_web_url("https://"));
         assert!(is_web_url("HTTPS://Example.com"));

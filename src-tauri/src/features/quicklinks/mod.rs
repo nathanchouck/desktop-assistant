@@ -78,8 +78,6 @@ const SEARCH_SCORE: f32 = 1.5;
 const LINK_SCORE: f32 = 1.2;
 /// "yt" alone: below a good app match ("g" is also how Git Bash starts).
 const KEYWORD_SCORE: f32 = 0.5;
-/// The start of a link's name ("youtu").
-const NAME_SCORE: f32 = 0.3;
 
 /// This feature's search results.
 pub fn provider(ctx: &ProviderContext) -> Option<Arc<dyn SearchProvider>> {
@@ -104,8 +102,8 @@ impl QuicklinkProvider {
     }
 }
 
-fn item(found: &Match) -> ResultItem {
-    match *found {
+fn item(found: Match) -> ResultItem {
+    match found {
         Match::Search(link, text) => ResultItem::new(
             format!("{ID_PREFIX}{}:{text}", link.keyword.trim().to_lowercase()),
             ItemKind::Link,
@@ -116,7 +114,7 @@ fn item(found: &Match) -> ResultItem {
         .with_accessory(link.keyword.trim())
         .with_score(SEARCH_SCORE)
         .with_actions([Action::Open]),
-        Match::Link(link, exact) => {
+        Match::Link(link) => {
             let searches = links::takes_text(link);
             let (title, subtitle, icon) = if searches {
                 (
@@ -127,11 +125,7 @@ fn item(found: &Match) -> ResultItem {
             } else {
                 (link.name.clone(), links::host(&link.url).to_owned(), "link")
             };
-            let score = match (exact, searches) {
-                (false, _) => NAME_SCORE,
-                (true, true) => KEYWORD_SCORE,
-                (true, false) => LINK_SCORE,
-            };
+            let score = if searches { KEYWORD_SCORE } else { LINK_SCORE };
             ResultItem::new(
                 format!("{ID_PREFIX}{}", link.keyword.trim().to_lowercase()),
                 ItemKind::Link,
@@ -152,15 +146,14 @@ impl SearchProvider for QuicklinkProvider {
         "quicklinks"
     }
 
-    async fn query(&self, query: &str, limit: usize) -> Result<Vec<ResultItem>, SearchError> {
+    async fn query(&self, query: &str, _limit: usize) -> Result<Vec<ResultItem>, SearchError> {
         let settings = self.current();
         if !settings.enabled {
             return Ok(Vec::new());
         }
         Ok(links::find(&settings.links, query)
-            .iter()
-            .take(limit)
             .map(item)
+            .into_iter()
             .collect())
     }
 
