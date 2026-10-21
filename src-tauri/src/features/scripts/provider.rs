@@ -334,15 +334,18 @@ impl ScriptProvider {
             ScriptMode::Copy => Activation::Copy { text },
             ScriptMode::Paste => Activation::Paste { text: Some(text) },
             ScriptMode::Silent | ScriptMode::Output => {
-                if let Some(line) = output::as_notice(&text) {
-                    // Stays open, so the open isn't counted for us.
+                let short = output::as_notice(&text).or_else(|| {
+                    text.trim()
+                        .is_empty()
+                        .then(|| format!("{title} finished without printing anything."))
+                });
+                if let Some(message) = short {
+                    // A notice keeps the launcher open, and such opens
+                    // aren't counted for ranking: count this run here.
                     if let Err(e) = self.store.record_open(id) {
                         tracing::debug!("could not record a script run: {e}");
                     }
-                    return notice(line);
-                }
-                if text.trim().is_empty() {
-                    return notice(format!("{title} finished without printing anything."));
+                    return notice(message);
                 }
                 match self.open_as_file(script, &text, cut).await {
                     Ok(()) => Activation::Hide,

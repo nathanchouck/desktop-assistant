@@ -25,8 +25,9 @@ pub enum Outcome {
 /// Messages in the footer are cut to this many characters.
 const MESSAGE_CHARS: usize = 200;
 /// Output this short (on one line, or joined with " · ") shows in the
-/// footer; longer output opens as a text file.
-pub const NOTICE_CHARS: usize = 160;
+/// footer; longer output opens as a text file. About what the footer
+/// shows beside a script row's key hints, so nothing is cut off unseen.
+pub const NOTICE_CHARS: usize = 64;
 
 /// Bytes kept from a stream: the start (stdout, which is the result) or
 /// the end (stderr, where the error is).

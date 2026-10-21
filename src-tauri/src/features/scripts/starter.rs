@@ -27,8 +27,8 @@ PowerShell, Python and Bash, :: or REM in batch files, // in JavaScript.
 @mode
   silent  run in the background, then show the last line it printed
           (the default)
-  output  show what it printed: in the launcher when short, else in a
-          text file
+  output  show what it printed: in the launcher when it's about a line,
+          else in a text file
   copy    copy what it printed
   paste   paste what it printed into the window you came from
 

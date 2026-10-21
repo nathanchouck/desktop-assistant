@@ -1,5 +1,6 @@
 //! Keeps the index current: reads the scripts folder at startup, again
-//! when anything in it changes, and when the folder setting changes.
+//! when anything in it changes, when the folder setting changes, and when
+//! a chosen folder that didn't exist is made.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,14 +23,18 @@ pub async fn follow(library: Arc<Library>) {
     // What the watcher and the index were made for: (on, folder).
     let mut current: Option<(bool, PathBuf)> = None;
     let mut watcher: Option<RecommendedWatcher> = None;
+    // The folder wasn't there to watch (a new folder setting); checked
+    // each second until it is ("Open folder" makes it).
+    let mut missing = false;
     loop {
         let wanted = (library.settings().enabled, library.folder());
-        if current.as_ref() != Some(&wanted) {
+        if current.as_ref() != Some(&wanted) || (missing && wanted.1.is_dir()) {
             watcher = None;
             library.rescan().await;
             if wanted.0 {
                 watcher = watch(&wanted.1, tx.clone());
             }
+            missing = wanted.0 && !wanted.1.is_dir();
             current = Some(wanted);
         }
         tokio::select! {
@@ -45,8 +50,7 @@ pub async fn follow(library: Arc<Library>) {
     }
 }
 
-/// Watches `folder` (not its subfolders); `None` if it can't be watched
-/// (it doesn't exist): Reload Scripts or a settings change tries again.
+/// Watches `folder` (not its subfolders); `None` if it can't be watched.
 fn watch(folder: &Path, tx: mpsc::UnboundedSender<()>) -> Option<RecommendedWatcher> {
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         if event.is_ok() {
@@ -111,6 +115,30 @@ mod tests {
         wait_for(
             "folder change",
             Box::new(move |l| l.index().folder == second),
+        )
+        .await;
+
+        // A folder that doesn't exist yet is followed once it's made.
+        let third = dir.path().join("three");
+        shared.write().unwrap().scripts.folder = third.display().to_string();
+        wait_for(
+            "missing folder",
+            Box::new(|l| l.index().folder_error.is_some()),
+        )
+        .await;
+        std::fs::create_dir_all(&third).unwrap();
+        wait_for(
+            "folder made",
+            Box::new(|l| l.index().folder_error.is_none()),
+        )
+        .await;
+        std::fs::write(third.join("c.py"), "# @title Sea\n").unwrap();
+        wait_for(
+            "script in the new folder",
+            Box::new(|l| {
+                let index = l.index();
+                index.scripts.len() + index.problems.len() == 1
+            }),
         )
         .await;
         task.abort();
