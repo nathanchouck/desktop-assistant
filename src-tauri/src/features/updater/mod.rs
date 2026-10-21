@@ -127,3 +127,22 @@ pub async fn install_if_ready(app: &AppHandle) {
         toast::error(app, format!("Couldn't install the update: {e}"));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checks_automatically_by_default_and_reads_older_files() {
+        assert!(UpdateSettings::default().check_automatically);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.toml");
+        // Before this feature the section only had a placeholder `enabled`.
+        std::fs::write(&path, "[updates]\nenabled = false\n").unwrap();
+        let loaded = settings::load_or_create(&path).unwrap();
+        assert!(loaded.updates.check_automatically);
+        std::fs::write(&path, "[updates]\ncheck_automatically = false\n").unwrap();
+        let loaded = settings::load_or_create(&path).unwrap();
+        assert!(!loaded.updates.check_automatically);
+    }
+}
