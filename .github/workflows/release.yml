@@ -1,0 +1,165 @@
+name: release
+
+# Publishes a GitHub Release that installed copies update from: the NSIS
+# installer, its signature and latest.json (what the in-app updater reads
+# at releases/latest/download/latest.json).
+#
+# Push a tag like v0.2.0 (it must match the version in tauri.conf.json,
+# Cargo.toml and package.json), or run it by hand to release the version
+# in tauri.conf.json.
+#
+# Signing needs, in the repo's Settings > Secrets and variables > Actions:
+# - secret TAURI_SIGNING_PRIVATE_KEY (and TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#   if the key has one), from `npx tauri signer generate`;
+# - variable TAURI_UPDATER_PUBKEY, the matching public key (built into
+#   the app, so it can check what it downloads).
+# Without them the release still gets the installer, but no update files:
+# installed copies won't update to it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the version
+        id: version
+        run: |
+          $conf = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $package = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $cargo = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "v$conf" }
+          if ($tag -ne "v$conf" -or $package -ne $conf -or $cargo -ne $conf) {
+            "::error title=Version mismatch::Tag $tag, tauri.conf.json $conf, package.json $package, Cargo.toml $cargo. Set the same version in all three, commit, then tag v<version>."
+            exit 1
+          }
+          "version=$conf" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      # Secrets can't be tested in `if:`, so this step says whether to sign.
+      - name: Check the update signing key
+        id: signing
+        env:
+          PRIVATE_KEY_SET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY || secrets.TAURI_UPDATER_PUBKEY }}
+        run: |
+          $missing = @()
+          if ($env:PRIVATE_KEY_SET -ne 'true') { $missing += 'the secret TAURI_SIGNING_PRIVATE_KEY' }
+          if (-not $env:PUBKEY) { $missing += 'the variable TAURI_UPDATER_PUBKEY' }
+          if ($missing.Count -gt 0) {
+            "::warning title=Release not signed for updates::Missing $($missing -join ' and '). Publishing the installer without update files, so installed copies won't update to this release."
+            "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          # Merged into tauri.conf.json for this build only: the CLI signs
+          # the installer when it makes updater artifacts.
+          $config = @{
+            bundle = @{ createUpdaterArtifacts = $true }
+            plugins = @{ updater = @{ pubkey = $env:PUBKEY } }
+          } | ConvertTo-Json -Depth 4
+          $path = Join-Path $env:RUNNER_TEMP 'updater.conf.json'
+          Set-Content -Path $path -Value $config -Encoding utf8NoBOM
+          "signed=true" >> $env:GITHUB_OUTPUT
+          "config=$path" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Build the installer
+        env:
+          # Built into the app (option_env! in features/updater): without
+          # it the app says updates aren't set up.
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY || secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+          UPDATER_CONFIG: ${{ steps.signing.outputs.config }}
+        run: |
+          if ($env:SIGNED -eq 'true') {
+            npx tauri build --bundles nsis --config $env:UPDATER_CONFIG
+          } else {
+            npx tauri build --bundles nsis
+          }
+
+      # Fixed file names (GitHub would turn the space in "Desktop Assistant"
+      # into a dot), and latest.json pointing at them.
+      - name: Collect the release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          $setup = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter "*_$($env:VERSION)_x64-setup.exe" | Select-Object -First 1
+          if (-not $setup) { "::error::No NSIS installer for $($env:VERSION) was built."; exit 1 }
+          $name = "desktop-assistant_$($env:VERSION)_x64-setup.exe"
+          New-Item -ItemType Directory -Force release-files | Out-Null
+          Copy-Item $setup.FullName "release-files/$name"
+          if ($env:SIGNED -ne 'true') { exit 0 }
+
+          $sig = "$($setup.FullName).sig"
+          if (-not (Test-Path $sig)) { "::error::The installer wasn't signed ($sig is missing)."; exit 1 }
+          Copy-Item $sig "release-files/$name.sig"
+          $url = "https://github.com/$($env:GITHUB_REPOSITORY)/releases/download/$($env:TAG)/$name"
+          # Only NSIS installs update from this: a copy installed from an
+          # .msi finds no entry and says so instead of installing twice.
+          $latest = [ordered]@{
+            version = $env:VERSION
+            notes = "Desktop Assistant $($env:TAG)"
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            platforms = [ordered]@{
+              'windows-x86_64-nsis' = [ordered]@{
+                signature = (Get-Content $sig -Raw).Trim()
+                url = $url
+              }
+            }
+          }
+          $latest | ConvertTo-Json -Depth 4 | Set-Content -Path release-files/latest.json -Encoding utf8NoBOM
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          $files = Get-ChildItem release-files | ForEach-Object { $_.FullName }
+          $notes = if ($env:SIGNED -eq 'true') {
+            "Install with the -setup.exe. Installed copies update themselves to this release."
+          } else {
+            "This build isn't signed for updates: installed copies won't update to it. Install it with the -setup.exe."
+          }
+          $exists = $false
+          try { gh release view $env:TAG --json tagName *> $null; $exists = $LASTEXITCODE -eq 0 } catch { }
+          if ($exists -and $env:GITHUB_REF_TYPE -ne 'tag') {
+            "::error title=Already released::$($env:TAG) is already released. Bump the version to release this commit."
+            exit 1
+          } elseif ($exists) {
+            # A re-run for the same tag: replace the files.
+            gh release upload $env:TAG @files --clobber
+          } else {
+            $pre = if ($env:TAG.Contains('-')) { @('--prerelease') } else { @() }
+            gh release create $env:TAG @files --title "Desktop Assistant $($env:TAG)" --notes $notes --target $env:GITHUB_SHA @pre
+          }

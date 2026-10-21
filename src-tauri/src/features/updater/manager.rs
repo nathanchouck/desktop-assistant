@@ -348,8 +348,9 @@ fn describe(e: &tauri_plugin_updater::Error) -> String {
             None => "a network error".into(),
         },
         Error::Network(message) => message.trim_matches('`').to_owned(),
+        // Releases only update copies installed with the -setup.exe (NSIS).
         Error::TargetNotFound(_) | Error::TargetsNotFound(_) => {
-            "the release has no Windows installer for updates".into()
+            "the release has no update for this kind of install (use the -setup.exe)".into()
         }
         Error::Minisign(_)
         | Error::Base64(_)
@@ -381,7 +382,7 @@ mod tests {
         );
         assert_eq!(
             describe(&Error::TargetsNotFound(vec!["windows-x86_64".into()])),
-            "the release has no Windows installer for updates"
+            "the release has no update for this kind of install (use the -setup.exe)"
         );
         assert!(describe(&Error::MissingSignedVersion).contains("signature"));
         assert_eq!(
