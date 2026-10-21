@@ -1,5 +1,9 @@
 use std::sync::{Arc, Mutex, RwLock};
 
+use tokio::sync::mpsc;
+
+use crate::ai::chat::Chat;
+use crate::ai::AiEvent;
 use crate::file_index::FileIndex;
 use crate::icons::IconCache;
 use crate::paths::{self, AppPaths};
@@ -25,6 +29,9 @@ pub struct AppState {
     pub files: Arc<FileIndex>,
     /// Keeps the Start Menu watcher alive.
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    pub chat: Arc<Chat>,
+    /// Chat events, taken once at startup and forwarded to the UI.
+    pub chat_events: Mutex<Option<mpsc::UnboundedReceiver<(u32, AiEvent)>>>,
 }
 
 impl AppState {
@@ -55,7 +62,10 @@ impl AppState {
                 settings.search.exclusions.clone(),
             )),
         ]);
+        let (chat_tx, chat_rx) = mpsc::unbounded_channel();
         Self {
+            chat: Arc::new(Chat::new(chat_tx)),
+            chat_events: Mutex::new(Some(chat_rx)),
             paths,
             settings: RwLock::new(settings),
             search,

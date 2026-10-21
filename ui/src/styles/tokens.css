@@ -28,7 +28,14 @@
   --keycap-border: rgba(20, 30, 60, 0.1);
 
   --accent: #4f7cff;
+  --on-accent: #ffffff;
   --danger: #d64545;
+  --success: #2f9e5b;
+
+  /* Chat */
+  --code: rgba(20, 30, 60, 0.06);
+  --approval: rgba(79, 124, 255, 0.08);
+  --approval-border: rgba(79, 124, 255, 0.35);
 
   /* Shape & spacing */
   --radius-row: 10px;
@@ -48,7 +55,9 @@
 
   /* Type */
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
   --font-size-input: 20px;
+  --font-size-chat: 14px;
   --font-size-title: 14px;
   --font-size-sub: 12px;
 
@@ -82,6 +91,13 @@
     --keycap-border: rgba(255, 255, 255, 0.12);
 
     --accent: #7c9cff;
+    --on-accent: #0d1020;
+    --danger: #ff6b6b;
+    --success: #4cc27e;
+
+    --code: rgba(255, 255, 255, 0.07);
+    --approval: rgba(124, 156, 255, 0.1);
+    --approval-border: rgba(124, 156, 255, 0.4);
   }
 
   :root[data-glass="on"] {

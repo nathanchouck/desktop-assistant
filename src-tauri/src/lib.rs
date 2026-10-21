@@ -19,9 +19,10 @@ pub mod store;
 pub mod window;
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, RunEvent};
+use tauri_specta::Event;
 
 use crate::paths::AppPaths;
 use crate::settings::Settings;
@@ -88,6 +89,7 @@ pub fn run() {
             sync_launch_at_login(handle, settings.general.launch_at_login);
             start_app_index(handle);
             start_file_index_unless_everything(handle);
+            start_chat(handle);
 
             // Handy while developing; release builds start hidden in the tray.
             if cfg!(debug_assertions) {
@@ -96,8 +98,47 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(window::on_window_event)
-        .run(tauri::generate_context!())
-        .expect("error while running Desktop Assistant");
+        .build(tauri::generate_context!())
+        .expect("error while building Desktop Assistant")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                // Don't leave a Claude Code process behind.
+                if let Some(state) = app.try_state::<AppState>() {
+                    tauri::async_runtime::block_on(state.chat.close());
+                }
+            }
+        });
+}
+
+/// How long an unused conversation keeps its Claude Code process.
+const CHAT_IDLE: Duration = Duration::from_secs(10 * 60);
+
+/// Forwards chat events to the UI and frees idle Claude Code processes.
+fn start_chat(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let events = state.chat_events.lock().ok().and_then(|mut rx| rx.take());
+    if let Some(mut events) = events {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            while let Some((conversation, event)) = events.recv().await {
+                if let Err(e) = (ipc::AiStream {
+                    conversation,
+                    event,
+                })
+                .emit(&app)
+                {
+                    tracing::warn!("could not send a chat event: {e}");
+                }
+            }
+        });
+    }
+    let chat = Arc::clone(&state.chat);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            chat.shut_down_if_idle(CHAT_IDLE).await;
+        }
+    });
 }
 
 /// Indexes installed apps in the background and re-indexes when the Start

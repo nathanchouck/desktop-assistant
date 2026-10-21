@@ -15,10 +15,23 @@ export const commands = {
 	launcherHide: () => __TAURI_INVOKE<void>("launcher_hide"),
 	/**  The UI reports its content height so the window can fit it. */
 	launcherSetHeight: (height: number) => __TAURI_INVOKE<void>("launcher_set_height", { height }),
+	/**  Asks Claude, starting a new conversation. Returns its id. */
+	aiAsk: (text: string) => typedError<number, IpcError>(__TAURI_INVOKE("ai_ask", { text })),
+	/**  Sends a follow-up in the current conversation. */
+	aiFollowUp: (text: string) => typedError<number, IpcError>(__TAURI_INVOKE("ai_follow_up", { text })),
+	/**  Approves or denies a pending action. */
+	aiApprove: (id: string, allow: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("ai_approve", { id, allow })),
+	/**  Stops the current answer; the conversation stays open. */
+	aiStop: () => typedError<null, IpcError>(__TAURI_INVOKE("ai_stop")),
+	/**  Ends the conversation. */
+	aiClose: () => typedError<null, IpcError>(__TAURI_INVOKE("ai_close")),
+	/**  Opens a web link from an answer in the default browser. */
+	openExternal: (url: string) => typedError<null, IpcError>(__TAURI_INVOKE("open_external", { url })),
 };
 
 /** Events */
 export const events = {
+	aiStream: makeEvent<AiStream>("ai-stream"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 };
 
@@ -29,14 +42,34 @@ export const events = {
  */
 export type Action = "open" | "run_as_admin" | "reveal_in_explorer" | "copy_path" | "ask_ai" | "run";
 
-/**  What an adapter emits while answering. Sent to the UI as events. */
-export type AiEvent = { type: "text_delta"; text: string } | { type: "tool_started"; name: string; summary: string } | { type: "approval_requested"; id: ApprovalId; tool: string; detail: string } | { type: "done" } | { type: "error"; message: string };
+/**  What the UI hears about a conversation, in order. */
+export type AiEvent = 
+/**  The model is connected and answering. */
+{ type: "started"; model: string } | 
+/**  More answer text (append to the current reply). */
+{ type: "text_delta"; text: string } | 
+/**  Claude started using a tool, e.g. "Write · notes.txt". */
+{ type: "tool_started"; id: string; name: string; summary: string } | { type: "tool_finished"; id: string; ok: boolean } | 
+/**  Waiting for Approve / Deny. */
+{ type: "approval_requested"; id: string; tool: string; summary: string; detail: string } | 
+/**  The approval was answered (by you) or withdrawn (by Claude). */
+{ type: "approval_resolved"; id: string; allowed: boolean } | 
+/**  The turn finished; a follow-up can be sent. */
+{ type: "done" } | 
+/**  You stopped the turn; a follow-up can be sent. */
+{ type: "stopped" } | { type: "error"; message: string };
 
 export type AiSettings = {
 	/**  Gets any query that doesn't match an app, file or command. */
 	default_provider: ProviderId,
-	claude: ProviderSettings,
+	claude: ClaudeSettings,
 	chatgpt: ProviderSettings,
+};
+
+/**  One step of a conversation, streamed to the UI. */
+export type AiStream = {
+	conversation: number,
+	event: AiEvent,
 };
 
 export type AppInfo = {
@@ -47,17 +80,35 @@ export type AppInfo = {
 	glass: boolean,
 };
 
-export type ApprovalId = number;
+/**  Who approves actions that change things (writing files, running commands). */
+export type Approvals = 
+/**  You do: an Approve / Deny card in the launcher. */
+"ask" | 
+/**  Claude Code's auto mode decides, and asks you only when it isn't sure. */
+"auto";
 
 /**  How a provider is paid for. */
 export type BillingMode = 
 /**
  *  Use the CLI's own login (Claude Pro/Max, ChatGPT Plus/Pro). The API key
- *  env var is stripped from the child process so it can't take over.
+ *  env vars are stripped from the child process so they can't take over.
  */
 "subscription" | 
-/**  Inject an API key from Windows Credential Manager. */
+/**  Use the API key from the environment (`ANTHROPIC_API_KEY`). */
 "api_key";
+
+export type ClaudeSettings = {
+	billing: BillingMode,
+	/**  Passed to `claude --model`: an alias ("sonnet", "haiku") or a full id. */
+	model: string,
+	/**
+	 *  "ask": Approve / Deny in the launcher before Claude changes anything.
+	 *  "auto": Claude Code's auto mode decides, asking only when unsure.
+	 */
+	approvals: Approvals,
+	/**  Full path to `claude` (or its `cli.js`). Empty: find it automatically. */
+	path: string,
+};
 
 export type GeneralSettings = {
 	launch_at_login: boolean,

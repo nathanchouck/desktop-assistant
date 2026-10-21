@@ -9,7 +9,7 @@ use tauri::{AppHandle, State, Wry};
 use tauri_specta::{collect_commands, collect_events, Builder};
 
 use crate::actions;
-use crate::ai::AiEvent;
+use crate::ai::{claude, AiEvent};
 use crate::error::IpcError;
 use crate::search::{Action, ResultItem};
 use crate::settings::Settings;
@@ -90,6 +90,81 @@ fn launcher_set_height(app: AppHandle, height: u32) {
     window::set_height(&app, height);
 }
 
+/// Asks Claude, starting a new conversation. Returns its id.
+#[tauri::command]
+#[specta::specta]
+async fn ai_ask(state: State<'_, AppState>, text: String) -> Result<u32, IpcError> {
+    let (launch, options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    state
+        .chat
+        .start(&text, &launch, options)
+        .await
+        .map_err(ai_err)
+}
+
+/// Sends a follow-up in the current conversation.
+#[tauri::command]
+#[specta::specta]
+async fn ai_follow_up(state: State<'_, AppState>, text: String) -> Result<u32, IpcError> {
+    let (launch, options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    state
+        .chat
+        .follow_up(&text, &launch, options)
+        .await
+        .map_err(ai_err)
+}
+
+/// Approves or denies a pending action.
+#[tauri::command]
+#[specta::specta]
+async fn ai_approve(state: State<'_, AppState>, id: String, allow: bool) -> Result<(), IpcError> {
+    state.chat.respond(&id, allow).await.map_err(ai_err)
+}
+
+/// Stops the current answer; the conversation stays open.
+#[tauri::command]
+#[specta::specta]
+async fn ai_stop(state: State<'_, AppState>) -> Result<(), IpcError> {
+    state.chat.stop().await;
+    Ok(())
+}
+
+/// Ends the conversation.
+#[tauri::command]
+#[specta::specta]
+async fn ai_close(state: State<'_, AppState>) -> Result<(), IpcError> {
+    state.chat.close().await;
+    Ok(())
+}
+
+/// Opens a web link from an answer in the default browser.
+#[tauri::command]
+#[specta::specta]
+fn open_external(app: AppHandle, url: String) -> Result<(), IpcError> {
+    use tauri_plugin_opener::OpenerExt;
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(IpcError {
+            message: "only web links can be opened".into(),
+        });
+    }
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| IpcError {
+            message: e.to_string(),
+        })
+}
+
+fn ai_err(e: crate::ai::AiError) -> IpcError {
+    crate::error::AppError::from(e).into()
+}
+
+/// One step of a conversation, streamed to the UI.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+pub struct AiStream {
+    pub conversation: u32,
+    pub event: AiEvent,
+}
+
 /// Sent each time the launcher appears, so the UI can focus the search box.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 pub struct LauncherShown;
@@ -102,11 +177,15 @@ pub fn builder() -> Builder<Wry> {
             search_query,
             item_activate,
             launcher_hide,
-            launcher_set_height
+            launcher_set_height,
+            ai_ask,
+            ai_follow_up,
+            ai_approve,
+            ai_stop,
+            ai_close,
+            open_external
         ])
-        .events(collect_events![LauncherShown])
-        // Not used by a command yet, but exported so the UI can share them.
-        .typ::<AiEvent>()
+        .events(collect_events![LauncherShown, AiStream])
 }
 
 /// Where the generated TypeScript bindings live.

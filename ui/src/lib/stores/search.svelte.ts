@@ -13,6 +13,12 @@ export class SearchStore {
   current = $derived<ResultItem | undefined>(this.items[this.selected]);
 
   #latest = new LatestOnly();
+  #onAsk: (text: string) => void;
+
+  /** `onAsk` gets the query when it should go to the AI. */
+  constructor(onAsk: (text: string) => void) {
+    this.#onAsk = onAsk;
+  }
 
   async setQuery(query: string): Promise<void> {
     this.query = query;
@@ -46,14 +52,17 @@ export class SearchStore {
     this.selected = (this.selected + delta + n) % n;
   }
 
+  /** Sends the query to the AI, whatever the results. */
+  ask(text = this.query): void {
+    const question = text.trim();
+    if (question) this.#onAsk(question);
+  }
+
   /** Runs `action` (default: the item's first action) on row `index`. */
   async activate(index = this.selected, action?: Action): Promise<void> {
     const item = this.items[index];
     if (!item) return;
-    if (item.kind === "ask_ai") {
-      this.notice = "Asking AI arrives in milestone 4.";
-      return;
-    }
+    if (item.kind === "ask_ai") return this.ask();
     const chosen = action ?? item.actions[0];
     if (!chosen || !item.actions.includes(chosen)) {
       this.notice = `That doesn't apply to ${item.title}.`;

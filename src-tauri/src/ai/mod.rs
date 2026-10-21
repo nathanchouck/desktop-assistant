@@ -1,9 +1,10 @@
-//! AI providers (Claude Code, Codex). Adapters arrive in milestones 4 and 5;
-//! this module holds the shared types and the trait they implement.
+//! AI chat: Claude Code today (`claude/`), Codex in M5. A conversation is a
+//! long-running CLI process; its output becomes `AiEvent`s for the UI.
 
-use async_trait::async_trait;
+pub mod chat;
+pub mod claude;
+
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -17,45 +18,62 @@ pub enum ProviderId {
 #[serde(rename_all = "snake_case")]
 pub enum BillingMode {
     /// Use the CLI's own login (Claude Pro/Max, ChatGPT Plus/Pro). The API key
-    /// env var is stripped from the child process so it can't take over.
+    /// env vars are stripped from the child process so they can't take over.
     #[default]
     Subscription,
-    /// Inject an API key from Windows Credential Manager.
+    /// Use the API key from the environment (`ANTHROPIC_API_KEY`).
     ApiKey,
 }
 
-#[derive(Debug, Clone, Serialize, specta::Type)]
-pub struct ProviderStatus {
-    pub installed: bool,
-    pub signed_in: bool,
-    pub billing: BillingMode,
-    /// Human-readable problem, if the provider can't be used right now.
-    pub problem: Option<String>,
+/// Who approves actions that change things (writing files, running commands).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Approvals {
+    /// You do: an Approve / Deny card in the launcher.
+    #[default]
+    Ask,
+    /// Claude Code's auto mode decides, and asks you only when it isn't sure.
+    Auto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, specta::Type)]
-pub struct ConversationId(pub u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, specta::Type)]
-pub struct ApprovalId(pub u32);
-
-/// What an adapter emits while answering. Sent to the UI as events.
-#[derive(Debug, Clone, Serialize, specta::Type)]
+/// What the UI hears about a conversation, in order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AiEvent {
+    /// The model is connected and answering.
+    Started {
+        model: String,
+    },
+    /// More answer text (append to the current reply).
     TextDelta {
         text: String,
     },
+    /// Claude started using a tool, e.g. "Write · notes.txt".
     ToolStarted {
+        id: String,
         name: String,
         summary: String,
     },
+    ToolFinished {
+        id: String,
+        ok: bool,
+    },
+    /// Waiting for Approve / Deny.
     ApprovalRequested {
-        id: ApprovalId,
+        id: String,
         tool: String,
+        summary: String,
         detail: String,
     },
+    /// The approval was answered (by you) or withdrawn (by Claude).
+    ApprovalResolved {
+        id: String,
+        allowed: bool,
+    },
+    /// The turn finished; a follow-up can be sent.
     Done,
+    /// You stopped the turn; a follow-up can be sent.
+    Stopped,
     Error {
         message: String,
     },
@@ -63,25 +81,19 @@ pub enum AiEvent {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AiError {
-    #[error("{0} is not installed")]
-    NotInstalled(&'static str),
-    #[error("{0} is not signed in")]
-    NotSignedIn(&'static str),
-    #[error("provider process failed: {0}")]
+    #[error(
+        "Claude Code isn't installed (or isn't on PATH). Install it from \
+         https://code.claude.com, run `claude` once to sign in, then try again."
+    )]
+    NotInstalled,
+    #[error("API key mode is on but ANTHROPIC_API_KEY isn't set")]
+    MissingApiKey,
+    #[error("could not start Claude Code: {0}")]
+    Spawn(String),
+    #[error("Claude Code stopped: {0}")]
     Process(String),
-}
-
-#[async_trait]
-pub trait AiProvider: Send + Sync {
-    fn id(&self) -> ProviderId;
-    async fn status(&self) -> ProviderStatus;
-    /// Sends a prompt; events stream into `tx` until `AiEvent::Done` or `Error`.
-    async fn send(
-        &self,
-        conversation: ConversationId,
-        prompt: String,
-        tx: mpsc::Sender<AiEvent>,
-    ) -> Result<(), AiError>;
-    async fn respond_approval(&self, id: ApprovalId, allow: bool) -> Result<(), AiError>;
-    async fn cancel(&self, conversation: ConversationId) -> Result<(), AiError>;
+    #[error("there's no conversation to continue")]
+    NoConversation,
+    #[error("that approval is no longer pending")]
+    UnknownApproval,
 }

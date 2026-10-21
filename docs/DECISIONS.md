@@ -34,7 +34,7 @@ The app owns a list of MCP servers and writes it into Claude's and Codex's
 configs. Add a service once and both providers get it. claude.ai connectors
 still come through Claude's login on top of this.
 
-## D-007 Approvals mechanism (OPEN, spike in M4)
+## D-007 Approvals mechanism (resolved by D-018)
 Need a way to pause a tool call and ask in the popup. Options:
 - Claude: `--permission-prompt-tool` pointed at a tiny MCP tool our app
   serves; or move to the Claude Agent SDK (Node sidecar) with `canUseTool`.
@@ -121,3 +121,24 @@ it covers every drive. Considered: the Windows Search index (already
 running, but slow per query and limited to indexed locations) and reading
 the NTFS master file table ourselves (what Everything does: needs admin
 rights, so effectively another service).
+
+## D-018 Approvals over Claude Code's stdio permission prompt (resolves D-007)
+`--permission-prompt-tool stdio` makes Claude Code send each permission
+question to us as a `can_use_tool` control request on stdout, and wait for a
+`control_response` on stdin. It's the same protocol the Claude Agent SDK's
+`canUseTool` uses, so no Node sidecar and no MCP server of our own are
+needed. Claude Code's own rules still decide what needs asking, so reads and
+harmless commands don't interrupt you. "Auto" mode is just
+`--permission-mode auto`. Verified against real sessions: a write waits for
+the answer, a deny leaves the file untouched and Claude says so. Considered:
+an MCP permission tool served by the launcher (an extra server for the same
+result) and the Agent SDK in Node (a second runtime to ship).
+
+## D-019 Screenshots never include the launcher
+The opt-in screenshot (M4) is for "what am I looking at", so the launcher
+covering part of the screen would only get in the way. Capture the window
+that was in front before the launcher opened, by its window handle, which
+can't include the launcher even where they overlap. For a full-screen
+capture, set the launcher's display affinity to exclude it from capture
+(`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, Windows 10 2004+) for
+the moment of the capture only, so your own screenshots still show it.

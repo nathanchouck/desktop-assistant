@@ -77,22 +77,24 @@ Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
 "sort Downloads by type"), aware of what's on screen.
 
 - [ ] Detect `claude` install + login status; fix-it row if missing
-- [ ] Model setting: Sonnet 5.5 by default, Haiku 5.5 as an option (e.g. for quick questions); `--model` per run
+- [x] Model setting: Sonnet 5.5 by default, Haiku 5.5 as an option (e.g. for quick questions); `--model` per run
 - [ ] Desktop context captured when the launcher opens: the window you were in (title, app), and for File Explorer its open folder and selected files (Shell COM: `IShellWindows`)
 - [ ] Desktop MCP server hosted by the launcher, so Claude can ask for context and act on demand: active window, Explorer folder/selection, open windows, search files/apps (our index), reveal/open
-- [ ] Opt-in screenshot of the active window for "what am I looking at" questions (vision), never sent automatically
+- [ ] Opt-in screenshot of the active window for "what am I looking at" questions (vision), never sent automatically; the launcher is never in the shot (D-019)
 - [ ] Working directory = the open Explorer folder when there is one
-- [ ] Routing: no matches + Enter → AI; Tab → AI; `c ` prefix; "Ask Claude" row always last
-- [ ] Long-lived stream-json child process; warm spare process
-- [ ] Strip `ANTHROPIC_API_KEY` in subscription mode; key mode from Credential Manager
-- [ ] Stream parser → `AiEvent` with fixture tests
-- [ ] ChatPane: markdown, code blocks with copy, tool-activity lines
-- [ ] Follow-ups in the same conversation; Esc closes; new query = new chat
-- [ ] Cancel in-flight response (Ctrl+.)
-- [ ] **Spike D-007**: inline Approve / Deny for write/send/run tools
-- [ ] Read-only by default; moving/renaming/deleting files asks first (Approve / Deny in the popup)
+- [x] Routing: no matches + Enter → AI; Tab → AI; `c ` prefix; "Ask Claude" row always last
+- [x] Long-lived stream-json child process (resumes the session after an idle shutdown)
+- [ ] Warm spare process so the first question skips startup
+- [x] Strip `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` in subscription mode
+- [ ] Key mode from Credential Manager (with the M6 settings window; env var for now)
+- [x] Stream parser → `AiEvent` with fixture tests
+- [x] ChatPane: markdown, code blocks with copy, tool-activity lines
+- [x] Follow-ups in the same conversation; Esc closes; new query = new chat
+- [x] Cancel in-flight response (Ctrl+. or Esc)
+- [x] **Spike D-007**: inline Approve / Deny for write/send/run tools (D-018)
+- [x] Moving/renaming/deleting files asks first (Approve / Deny in the popup); `approvals = "auto"` hands routine ones to Claude Code's auto mode
 - [ ] Verify claude.ai connectors (Gmail, Calendar, Drive) work from the launcher
-- [ ] Window grows into chat mode; shrinks back on new search
+- [x] Window grows into chat mode; shrinks back on new search
 
 ## M5 ChatGPT (Codex)
 - [ ] Detect `codex` install + ChatGPT login

@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::ai::AiError;
 use crate::settings::SettingsError;
 
 /// Top-level error for the app. Module errors convert into this.
@@ -7,6 +8,8 @@ use crate::settings::SettingsError;
 pub enum AppError {
     #[error(transparent)]
     Settings(#[from] SettingsError),
+    #[error(transparent)]
+    Ai(#[from] AiError),
     #[error("could not find the {0} directory for this user")]
     MissingDir(&'static str),
     #[error("could not open {path}: {reason}")]

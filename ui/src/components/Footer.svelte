@@ -1,20 +1,13 @@
 <script lang="ts">
-  import type { Action } from "../lib/bindings";
-  import { actionHints } from "../lib/keys";
+  import type { Hint } from "../lib/keys";
 
   interface Props {
-    /** Shown instead of the key hints when set (errors, "coming soon"). */
+    /** Left side: an error or status line, or what's answering. */
     notice: string | null;
-    /** The selected result's actions; extra ones get a key hint. */
-    actions: Action[];
+    /** Right side: key hints. */
+    hints: Hint[];
   }
-  let { notice, actions }: Props = $props();
-
-  const hints = $derived<[string, string][]>([
-    ["↵", "Open"],
-    ...actionHints.filter(([action]) => actions.includes(action)).map(([, key, label]) => [key, label] as [string, string]),
-    ["Esc", "Clear"],
-  ]);
+  let { notice, hints }: Props = $props();
 </script>
 
 <footer>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { intentFor } from "./keys";
+import { chatHints, chatIntentFor, intentFor, searchHints } from "./keys";
 
 const key = (k: string, mods: Partial<{ ctrl: boolean; shift: boolean; alt: boolean }> = {}) => ({
   key: k,
@@ -44,5 +44,54 @@ describe("intentFor", () => {
 
   it("maps Escape", () => {
     expect(intentFor(key("Escape"))).toEqual({ type: "escape" });
+  });
+
+  it("asks the AI with Tab", () => {
+    expect(intentFor(key("Tab"))).toEqual({ type: "ask" });
+    expect(intentFor(key("Tab", { shift: true }))).toBeNull();
+  });
+});
+
+describe("chatIntentFor", () => {
+  it("sends with Enter only", () => {
+    expect(chatIntentFor(key("Enter"))).toEqual({ type: "send" });
+    expect(chatIntentFor(key("Enter", { shift: true }))).toBeNull();
+    expect(chatIntentFor(key("Enter", { ctrl: true }))).toBeNull();
+  });
+
+  it("approves and denies with Ctrl+Y / Ctrl+N", () => {
+    expect(chatIntentFor(key("y", { ctrl: true }))).toEqual({ type: "approve", allow: true });
+    expect(chatIntentFor(key("N", { ctrl: true }))).toEqual({ type: "approve", allow: false });
+    expect(chatIntentFor(key("y"))).toBeNull();
+    expect(chatIntentFor(key("n", { ctrl: true, shift: true }))).toBeNull();
+  });
+
+  it("stops with Ctrl+. and scrolls with arrows and page keys", () => {
+    expect(chatIntentFor(key(".", { ctrl: true }))).toEqual({ type: "stop" });
+    expect(chatIntentFor(key("ArrowDown"))).toEqual({ type: "scroll", delta: 1, pages: false });
+    expect(chatIntentFor(key("PageUp"))).toEqual({ type: "scroll", delta: -1, pages: true });
+  });
+
+  it("leaves typing alone", () => {
+    expect(chatIntentFor(key("a"))).toBeNull();
+    expect(chatIntentFor(key("Tab"))).toBeNull();
+  });
+});
+
+describe("hints", () => {
+  it("lists a result's extra actions", () => {
+    expect(searchHints(["open", "reveal_in_explorer", "copy_path"]).map(([k]) => k)).toEqual([
+      "↵",
+      "Ctrl ↵",
+      "Ctrl ⇧ C",
+      "Esc",
+    ]);
+    expect(searchHints(["ask_ai"])[0]).toEqual(["↵", "Ask"]);
+  });
+
+  it("puts approvals first while chatting", () => {
+    expect(chatHints({ running: true, pending: true })[0]).toEqual(["Ctrl Y", "Approve"]);
+    expect(chatHints({ running: true, pending: false })).toEqual([["Esc", "Stop"]]);
+    expect(chatHints({ running: false, pending: false })[0]).toEqual(["↵", "Send"]);
   });
 });

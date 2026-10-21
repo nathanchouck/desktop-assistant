@@ -15,8 +15,14 @@ Milestones 0–3 done: a glass launcher that opens with Ctrl+Space or a tap of
 the Windows key, finds and launches your installed apps, and searches your
 files with its own index (or every drive through Everything, if it's
 running), with icons, fuzzy matching and ranking by what you use. It lives
-in the tray. Anything else shows an
-"Ask Claude" row. Next up is M4 (asking Claude). See the roadmap.
+in the tray.
+
+M4 in progress: press Tab (or type `c ` before a question) to ask Claude.
+The answer streams into the launcher, follow-ups continue the conversation,
+and Claude can act on your files, asking Approve / Deny before it changes
+anything. Needs [Claude Code](https://code.claude.com) installed and signed
+in. Next: desktop context (the folder open in Explorer, your selection).
+See the roadmap.
 
 ## Getting the app
 

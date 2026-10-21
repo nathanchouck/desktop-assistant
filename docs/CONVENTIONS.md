@@ -79,13 +79,15 @@ Debugging tips:
 
 ## Procedure: add an AI provider
 
-1. Create `ai/<name>.rs` implementing `AiProvider`.
-2. Write the output parser as a pure function `fn parse_line(&str) -> Vec<AiEvent>`.
-3. Record real output into `src-tauri/tests/fixtures/<name>/*.jsonl` and test
-   the parser against it.
+Follow `ai/claude/` as the model.
+1. Create `ai/<name>/mod.rs`: find the CLI, build its command line.
+2. Write the output parser as a pure function in `ai/<name>/protocol.rs`
+   (`fn parse_line(&str) -> Vec<Incoming>`), producing `AiEvent`s.
+3. Record real output into `src-tauri/tests/fixtures/<name>/*.jsonl`
+   (strip paths and ids) and test the parser against it.
 4. Handle billing mode: strip or inject the provider's API key env var.
-5. Map approvals into `AiEvent::ApprovalRequested`.
-6. Add it to the router, the provider switcher and the prefix map.
+5. Map approvals into `AiEvent::ApprovalRequested`, and the answer back.
+6. Hook it into `chat.rs`, the provider switcher and the prefix map.
 
 ## Procedure: add a built-in command
 

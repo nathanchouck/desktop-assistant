@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::{BillingMode, ProviderId};
+use crate::ai::{Approvals, BillingMode, ProviderId};
 
 pub const CURRENT_VERSION: u32 = 1;
 
@@ -69,7 +69,7 @@ impl Default for HotkeySettings {
 pub struct AiSettings {
     /// Gets any query that doesn't match an app, file or command.
     pub default_provider: ProviderId,
-    pub claude: ProviderSettings,
+    pub claude: ClaudeSettings,
     pub chatgpt: ProviderSettings,
 }
 
@@ -77,8 +77,31 @@ impl Default for AiSettings {
     fn default() -> Self {
         Self {
             default_provider: ProviderId::Claude,
-            claude: ProviderSettings::default(),
+            claude: ClaudeSettings::default(),
             chatgpt: ProviderSettings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct ClaudeSettings {
+    pub billing: BillingMode,
+    /// Passed to `claude --model`: an alias ("sonnet", "haiku") or a full id.
+    pub model: String,
+    /// "ask": Approve / Deny in the launcher before Claude changes anything.
+    /// "auto": Claude Code's auto mode decides, asking only when unsure.
+    pub approvals: Approvals,
+    /// Full path to `claude` (or its `cli.js`). Empty: find it automatically.
+    pub path: String,
+}
+
+impl Default for ClaudeSettings {
+    fn default() -> Self {
+        Self {
+            billing: BillingMode::Subscription,
+            model: "sonnet".into(),
+            approvals: Approvals::Ask,
+            path: String::new(),
         }
     }
 }
@@ -246,6 +269,8 @@ mod tests {
         s.hotkeys.toggle = "Alt+Space".into();
         s.ai.default_provider = ProviderId::Chatgpt;
         s.ai.claude.billing = BillingMode::ApiKey;
+        s.ai.claude.model = "haiku".into();
+        s.ai.claude.approvals = Approvals::Auto;
         save(&path, &s).unwrap();
         assert_eq!(load_or_create(&path).unwrap(), s);
     }
