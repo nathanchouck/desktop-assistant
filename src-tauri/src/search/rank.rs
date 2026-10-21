@@ -24,10 +24,12 @@ pub fn rank(items: &mut [ResultItem], query: &str, frecency: &dyn Fn(&str) -> f6
         .enumerate()
         .map(|(i, item)| {
             let title = item.title.to_lowercase();
-            let tier = if item.kind == ItemKind::Answer {
-                ANSWER_TIER
-            } else {
-                u8::from(title == query) * EXACT_TIER
+            let tier = match item.kind {
+                ItemKind::Answer => ANSWER_TIER,
+                // An emoji named like the query ("fire") is a side offer,
+                // not the thing you typed the name of (Firefox).
+                ItemKind::Emoji => 0,
+                _ => u8::from(title == query) * EXACT_TIER,
             };
             let blended =
                 (item.score + name_bonus(&title, &query)) * (1.0 + boost(frecency(&item.id)));
@@ -113,6 +115,16 @@ mod tests {
         ];
         rank(&mut items, "1+1", &none);
         assert_eq!(titles(&items), ["2", "1+1"]);
+    }
+
+    #[test]
+    fn an_emoji_named_like_the_query_isnt_an_exact_match() {
+        let mut items = vec![
+            ResultItem::new("emoji:🔥", ItemKind::Emoji, "Fire").with_score(0.05),
+            item("ff", "Firefox", 0.8),
+        ];
+        rank(&mut items, "fire", &none);
+        assert_eq!(titles(&items), ["Firefox", "Fire"]);
     }
 
     #[test]

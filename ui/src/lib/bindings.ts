@@ -196,6 +196,8 @@ export type BillingMode =
 
 export type CalcSettings = {
 	enabled: boolean,
+	/**  Convert currencies, with rates downloaded once a day. */
+	currency: boolean,
 };
 
 export type ClaudeSettings = {
@@ -240,6 +242,8 @@ export type ColorSettings = {
 
 export type EmojiSettings = {
 	enabled: boolean,
+	/**  For people and hands. */
+	skin_tone: SkinTone,
 };
 
 /**
@@ -304,8 +308,21 @@ export type ProviderSettings = {
 	billing: BillingMode,
 };
 
+/**  A web search or link opened by typing its keyword. */
+export type Quicklink = {
+	/**  Typed first: "yt". */
+	keyword: string,
+	name: string,
+	/**
+	 *  An http(s) address; `{query}` is replaced by the text after the
+	 *  keyword. Without it the link just opens.
+	 */
+	url: string,
+};
+
 export type QuicklinkSettings = {
 	enabled: boolean,
+	links: Quicklink[],
 };
 
 /**  One row in the results list. */
@@ -397,6 +414,9 @@ export type SettingsSaved = {
 
 /**  Open the settings menu (from the tray). */
 export type ShowSettings = null;
+
+/**  Skin tone for emoji that have them. `None` is the default yellow. */
+export type SkinTone = "none" | "light" | "medium_light" | "medium" | "medium_dark" | "dark";
 
 export type SnippetSettings = {
 	enabled: boolean,

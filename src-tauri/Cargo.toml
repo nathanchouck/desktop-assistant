@@ -50,6 +50,10 @@ tauri-plugin-global-shortcut = "2.4"
 tauri-plugin-single-instance = "2.5"
 tauri-plugin-autostart = "2.7"
 tauri-plugin-clipboard-manager = "2.5"
+# Calculator: math, units and currency, with a time limit per evaluation.
+fend-core = "1.5"
+# Emoji picker: names, GitHub shortcodes and skin tones (Unicode data).
+emojis = "0.9"
 
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = "0.8"
@@ -77,6 +81,7 @@ windows = { version = "0.62", features = [
 ] }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
+  "Win32_Networking_WinHttp",
   "Win32_System_LibraryLoader",
   "Win32_System_Shutdown",
   "Win32_System_Threading",
