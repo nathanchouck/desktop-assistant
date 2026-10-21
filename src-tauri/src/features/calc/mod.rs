@@ -22,7 +22,7 @@ use tauri::{AppHandle, Manager};
 
 use super::ProviderContext;
 use crate::search::{glyph, Action, Activation, ItemKind, ResultItem, SearchError, SearchProvider};
-use crate::settings::{self, SharedSettings};
+use crate::settings::SharedSettings;
 use crate::state::AppState;
 use eval::Outcome;
 use rates::ExchangeRates;
@@ -97,7 +97,10 @@ impl CalcProvider {
 
     /// The answer to `query` and the text Enter copies, if it's a calculation.
     async fn answer(&self, query: &str) -> Option<(ResultItem, Option<String>)> {
-        let calc = settings::current(&self.settings).calculator;
+        let calc = match self.settings.read() {
+            Ok(s) => s.calculator.clone(),
+            Err(poisoned) => poisoned.into_inner().calculator.clone(),
+        };
         if !calc.enabled {
             return None;
         }
