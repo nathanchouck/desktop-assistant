@@ -90,6 +90,7 @@ desktop-assistant/
 │       │                        #   updater, system, window_layout, processes, media, color;
 │       │                        #   each has provider(), start(), its settings struct
 │       ├── ipc/                 # #[tauri::command]s + specta builder; thin
+│       │   └── chat.rs          #   what the ai_* commands share: a conversation's setup per AI, context, Ask row
 │       ├── settings/            # Settings (layered over defaults), load/save/migrate
 │       ├── search/
 │       │   ├── mod.rs           # SearchProvider trait, Aggregator
@@ -99,17 +100,34 @@ desktop-assistant/
 │       │   ├── apps.rs          # app index, provider, Start Menu watcher
 │       │   └── files.rs         # file/folder results: Everything, else the built-in index
 │       ├── ai/
-│       │   ├── mod.rs           # AiEvent, AiError, ProviderId, BillingMode, Approvals
-│       │   ├── chat.rs          # the current conversation: process, approvals, stop, idle shutdown
+│       │   ├── mod.rs           # AiEvent, AiError, ProviderId (+ `c `/`g ` prefixes), BillingMode, Approvals
+│       │   ├── chat.rs          # the current conversation (either AI): Setup, spare, approvals, stop, idle shutdown
+│       │   ├── process.rs       # a CLI child process: stdin, owner + held events, stderr tail, exit
+│       │   ├── launch.rs        # Launch (exe, or a script under node), reading npm .cmd shims
+│       │   ├── status.rs        # StatusCache: last install / sign-in check per AI
 │       │   ├── claude/
-│       │   │   ├── mod.rs       # find Claude Code, build its command line
+│       │   │   ├── mod.rs       # find Claude Code, build its command line, sign-in check
+│       │   │   ├── session.rs   # one Claude Code process: turns, permission answers, interrupt
 │       │   │   └── protocol.rs  # stream-json lines → AiEvent (pure, fixture-tested)
-│       │   └── codex.rs         # (M5) Codex CLI adapter
+│       │   └── codex/
+│       │       ├── mod.rs       # options, billing, sandbox choice, command line, instructions
+│       │       ├── locate.rs    # find Codex (npm shim → its native codex.exe)
+│       │       ├── status.rs    # `codex login status`, `codex login`
+│       │       ├── session.rs   # one app-server: handshake, thread, queued turns, approvals, stop
+│       │       ├── protocol.rs  # requests we send, reply checks, error hints (pure)
+│       │       ├── parser.rs    # what Codex sends → AiEvent (pure, fixture-tested)
+│       │       └── describe.rs  # tool-line and approval-card wording
 │       ├── window/              # show/hide/toggle, placement, glass, tray.rs
 │       ├── hotkey/
-│       │   ├── shortcut.rs      # Ctrl+Space (configurable) via global-shortcut
-│       │   ├── tap.rs           # pure "lone Windows key tap" state machine
-│       │   └── win_key.rs       # Windows-only LL keyboard hook thread
+│       │   ├── shortcut.rs        # Ctrl+Space (configurable) via global-shortcut
+│       │   ├── tap.rs             # pure "lone Windows key tap" state machine
+│       │   ├── win_key.rs         # Windows-only LL keyboard hook thread
+│       │   ├── start_guard.rs     # pure: close Start if it opens anyway after a tap
+│       │   ├── start_guard_win.rs # Windows: guard thread (taps → launcher, watch, close)
+│       │   ├── flyout_win.rs      # Windows: is Start/Search in front; one Escape
+│       │   ├── start_visibility.rs# Windows: IAppVisibility "Start opened" events
+│       │   ├── hook_boost.rs      # Windows: hook thread off EcoQoS, pages locked
+│       │   └── hook_timeout.rs    # answer delay; LowLevelHooksTimeout read/write
 │       ├── desktop.rs           # desktop context for Claude: capture on open, prompt text
 │       ├── file_index/          # built-in file index: scan, snapshot, watch, top-k search
 │       ├── fuzzy.rs             # nucleo wrapper, scores normalized to 0..1
@@ -209,8 +227,10 @@ impl Chat {
 
 1. UI sends `search_query(query, seq)` on every keystroke. `seq` increases; the UI
    drops responses older than the latest `seq`.
-2. Prefix check first: `c ` forces Claude, `g ` forces ChatGPT, `>` lists
-   commands. Forced AI skips search.
+2. Prefix check first: `c <question>` forces Claude and `g <question>`
+   ChatGPT (`ai::forced_provider`): search is skipped and the only row is
+   that AI's "Ask" row (or its fix-it row). Features can claim their own
+   prefixes (`clip`, `:`, `kill `).
 3. The aggregator runs all providers in parallel with a 40 ms budget,
    asking each for 4× the visible limit so frecency can lift weaker matches.
    What's in by then is shown. A provider that missed the budget keeps
@@ -218,14 +238,16 @@ impl Chat {
    UI as a `search-updated` event for that `seq`, applied only if it's still
    the newest search (D-020).
 4. Results are merged, ranked (`rank.rs`), and capped at 8 visible rows. An
-   "Ask Claude: <query>" row is always appended last.
+   "Ask <default AI>: <query>" row is always appended last, with that AI's
+   icon (`glyph:sparkle` for Claude, `glyph:chatgpt` for ChatGPT).
 5. Keys (`ui/src/lib/keys.ts`):
    - Enter runs the selected item's default action; Ctrl+1..9 runs row N.
    - Ctrl+Shift+Enter runs as administrator (desktop apps only).
    - Ctrl+Enter shows a file or folder in Explorer; Ctrl+Shift+C copies its
      path. The footer lists whichever of these the selected row supports.
    - If the only row is Ask AI, Enter sends to the default AI provider.
-   - Tab always sends to AI. Shift+Tab switches provider. (M4/M5)
+   - Tab asks the default AI (or the one a prefix names); Shift+Tab asks
+     the other one.
    - Other actions have fixed keys, used by whichever rows offer them:
      Ctrl+Enter also pastes (clips, answers), Ctrl+Shift+C also copies,
      Ctrl+Shift+P pins, Ctrl+D deletes, Ctrl+Shift+A asks the AI about the
@@ -493,6 +515,28 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
   approval for `screenshot`, even in auto mode; `open` and `reveal` follow
   the normal rules.
 
+### ChatGPT (Codex)
+
+- **Two AIs, one chat:** `chat.rs` runs one conversation at a time; its AI is fixed when it starts. A `Setup` (Claude or Codex, with its options) says how its process starts, and a `Session` wraps the running process. Warm spares, idle shutdown, resuming, approvals and stop work the same for both. `ai.default_provider` picks the AI for Tab and the Ask row, `c `/`g ` pick one, and Shift+Tab asks the other one. `ai_ask` takes the provider, and the reply says who answers. The chat footer shows "ChatGPT · GPT-6.1-Sol".
+- **Finding Codex:** `ai/codex/locate.rs` looks at `ai.chatgpt.path`, then PATH, the standalone installer (`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`), npm (`%APPDATA%\npm\codex.cmd`) and WinGet's links folder. npm's shim runs `codex.js` under node, which starts a native `codex.exe`. The launcher starts that exe directly (hidden), because through node it would open a console window.
+- **Install and sign-in check:** `codex login status` (its answer is on stderr) runs in the background at startup, from the settings menu, after a chat error, and when the launcher opens while ChatGPT is the default. It re-checks every 30 min while fine and every 15 s while broken. An API-key login counts as signed out, since it would bill per token. Fix-it rows and commands: "Install Codex" (opens its install steps) and "Sign In to ChatGPT" (`codex login` in a console window, then checks again). `app_status.chatgpt` feeds the settings status line.
+- **One process per conversation:** `codex app-server` (JSON-RPC over stdio, one JSON object per line). Start-up: `initialize`, then `initialized`, then the sign-in check (`getAuthStatus` must be ChatGPT), all in the background. The thread opens with the first question: `thread/start` with the folder, model, sandbox, approval policy "on-request", approvals to "user", and `developerInstructions` (added to Codex's prompt, like `--append-system-prompt`). Questions are queued and sent in order with `turn/start`, so asking (or claiming a warm spare) never waits on start-up. Problems on the way arrive as an `Error` event. After 10 minutes idle the process is shut down by closing its input (Codex exits with its child processes; it's killed after 2 s if not). The next follow-up starts a new one with `thread/resume`. If the thread is gone, a fresh one starts and the answer says so.
+- **Billing:** Codex's environment never has `OPENAI_API_KEY`, `CODEX_API_KEY` or `CODEX_ACCESS_TOKEN` (the commands it runs would inherit them). In API key mode (`ai.chatgpt.billing = "api_key"`) the key is read from `OPENAI_API_KEY` and given to Codex over stdin (`account/login/start`). Codex runs with `cli_auth_credentials_store="ephemeral"`, so the key is kept in memory and the ChatGPT sign-in on disk is untouched.
+- **Approvals and sandbox:** approvals always come to the launcher's card, never to Codex's auto-reviewer.
+  - Command approvals show the command without its PowerShell/bash wrapper, the folder, and Codex's reason. File changes show each path and its diff. MCP tools reuse Claude's wording.
+  - "Ask" (`ai.chatgpt.approvals`) runs in a read-only sandbox: reading and harmless commands run; writing or going online asks.
+  - "Auto" is Codex's workspace-write sandbox in the Explorer folder the question came from (no network); anything outside asks. With no Explorer folder it stays read-only.
+  - On Windows the launcher adds `-c windows.sandbox="unelevated"` (Codex's no-admin sandbox) unless `~/.codex/config.toml` picks one; without a sandbox Codex asks for every command.
+- **Launcher tools for ChatGPT:** the same MCP server is given to each thread in its `config` over stdin (URL plus bearer header), never on a command line or in an environment variable. `get_desktop_context` and `search` are pre-approved, and `screenshot` is set to "prompt", so it asks in both modes. With screen context off (`ai.chatgpt.desktop_context`), both screen tools are disabled. The developer instructions name the tools, since Codex's code mode doesn't list MCP tools up front.
+- **Parsing:** `codex/parser.rs` turns Codex's messages into `AiEvent`s:
+  - Text deltas; a message that arrives whole is shown once.
+  - `item/started` / `item/completed` become tool lines: Shell, Read, List, Search, Write/Edit/Delete/Move, `launcher · search`, Web search.
+  - Approval requests (commands, file changes, MCP tool calls) become `ApprovalRequested`.
+  - `serverRequest/resolved` withdraws an approval nobody answered.
+  - `turn/completed` becomes `Done`, `Stopped` or `Error`, with hints for sign-in, usage limit and context length.
+  - Notifications from helper threads are skipped. Requests we don't show get an automatic answer, so Codex never waits.
+  - Tested against sanitized recordings in `src-tauri/tests/fixtures/codex/`.
+
 ## Windows key override
 
 `hotkey/win_key.rs` installs a `WH_KEYBOARD_LL` hook on a dedicated
@@ -518,10 +562,11 @@ it events and carries out its verdicts. (D-022)
   key (AutoHotkey's trick). If `SendInput` fails, the real key-up goes
   through, so Windows can never think Win is stuck down. (D-015)
 - Injected events carry a tag in `dwExtraInfo` so the hook skips its own.
-- The hook callback only updates state, injects and posts, and its thread
-  runs at time-critical priority: Windows skips a hook that answers late
-  (`LowLevelHooksTimeout`), which is how a tap used to reach Start while the
-  app was busy. Parallel file search leaves a core free for the same reason.
+- The hook callback only updates the detector, injects keys and posts thread messages. It never calls into Tauri and never allocates. A handled tap goes to the **Start guard** thread (`hotkey/start_guard_win.rs`), which toggles the launcher. The hook thread runs at time-critical priority, opts out of EcoQoS, and keeps its stack and code locked in memory (`hook_boost.rs`). Windows stops waiting for a hook that answers late (`LowLevelHooksTimeout`, about 300 ms when unset) and then uses the key itself; that is how a tap used to open both the launcher and Start.
+- Each Windows key press and release is timed (`GetTickCount() - kb.time`, measured after acting on it) and logged on the guard thread at debug level, with a warning from 200 ms. At a release, `GetAsyncKeyState` says whether Windows got the press anyway. If it did, the tap still opens the launcher and the release is replayed masked (`Verdict::MaskedTap`), so Win can't stay stuck down.
+- **Start guard** (`start_guard.rs` is the pure, tested decision logic; `start_guard_win.rs`, `flyout_win.rs` and `start_visibility.rs` are the Windows side). For 1 s after a handled tap it watches for Start or Windows Search coming to the front. It uses three sources that all re-read the foreground window: a foreground WinEvent hook, IAppVisibility's "Start opened" event, and a 25 ms poll while watching. Start and Search are recognized by program: StartMenuExperienceHost.exe, SearchHost.exe or SearchApp.exe under `%SystemRoot%\SystemApps\<package>\`. To close one, it sends one tagged Escape, after checking again that it is still in front and that no modifier is held; it retries once after 300 ms. It then brings the launcher back, but only if that tap opened it. A Windows key press or Escape ends the watch (so Win+S and Ctrl+Esc work), and a tap made while Start was already open isn't watched. The mouse, Ctrl+Esc, or the override being off never trigger it. `hotkeys.close_start = false` only logs instead.
+- A Windows key the detector thinks is held, with no key events for 1.5 s and Windows saying it is up, is forgotten before each re-install. Otherwise a lost release would stop the D-025 re-install for good.
+- Settings shows how often Start was closed and how many key events were answered late. It can set `HKCU\Control Panel\Desktop\LowLevelHooksTimeout` to 1000 ms (applies after signing out). The log has one info line per Start that opened after a tap, with the timings.
 - Windows also removes a late hook for good, silently, and calls the newest
   hook first. So a timer on the hook thread re-installs it every 5 s while no
   Windows key is held: it comes back if removed, and stays ahead of hooks
@@ -573,6 +618,8 @@ Claude Code first). The shortcut recorder pauses the current shortcut while
 it listens. `app_status` feeds the status lines: Claude Code's sign-in, the
 index or Everything, and the Windows key hook. "Open Settings File" is still
 there for hand edits (read at startup).
+
+The ChatGPT section shows Codex's status (Install / Sign in) and the Default AI choice (Claude / ChatGPT), plus model ("Default" follows Codex's config), approvals, screen context, start early, billing and the Codex location. Each AI has its own screen-context switch; the launcher's screen tools follow the switch of the AI answering.
 
 ## UI / theme
 

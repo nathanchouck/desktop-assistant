@@ -97,6 +97,7 @@ Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
 - [x] Moving/renaming/deleting files asks first (Approve / Deny in the popup); `approvals = "auto"` hands routine ones to Claude Code's auto mode
 - [x] Window grows into chat mode; shrinks back on new search
 - [x] Windows key: a lone tap is hidden from Windows entirely, so Start can't open (D-022); the hook re-installs itself every 5 s (D-025)
+- [x] Start guard: if Start/Search opens anyway right after a Windows key tap, it's closed and the launcher comes back; hook answer times logged; stuck-Win fix; optional 1 s hook timeout (D-031)
 
 Check on a real Windows machine:
 - [ ] claude.ai connectors (Gmail, Calendar, Drive) work from the launcher: "what's on my calendar today?"
@@ -105,23 +106,23 @@ Check on a real Windows machine:
 - [ ] "Take a screenshot and tell me what you see" asks first, then describes the window you were in
 - [ ] Signed out of Claude Code: the "Sign in to Claude Code" row opens a sign-in window
 
-## M5 ChatGPT (Codex)
-- [ ] Detect `codex` install + ChatGPT login
-- [ ] Codex adapter (`codex exec --json`), parser + fixtures
-- [ ] Strip / inject `OPENAI_API_KEY` by billing mode
-- [ ] `g ` prefix; Shift+Tab switches provider; default provider setting
-- [ ] Provider badge on the chat and the Ask row
-- [ ] Approvals / sandbox mapping (per D-007)
+## M5 ChatGPT (Codex) ✅ (pending on-device check)
+- [x] Detect `codex` install + ChatGPT login
+- [x] Codex adapter (`codex app-server`; `exec --json` can't stream or take approvals, D-030), parser + fixtures
+- [x] Strip / inject `OPENAI_API_KEY` by billing mode
+- [x] `g ` prefix; Shift+Tab switches provider; default provider setting
+- [x] Provider badge on the chat and the Ask row
+- [x] Approvals / sandbox mapping (per D-007)
 
 ## M6 Settings & integrations
 - [x] Settings menu in the launcher (D-026): shortcut, Windows key, start at login, Claude model / approvals / screen context / warm start / billing, index folders, exclusions, results shown
 - [x] Apply settings live (index folders and exclusions offer a restart instead)
 - [x] Hotkey recorder control
-- [ ] Default provider and ChatGPT billing in the menu (with M5)
+- [x] Default provider and ChatGPT billing in the menu (with M5)
 - [ ] API keys stored in Credential Manager
 - [ ] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs
 - [x] Status lines in settings: Claude Code sign-in, index count or Everything, Windows key hook
-- [ ] Codex health (with M5)
+- [x] Codex health (with M5)
 - [ ] Settings file in a synced folder (OneDrive) option
 
 ## M7 Polish & reliability

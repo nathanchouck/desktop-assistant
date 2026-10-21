@@ -283,3 +283,42 @@ Considered:
 - The plugin for images: no file lists or private flag.
 - Skipping our writes by comparing content: a re-encoded image differs.
 - Raw input instead of hooks: it can't tell our injected keys apart as reliably.
+
+## D-030 ChatGPT through `codex app-server`, approvals through its sandbox (resolves D-007 for Codex)
+`codex exec --json` has no streamed text, forces approval policy "never" and needs a new process per message. So ChatGPT goes through `codex app-server`: JSON-RPC over stdio, one long-running process per conversation like Claude Code, with streamed text, approval requests we answer, `turn/interrupt` and `thread/resume`.
+
+Every thread uses approval policy "on-request", with approvals sent to the user and never to Codex's auto-reviewer. That reviewer decides on its own, uses quota, and would also approve the screenshot.
+- "Ask" runs in a read-only sandbox: reading and harmless commands go ahead, and anything that writes or goes online comes to the Approve card. This matches Claude's default.
+- "Auto" is Codex's own workspace-write sandbox in the Explorer folder the question came from, with no network; it asks for anything outside. When there's no folder it stays read-only, because the whole home folder is too much to hand over.
+- The launcher's screenshot tool is set to "prompt", so it asks in both modes.
+- On Windows this needs Codex's no-admin Windows sandbox. The launcher turns it on per process unless the user's Codex config picks one; without a sandbox Codex asks for every command.
+
+Secrets never go on a command line or into Codex's environment, which the commands it runs inherit. The MCP server's token goes in the per-thread config over stdin. An API key goes through `account/login/start` into an in-memory credential store, leaving the ChatGPT sign-in on disk untouched. Codex is never given `forced_login_method`, which signs the user out on a mismatch.
+
+Considered: `codex exec --json` (no streaming, no approvals), Codex's MCP server mode (removed in 0.163), and the auto-reviewer for Auto (decides alone, costs quota, would take over the screenshot prompt).
+
+## D-031 Windows key: close Start when it opens anyway, and fix what makes it open (updates D-022, D-025)
+On the owner's Windows 11 PC, a tap opened both the launcher and Start. So the hook saw the tap, but Windows used the key anyway. The only known way that happens is a late answer: Windows stops waiting for a low-level hook after `LowLevelHooksTimeout` (about 300 ms when unset) and passes the key on. Our callback still finishes and reports a tap.
+
+The same cause hid two bugs:
+- A press answered late plus a release answered in time left Win stuck down in Windows.
+- A release that never reached the hook left the detector "held" for good, which stopped the D-025 re-install.
+
+So:
+1. **Make late answers rarer.** No Tauri code or allocation in the hook callback (taps are posted to a guard thread). The hook thread opts out of EcoQoS and locks its stack and code pages in memory. Each Windows key event's answer time is logged, so a timeout can be proven. An optional button sets `LowLevelHooksTimeout` to 1 s.
+2. **Fix both bugs.** At a release, `GetAsyncKeyState` says whether Windows got the press; if so it is still a tap, but the release is replayed masked. A held key that has gone quiet, and that Windows says is up, is forgotten.
+3. **Safety net, since no hook can promise an answer within 300 ms.** For 1 s after a handled tap, if Start or Search comes to the front, the guard closes it with one Escape and brings the launcher back.
+   - Detection: a foreground WinEvent hook, IAppVisibility and a 25 ms poll.
+   - Matching: by the shell host's program path under SystemApps, because titles are localized and the window class is shared with other shell UI.
+   - Escape: sent only after checking again that Start/Search is in front and no modifier is held. Ctrl+Esc opens Start, so a modifier means hands off.
+   - It doesn't act on a Start that follows a Windows key press or Escape, or one that was open before the tap.
+   - Cost: a Start you open by mouse within that second gets closed.
+   - `hotkeys.close_start` turns it off.
+
+**Considered:**
+- Turning Start off. There is no supported switch, and `NoWinKeys` also kills Win shortcuts.
+- A Scancode Map that remaps the Win keys to F24. It needs admin rights and a reboot, and leaves no Windows key while the app isn't running.
+- Killing or suspending StartMenuExperienceHost (rejected in D-022).
+- The undocumented `IImmersiveLauncher::Dismiss`; its interface can change in any build.
+- A message hook injected into explorer to drop the Start message. It needs a DLL, and a crash in it takes explorer down.
+- Toggling Start with another Win press or `SC_TASKLIST`. If Start had already closed itself, that would open it.

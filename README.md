@@ -28,7 +28,13 @@ Needs [Claude Code](https://code.claude.com) installed and signed in; the
 launcher offers to fix either if not.
 
 Settings: type "settings" (or press Ctrl+,) in the launcher. Changes save as
-you make them. Next: ChatGPT through Codex (M5). See the roadmap.
+you make them.
+
+M5 done: ChatGPT through OpenAI's Codex CLI, billed to your ChatGPT plan. Type `g ` before a question to ask ChatGPT (`c ` for Claude), pick the default AI in settings, and press Shift+Tab to ask the other one. ChatGPT gets the same screen context and launcher tools, and asks Approve / Deny before changing anything (or works on its own inside the folder you came from, in Auto). Needs the Codex CLI installed and signed in with ChatGPT; the launcher offers to fix either if not.
+
+Also in: an inline calculator with unit and currency conversion, quicklinks
+(`yt lofi`), an emoji picker (`:fire`), clipboard history (`clip`) and
+snippets. See the roadmap for what's next.
 
 ## Getting the app
 
