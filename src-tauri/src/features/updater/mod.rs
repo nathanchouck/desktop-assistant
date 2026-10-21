@@ -5,18 +5,22 @@
 //!   a key is "not set up" and never checks);
 //! - `schedule`: a minute after start, then every 6 hours;
 //! - `manager`: check, download in the background, install on request;
+//! - `errors`: what went wrong, in a few words;
 //! - `tracker`: where an update stands and how that's worded;
+//! - `version`: comparing versions, and whether the last install worked;
 //! - `saved`: last check and pending install, remembered on this PC;
 //! - `provider`: "Check for Updates" / "Install Update and Restart";
 //! - `commands`: what the settings menu calls.
 
 pub mod commands;
+mod errors;
 mod manager;
 mod provider;
 mod saved;
 mod schedule;
 mod setup;
 mod tracker;
+mod version;
 
 use std::sync::{Arc, OnceLock};
 
