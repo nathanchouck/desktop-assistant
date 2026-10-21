@@ -322,3 +322,18 @@ So:
 - The undocumented `IImmersiveLauncher::Dismiss`; its interface can change in any build.
 - A message hook injected into explorer to drop the Start message. It needs a DLL, and a crash in it takes explorer down.
 - Toggling Start with another Win press or `SC_TASKLIST`. If Start had already closed itself, that would open it.
+
+## D-032 Script commands: an in-memory index followed with notify, output handled by mode, batch files quoted by Rust's standard library
+Scripts in one folder become commands through a header comment (`@title`, `@mode`, `@argument`, ...), like Raycast's script commands. The folder is read in `start()`, read again on every change (notify), and on a folder setting change. Settings have no change notification, so that is checked once a second. Search only reads the in-memory index, so it stays inside the 40 ms budget whatever is in the folder.
+
+What a script prints goes where its `@mode` says:
+- silent: hide, then a toast with the last line.
+- copy / paste: through `Activation::Copy` / `Paste`, so pasting behaves like every other feature.
+- output: a footer notice when it fits, else a text file opened in the editor. The footer shows only about one line next to the key hints, and a cut-off result would be lost without anyone noticing.
+
+Batch files are started directly rather than as `cmd /C <file> <text>`. Rust's standard library then runs them through cmd.exe and escapes the argument for cmd, so `&` or `|` typed after a title can't run as a command. A time-out stops the whole process tree (`taskkill /T /F`), since scripts often start other programs. After the script exits, its output is read for at most 500 ms more, so a program it left running can't hold the result.
+
+Considered:
+- Running every file in the folder without a header (helper files would show up as commands).
+- A Job object per script to stop it (more Windows code for the same effect as taskkill here).
+- Showing long output as result rows (a new UI mode for one feature).

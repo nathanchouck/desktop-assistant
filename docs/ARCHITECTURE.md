@@ -322,6 +322,40 @@ and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
     5. after 750 ms puts the old clipboard content back, unless something new was copied meanwhile.
   - Typing in the launcher is ignored. The hooks are re-installed every 10 s (D-025).
 
+#### Script commands (`features/scripts/`)
+
+- **Folder:** `scripts.folder` (empty = `%APPDATA%\desktop-assistant\scripts`; `~` and `%NAME%` expand; quotes from "Copy as path" are dropped). The default folder is made on first run with `README.txt` and an example, `hello.ps1`. A folder you choose is made, with the same two files, when you use "Open Scripts Folder" or the settings' Open folder button. Only files directly in the folder are commands; subfolders are for helper files.
+- **Header** (`header.rs`, pure): the comment lines at the top of the file. That's `#` for .ps1/.py/.sh, `::`, `REM` or `@REM` for .cmd/.bat, and `//` for .js. Blank lines, a `#!` line and batch lines like `@echo off` are allowed in between. Only the first 16 KB is read, as UTF-8 with or without a BOM or UTF-16 with a BOM.
+  - Directives: `@title` (required), `@description`, `@icon` (an emoji, or a glyph name from `glyphs.ts`), `@mode silent|output|copy|paste` (default silent), `@argument [name]` (one optional text argument), `@keywords a, b`, `@cwd script|explorer`.
+  - A file without a title, with a bad mode, or whose interpreter is missing is listed in Settings with the reason.
+- **Interpreters** (`language.rs`), looked up on each scan:
+  - Windows PowerShell 5.1 with `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File`.
+  - `py -3`, else `python`.
+  - Batch files are started directly, so Rust's standard library runs them through `cmd.exe /d /c` and quotes the typed argument safely for cmd.
+  - `node`.
+  - Git Bash: a `bash.exe` on PATH that isn't WSL's, else beside `git.exe`, else Git's install folders.
+- **Index** (`index.rs`, `watch.rs`): read in `start()`. Read again when anything in the folder changes (notify, after 300 ms of quiet), when `scripts.enabled` or `scripts.folder` changes (checked each second), and when a missing folder appears. Search only reads the in-memory index.
+- **Search** (`rows.rs`, pure):
+  - Fuzzy match on title and keywords (keywords count ×0.9). `script` or `scripts` lists them all.
+  - For an `@argument` script, the text after its title or a keyword ("say hello Ana") makes the row `script:<file>:<text>` at 1.5, above apps. Without text, the row shows `‹name›` and runs with no argument.
+  - Rows are kind Script. Enter = Run, Copy or Paste depending on the mode; Ctrl+Enter shows the file in Explorer; Ctrl+Shift+C copies its path.
+  - Also adds "Open Scripts Folder" and "Reload Scripts" (the latter reports how many commands were found).
+- **Running** (`run.rs`, `output.rs`, `win.rs`):
+  - No window (`CREATE_NO_WINDOW`), stdin closed, `PYTHONIOENCODING=utf-8`.
+  - Working folder: the script's own folder, or with `@cwd explorer` the folder File Explorer (or the desktop) showed when the launcher opened. If there was none, a notice says so.
+  - stdout is kept up to 1 MB (the start), stderr up to 64 KB (the end). Output that isn't UTF-8 is read in the OEM code page.
+  - After `scripts.timeout_secs` (60) the whole process tree is stopped (`taskkill /T /F`).
+  - Once the script exits, its output is read for at most 500 ms more, so a program it left running can't hold the result.
+  - A script runs once at a time: Enter again says it's still running.
+- **Results:**
+  - silent: the launcher hides, then a toast shows the last line printed, or the error.
+  - output: a footer notice when it fits (64 characters, lines joined with " · "), else a text file in `%LOCALAPPDATA%\desktop-assistant\script-output\` opened in your editor.
+  - copy / paste: `Activation::Copy` / `Paste`.
+  - Failures (non-zero exit, time-out, couldn't start) show the useful error line: PowerShell's message before `At …`, Python's last traceback line, Node's `Error:` line, cmd's "is not recognized" message.
+  - The search box says "Running <title>…" when any action takes over 400 ms.
+- **Settings:** `scripts.enabled`, `scripts.folder`, `scripts.timeout_secs`. The section lists each script (icon, what to type, file · language · mode) and each file that isn't a command, with why. Open folder and Reload call `scripts_open_folder` and `scripts_list(reload)`.
+- **Security:** scripts run with your own rights, like anything you start yourself. Only files directly in the chosen folder are run, and only when you pick one in the launcher; nothing runs at startup or when a file changes. The folder setting is the trust boundary, so point it only at a folder you control.
+
 ### Apps
 
 - `AppIndex` holds the Start menu's "All apps" (the AppsFolder) in memory:
