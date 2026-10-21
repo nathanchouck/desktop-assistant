@@ -2,6 +2,8 @@
 //!
 //! Not built yet: no results, nothing at startup.
 
+mod parse;
+
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
