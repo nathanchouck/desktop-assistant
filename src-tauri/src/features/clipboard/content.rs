@@ -311,7 +311,10 @@ mod tests {
 
     #[test]
     fn program_names() {
-        assert_eq!(program_name(r"C:\Program Files\Google\chrome.exe"), "chrome");
+        assert_eq!(
+            program_name(r"C:\Program Files\Google\chrome.exe"),
+            "chrome"
+        );
         assert_eq!(program_name(r"C:\Windows\EXPLORER.EXE"), "EXPLORER");
         assert_eq!(program_name("Code"), "Code");
         assert_eq!(program_name(".exe"), "");

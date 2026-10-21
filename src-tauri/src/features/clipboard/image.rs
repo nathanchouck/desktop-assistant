@@ -202,7 +202,14 @@ mod tests {
     use super::*;
 
     /// A DIB with a 40-byte header (or 124 for V5) and the given rows.
-    fn dib(width: i32, height: i32, bits: u16, compression: u32, extra: &[u8], pixels: &[u8]) -> Vec<u8> {
+    fn dib(
+        width: i32,
+        height: i32,
+        bits: u16,
+        compression: u32,
+        extra: &[u8],
+        pixels: &[u8],
+    ) -> Vec<u8> {
         let header_size: u32 = if extra.len() == 84 { 124 } else { 40 };
         let mut b = Vec::new();
         b.extend(header_size.to_le_bytes());

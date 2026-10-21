@@ -104,7 +104,10 @@ fn record_image(
     };
     let image_path = history.image_path(&hash);
     let thumb_path = history.thumb_path(&hash);
-    for dir in [image_path.parent(), thumb_path.parent()].into_iter().flatten() {
+    for dir in [image_path.parent(), thumb_path.parent()]
+        .into_iter()
+        .flatten()
+    {
         fs::create_dir_all(dir).map_err(HistoryError::from)?;
     }
     fs::write(&image_path, file).map_err(HistoryError::from)?;
@@ -132,7 +135,8 @@ mod tests {
 
     fn setup() -> (tempfile::TempDir, History) {
         let dir = tempfile::tempdir().unwrap();
-        let history = History::in_memory(dir.path().join("images"), dir.path().join("thumbs")).unwrap();
+        let history =
+            History::in_memory(dir.path().join("images"), dir.path().join("thumbs")).unwrap();
         (dir, history)
     }
 

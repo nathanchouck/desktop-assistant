@@ -140,9 +140,10 @@ impl History {
     /// If an entry with this content exists, moves it to the top and
     /// returns true.
     pub fn bump_hash(&self, hash: &str, now_ms: i64) -> Result<bool, HistoryError> {
-        let changed = self
-            .conn()?
-            .execute("UPDATE clips SET used = ?1 WHERE hash = ?2", params![now_ms, hash])?;
+        let changed = self.conn()?.execute(
+            "UPDATE clips SET used = ?1 WHERE hash = ?2",
+            params![now_ms, hash],
+        )?;
         if changed > 0 {
             self.reload()?;
         }
@@ -151,8 +152,10 @@ impl History {
 
     /// Moves an entry to the top (it was just pasted).
     pub fn bump(&self, id: i64, now_ms: i64) -> Result<(), HistoryError> {
-        self.conn()?
-            .execute("UPDATE clips SET used = ?1 WHERE id = ?2", params![now_ms, id])?;
+        self.conn()?.execute(
+            "UPDATE clips SET used = ?1 WHERE id = ?2",
+            params![now_ms, id],
+        )?;
         self.reload()
     }
 
@@ -203,16 +206,24 @@ impl History {
             .query_row(
                 "SELECT kind, content, hash FROM clips WHERE id = ?1",
                 [id],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                },
             )
             .optional()?;
-        Ok(row.and_then(|(kind, content, hash)| match ClipKind::parse(&kind)? {
-            ClipKind::Text => Some(Stored::Text(content)),
-            ClipKind::Files => Some(Stored::Files(
-                content.lines().map(str::to_owned).collect(),
-            )),
-            ClipKind::Image => Some(Stored::Image(self.image_path(&hash))),
-        }))
+        Ok(
+            row.and_then(|(kind, content, hash)| match ClipKind::parse(&kind)? {
+                ClipKind::Text => Some(Stored::Text(content)),
+                ClipKind::Files => {
+                    Some(Stored::Files(content.lines().map(str::to_owned).collect()))
+                }
+                ClipKind::Image => Some(Stored::Image(self.image_path(&hash))),
+            }),
+        )
     }
 
     /// Pins or unpins an entry; returns whether it's pinned now.
@@ -229,7 +240,11 @@ impl History {
     pub fn delete(&self, id: i64) -> Result<(), HistoryError> {
         let doomed = self
             .conn()?
-            .query_row("SELECT id, kind, hash FROM clips WHERE id = ?1", [id], doomed_row)
+            .query_row(
+                "SELECT id, kind, hash FROM clips WHERE id = ?1",
+                [id],
+                doomed_row,
+            )
             .optional()?;
         self.remove(&doomed.into_iter().collect::<Vec<_>>())?;
         self.reload()
@@ -294,7 +309,11 @@ pub fn thumb_name(hash: &str) -> String {
 
 fn doomed_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, ClipKind, String)> {
     let kind: String = r.get(1)?;
-    Ok((r.get(0)?, ClipKind::parse(&kind).unwrap_or(ClipKind::Text), r.get(2)?))
+    Ok((
+        r.get(0)?,
+        ClipKind::parse(&kind).unwrap_or(ClipKind::Text),
+        r.get(2)?,
+    ))
 }
 
 fn load(conn: &Connection) -> Result<Vec<Entry>, HistoryError> {
@@ -468,7 +487,10 @@ mod tests {
         fs::create_dir_all(dir.path().join("thumbs")).unwrap();
         fs::write(h.image_path(hash), b"png").unwrap();
         fs::write(h.thumb_path(hash), b"png").unwrap();
-        assert_eq!(h.thumb_path(hash), dir.path().join("thumbs/clip-00112233aabbccdd.png"));
+        assert_eq!(
+            h.thumb_path(hash),
+            dir.path().join("thumbs/clip-00112233aabbccdd.png")
+        );
         let image = NewClip {
             kind: ClipKind::Image,
             content: String::new(),
@@ -480,7 +502,10 @@ mod tests {
         h.add(&image, 1, 10).unwrap();
         let entry = h.with_entries(|e| e[0].clone());
         assert_eq!(entry.title, "Image 640 × 480");
-        assert_eq!(h.stored(entry.id).unwrap(), Some(Stored::Image(h.image_path(hash))));
+        assert_eq!(
+            h.stored(entry.id).unwrap(),
+            Some(Stored::Image(h.image_path(hash)))
+        );
         // Pushed out by newer copies: the files go too.
         h.add(&text("newer"), 2, 1).unwrap();
         assert!(!h.image_path(hash).exists());

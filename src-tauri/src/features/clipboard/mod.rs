@@ -28,7 +28,6 @@ use crate::paths::AppPaths;
 use crate::search::SearchProvider;
 use crate::state::AppState;
 use history::History;
-pub use provider::history_filter;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct ClipboardSettings {

@@ -134,7 +134,10 @@ mod tests {
             rgba: vec![1, 2, 3, 255],
         };
         let png = image::encode(&picture).unwrap();
-        assert_eq!(to_content(Captured::Png(png)), Some(Content::Image(picture)));
+        assert_eq!(
+            to_content(Captured::Png(png)),
+            Some(Content::Image(picture))
+        );
         assert_eq!(to_content(Captured::Dib(vec![0; 3])), None);
     }
 }

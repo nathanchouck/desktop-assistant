@@ -320,7 +320,12 @@ mod tests {
     fn rows_keep_history_order_and_filter() {
         let entries = [
             entry(3, "pinned thing", "pinned thing", true),
-            entry(2, "fn main() {", "fn main() {\n  println!(\"hello\");\n}", false),
+            entry(
+                2,
+                "fn main() {",
+                "fn main() {\n  println!(\"hello\");\n}",
+                false,
+            ),
             entry(1, "grocery list", "grocery list\nmilk\neggs", false),
         ];
         let rows = entry_rows(&entries, "", 120_000, 10);
@@ -398,9 +403,15 @@ mod tests {
         assert!(rows.iter().any(|r| r.id == OPEN_ID));
 
         // Pin and delete refresh the list.
-        assert_eq!(p.activate(&id, Action::Pin).await.unwrap(), Activation::Refresh);
+        assert_eq!(
+            p.activate(&id, Action::Pin).await.unwrap(),
+            Activation::Refresh
+        );
         assert!(p.history.with_entries(|e| e[0].pinned));
-        assert_eq!(p.activate(&id, Action::Delete).await.unwrap(), Activation::Refresh);
+        assert_eq!(
+            p.activate(&id, Action::Delete).await.unwrap(),
+            Activation::Refresh
+        );
         assert!(p.history.is_empty());
         assert!(p.activate("clip:999", Action::Paste).await.is_err());
         assert_eq!(

@@ -155,10 +155,7 @@ mod tests {
             ResultItem::new(id, ItemKind::Clip, title).with_score(score)
         };
         // Neither a name match nor frequent pasting reorders the history.
-        let mut items = vec![
-            clip("clip:2", "newest", 1.0),
-            clip("clip:1", "clip", 0.5),
-        ];
+        let mut items = vec![clip("clip:2", "newest", 1.0), clip("clip:1", "clip", 0.5)];
         let heavy = |id: &str| if id == "clip:1" { 100.0 } else { 0.0 };
         rank(&mut items, "clip", &heavy);
         assert_eq!(titles(&items), ["newest", "clip"]);
