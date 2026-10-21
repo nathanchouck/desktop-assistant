@@ -34,7 +34,11 @@ pub const SYMBOLS: &[(&str, &str, &[&str])] = &[
     ("±", "Plus minus", &["+-", "plus or minus"]),
     ("×", "Multiplication", &["times", "multiply"]),
     ("÷", "Division", &["divide"]),
-    ("≈", "Approximately equal", &["approx", "almost equal", "~="]),
+    (
+        "≈",
+        "Approximately equal",
+        &["approx", "almost equal", "~="],
+    ),
     ("≠", "Not equal", &["!=", "neq"]),
     ("≤", "Less than or equal", &["<=", "leq"]),
     ("≥", "Greater than or equal", &[">=", "geq"]),

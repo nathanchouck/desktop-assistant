@@ -7,6 +7,8 @@ mod eval;
 mod format;
 mod parse;
 mod rates;
+mod rewrite;
+mod tokens;
 #[cfg(windows)]
 mod win;
 
@@ -60,7 +62,10 @@ pub fn provider(ctx: &ProviderContext) -> Option<Arc<dyn SearchProvider>> {
     let rates = RATES
         .get_or_init(|| Arc::new(ExchangeRates::load(file)))
         .clone();
-    Some(Arc::new(CalcProvider::new(Arc::clone(&ctx.settings), rates)))
+    Some(Arc::new(CalcProvider::new(
+        Arc::clone(&ctx.settings),
+        rates,
+    )))
 }
 
 /// Downloads exchange rates in the background (at most once a day).
@@ -103,9 +108,10 @@ impl CalcProvider {
         let rates = self.rates.current().filter(|_| calc.currency);
         let expr = prepared.expr.clone();
         let table = rates.clone();
-        let outcome = tokio::task::spawn_blocking(move || eval::evaluate(&expr, table, EVAL_BUDGET))
-            .await
-            .unwrap_or(Outcome::Nothing);
+        let outcome =
+            tokio::task::spawn_blocking(move || eval::evaluate(&expr, table, EVAL_BUDGET))
+                .await
+                .unwrap_or(Outcome::Nothing);
         match outcome {
             Outcome::Value(raw) => {
                 let answer = format::answer(&raw, &prepared)?;
@@ -204,7 +210,10 @@ impl SearchProvider for CalcProvider {
                 message: "Downloading exchange rates…".into(),
             });
         }
-        if let Some(code) = id.strip_prefix(MISSING_ID).and_then(|r| r.strip_prefix(':')) {
+        if let Some(code) = id
+            .strip_prefix(MISSING_ID)
+            .and_then(|r| r.strip_prefix(':'))
+        {
             return Ok(Activation::Notice {
                 message: format!("There's no daily rate for {code}."),
             });

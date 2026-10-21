@@ -49,7 +49,11 @@ impl Default for QuicklinkSettings {
                     "https://www.youtube.com/results?search_query={query}",
                 ),
                 link("gh", "GitHub", "https://github.com/search?q={query}"),
-                link("maps", "Google Maps", "https://www.google.com/maps/search/{query}"),
+                link(
+                    "maps",
+                    "Google Maps",
+                    "https://www.google.com/maps/search/{query}",
+                ),
                 link(
                     "wiki",
                     "Wikipedia",
@@ -214,7 +218,16 @@ mod tests {
         let keywords: Vec<&str> = defaults.links.iter().map(|l| l.keyword.as_str()).collect();
         assert_eq!(
             keywords,
-            ["g", "yt", "gh", "maps", "wiki", "amazon", "translate", "ddg"]
+            [
+                "g",
+                "yt",
+                "gh",
+                "maps",
+                "wiki",
+                "amazon",
+                "translate",
+                "ddg"
+            ]
         );
         assert!(defaults
             .links
@@ -258,7 +271,9 @@ mod tests {
         assert_eq!(items[0].score, KEYWORD_SCORE);
         assert_eq!(
             p.activate(&items[0].id, Action::Open).await.unwrap(),
-            Activation::SetQuery { query: "yt ".into() }
+            Activation::SetQuery {
+                query: "yt ".into()
+            }
         );
     }
 

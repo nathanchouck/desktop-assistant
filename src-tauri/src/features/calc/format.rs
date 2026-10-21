@@ -52,7 +52,11 @@ pub fn answer(raw: &str, prepared: &Prepared) -> Option<Answer> {
         Some(number) => format!("{}{rest}", group(&number)),
         None => text.clone(),
     };
-    let title = if approx { format!("≈ {shown}") } else { shown };
+    let title = if approx {
+        format!("≈ {shown}")
+    } else {
+        shown
+    };
     Some(Answer { title, text })
 }
 
@@ -93,7 +97,8 @@ fn split_number(value: &str) -> Option<(&str, &str)> {
     let rest = &value[end..];
     // "0x100", "12a": not a number followed by a unit.
     let unit_starts_cleanly = rest.is_empty() || rest.starts_with(char::is_whitespace);
-    (seen_digit && unit_starts_cleanly && !value[..end].ends_with('.')).then(|| (&value[..end], rest))
+    (seen_digit && unit_starts_cleanly && !value[..end].ends_with('.'))
+        .then(|| (&value[..end], rest))
 }
 
 #[derive(Clone, Copy)]
@@ -187,12 +192,12 @@ mod tests {
     fn exact_answers_as_fend_prints_them() {
         assert_eq!(fmt("2^10", "1024"), pair("1024", "1024"));
         assert_eq!(fmt("2^16", "65536"), pair("65,536", "65536"));
-        assert_eq!(fmt("5 mi to km", "8.04672 km"), pair("8.04672 km", "8.04672 km"));
-        assert_eq!(fmt("10 - 20", "-10"), pair("-10", "-10"));
         assert_eq!(
-            fmt("1000000 * 3", "3000000"),
-            pair("3,000,000", "3000000")
+            fmt("5 mi to km", "8.04672 km"),
+            pair("8.04672 km", "8.04672 km")
         );
+        assert_eq!(fmt("10 - 20", "-10"), pair("-10", "-10"));
+        assert_eq!(fmt("1000000 * 3", "3000000"), pair("3,000,000", "3000000"));
     }
 
     #[test]
@@ -221,7 +226,10 @@ mod tests {
             fmt("50 eur to usd", "approx. 54.3478260870 USD"),
             pair("≈ 54.35 USD", "54.35 USD")
         );
-        assert_eq!(fmt("100 usd to eur", "92 EUR"), pair("92.00 EUR", "92.00 EUR"));
+        assert_eq!(
+            fmt("100 usd to eur", "92 EUR"),
+            pair("92.00 EUR", "92.00 EUR")
+        );
         assert_eq!(
             fmt("1000000 jpy to usd", "approx. 6666.6666666667 USD"),
             pair("≈ 6666.67 USD", "6666.67 USD")

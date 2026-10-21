@@ -7,6 +7,13 @@
 //! shaped like dates, versions and phone numbers are left alone. Starting the
 //! query with `=` skips those checks.
 
+use super::rewrite::{
+    conversion_keyword, is_money_word, merge_compound_units, rewrite_bytes, rewrite_hex_word,
+    rewrite_inches, rewrite_money, rewrite_percentages, rewrite_temperatures, rewrite_times,
+    target_base,
+};
+use super::tokens::{depth, join, tokenize, Kind, Token};
+
 /// Longer queries aren't calculations (and keep fend's work small).
 const MAX_CHARS: usize = 100;
 /// Deeper nesting isn't typed by hand; fend's parser recurses on it.
@@ -35,41 +42,6 @@ pub struct Prepared {
     pub conversion: bool,
     /// Started with `=`: show the answer even if it looks like the query.
     pub forced: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Number,
-    Word,
-    Op,
-    /// A currency symbol, with the ISO code it stands for.
-    Money(&'static str),
-}
-
-#[derive(Debug, Clone)]
-struct Token {
-    text: String,
-    kind: Kind,
-    /// No space before it ("50€", "3x4"): joined back the same way.
-    glued: bool,
-}
-
-impl Token {
-    fn new(text: impl Into<String>, kind: Kind) -> Self {
-        Self {
-            text: text.into(),
-            kind,
-            glued: false,
-        }
-    }
-
-    fn is(&self, word: &str) -> bool {
-        self.kind == Kind::Word && self.text.eq_ignore_ascii_case(word)
-    }
-
-    fn is_op(&self, op: &str) -> bool {
-        self.kind == Kind::Op && self.text == op
-    }
 }
 
 /// Decides whether `query` is a calculation and prepares it for fend.
@@ -166,7 +138,10 @@ fn starts_with_lone_letter(query: &str) -> bool {
 /// "555-1234", "2024-01". Each would evaluate (as subtraction and so on),
 /// but you typed it to find a file named that way.
 fn looks_like_an_identifier(query: &str) -> bool {
-    let seps: Vec<char> = query.chars().filter(|c| matches!(c, '-' | '.' | '/')).collect();
+    let seps: Vec<char> = query
+        .chars()
+        .filter(|c| matches!(c, '-' | '.' | '/'))
+        .collect();
     let Some(&sep) = seps.first() else {
         return false;
     };
@@ -180,7 +155,9 @@ fn looks_like_an_identifier(query: &str) -> bool {
     {
         return false;
     }
-    let padded = groups[1..].iter().any(|g| g.len() >= 2 && g.starts_with('0'));
+    let padded = groups[1..]
+        .iter()
+        .any(|g| g.len() >= 2 && g.starts_with('0'));
     let phone = sep == '-' && groups.len() == 2 && groups[0].len() == 3 && groups[1].len() == 4;
     groups.len() >= 3 || padded || phone
 }
@@ -193,398 +170,6 @@ fn starts_hyphenated(tokens: &[Token]) -> bool {
             && dash.glued
             && next.glued
             && !FUNCTIONS.iter().any(|f| word.is(f)))
-}
-
-/// Splits the query into numbers, words, operators and currency symbols.
-/// `None` for characters that never appear in a calculation.
-fn tokenize(query: &str) -> Option<Vec<Token>> {
-    let chars: Vec<char> = query.chars().collect();
-    let mut tokens = Vec::new();
-    let mut glued = false;
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c.is_whitespace() {
-            glued = false;
-            i += 1;
-            continue;
-        }
-        let start = i;
-        let kind = if c.is_ascii_digit() || (c == '.' && next_is_digit(&chars, i)) {
-            i = scan_number(&chars, i);
-            Kind::Number
-        } else if c.is_alphabetic() || c == '°' || c == '_' {
-            while i < chars.len() && (chars[i].is_alphanumeric() || matches!(chars[i], '_' | '°')) {
-                i += 1;
-            }
-            // "C$", "US$": letters glued to a dollar sign.
-            let word: String = chars[start..i].iter().collect();
-            match (chars.get(i), dollar_code(&word)) {
-                (Some('$'), Some(code)) => {
-                    i += 1;
-                    Kind::Money(code)
-                }
-                _ => Kind::Word,
-            }
-        } else if let Some(code) = symbol_code(c) {
-            i += 1;
-            Kind::Money(code)
-        } else if c == '*' && chars.get(i + 1) == Some(&'*') {
-            i += 2;
-            Kind::Op
-        } else if "+-*/^×÷!%(),".contains(c) {
-            i += 1;
-            Kind::Op
-        } else if matches!(c, '−' | '–') {
-            // A typographic minus.
-            tokens.push(Token {
-                text: "-".into(),
-                kind: Kind::Op,
-                glued,
-            });
-            glued = true;
-            i += 1;
-            continue;
-        } else {
-            return None;
-        };
-        tokens.push(Token {
-            text: chars[start..i].iter().collect(),
-            kind,
-            glued,
-        });
-        glued = true;
-    }
-    Some(tokens)
-}
-
-fn next_is_digit(chars: &[char], i: usize) -> bool {
-    chars.get(i + 1).is_some_and(char::is_ascii_digit)
-}
-
-/// The end of the number starting at `i`: `0x1f`/`0b101`/`0o17`, or
-/// `1,000.5e-3`.
-fn scan_number(chars: &[char], mut i: usize) -> usize {
-    let radix = match (chars[i], chars.get(i + 1)) {
-        ('0', Some('x' | 'X')) => 16,
-        ('0', Some('b' | 'B')) => 2,
-        ('0', Some('o' | 'O')) => 8,
-        _ => 10,
-    };
-    if radix != 10 && chars.get(i + 2).is_some_and(|c| c.is_digit(radix)) {
-        i += 2;
-        while i < chars.len() && chars[i].is_digit(radix) {
-            i += 1;
-        }
-        return i;
-    }
-    while i < chars.len() {
-        let c = chars[i];
-        let thousands = c == ',' && thousands_group(chars, i + 1);
-        if c.is_ascii_digit() || thousands || (c == '.' && next_is_digit(chars, i)) {
-            i += 1;
-        } else if matches!(c, 'e' | 'E') {
-            let sign = matches!(chars.get(i + 1), Some('+' | '-'));
-            let digit_at = i + 1 + usize::from(sign);
-            if chars.get(digit_at).is_some_and(char::is_ascii_digit) {
-                i = digit_at;
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-    }
-    i
-}
-
-/// Three digits and then no more: "1,000" (not the "1,2" of `max(1,2)`).
-fn thousands_group(chars: &[char], at: usize) -> bool {
-    (at..at + 3).all(|j| chars.get(j).is_some_and(char::is_ascii_digit))
-        && !chars.get(at + 3).is_some_and(char::is_ascii_digit)
-}
-
-fn symbol_code(c: char) -> Option<&'static str> {
-    Some(match c {
-        '$' => "USD",
-        '€' => "EUR",
-        '£' => "GBP",
-        '¥' => "JPY",
-        '₹' => "INR",
-        '₩' => "KRW",
-        '₽' => "RUB",
-        '₪' => "ILS",
-        '₺' => "TRY",
-        '₱' => "PHP",
-        '฿' => "THB",
-        '₴' => "UAH",
-        '₫' => "VND",
-        _ => return None,
-    })
-}
-
-fn dollar_code(prefix: &str) -> Option<&'static str> {
-    Some(match prefix.to_ascii_uppercase().as_str() {
-        "US" => "USD",
-        "C" | "CA" => "CAD",
-        "A" | "AU" => "AUD",
-        "NZ" => "NZD",
-        "HK" => "HKD",
-        "S" | "SG" => "SGD",
-        "R" => "BRL",
-        "MX" => "MXN",
-        _ => return None,
-    })
-}
-
-/// Currency codes recognized in lower case. Codes that are also English
-/// words or units ("cup", "all", "try", "top") only count in capitals.
-const LOWERCASE_CODES: &[&str] = &[
-    "aed", "ars", "aud", "bgn", "brl", "cad", "chf", "clp", "cny", "cop", "czk", "dkk", "egp",
-    "eur", "gbp", "hkd", "huf", "idr", "ils", "inr", "isk", "jpy", "krw", "kwd", "kzt", "mxn",
-    "myr", "ngn", "nok", "nzd", "php", "pkr", "pln", "qar", "ron", "rub", "sar", "sek", "sgd",
-    "thb", "twd", "uah", "usd", "vnd", "zar",
-];
-/// More codes, recognized only in capitals.
-const UPPERCASE_CODES: &[&str] = &["TRY", "CUP", "ALL", "TOP", "BOB", "MOP", "PEN", "MAD"];
-/// Currency names fend doesn't know, and the codes they stand for.
-const CURRENCY_NAMES: &[(&str, &str)] = &[
-    ("yen", "JPY"),
-    ("yuan", "CNY"),
-    ("rupee", "INR"),
-    ("rupees", "INR"),
-    ("franc", "CHF"),
-    ("francs", "CHF"),
-    ("bitcoin", "BTC"),
-];
-/// Currency words fend knows itself.
-const FEND_CURRENCY_WORDS: &[&str] = &["dollar", "dollars", "euro", "euros", "cent", "cents"];
-
-/// Turns currency symbols, codes and names into ISO codes after the number
-/// ("€50" → "50 EUR"). Returns whether there was any.
-fn rewrite_money(tokens: &mut Vec<Token>) -> bool {
-    let mut found = false;
-    let mut out: Vec<Token> = Vec::with_capacity(tokens.len());
-    let mut i = 0;
-    while i < tokens.len() {
-        let t = &tokens[i];
-        if let Kind::Money(code) = t.kind {
-            found = true;
-            let code = Token::new(code, Kind::Word);
-            if tokens.get(i + 1).is_some_and(|n| n.kind == Kind::Number) {
-                // "$50" → "50 USD"; "$5k" → "5k USD".
-                let mut number = tokens[i + 1].clone();
-                number.glued = t.glued;
-                out.push(number);
-                i += 2;
-                if tokens.get(i).is_some_and(|s| s.glued && s.is("k")) {
-                    out.push(tokens[i].clone());
-                    i += 1;
-                }
-            } else {
-                i += 1;
-            }
-            out.push(code);
-            continue;
-        }
-        let mut t = t.clone();
-        if t.kind == Kind::Word {
-            let lower = t.text.to_ascii_lowercase();
-            if LOWERCASE_CODES.contains(&lower.as_str()) || UPPERCASE_CODES.contains(&t.text.as_str())
-            {
-                t.text = t.text.to_ascii_uppercase();
-                found = true;
-            } else if let Some((_, code)) = CURRENCY_NAMES.iter().find(|(n, _)| *n == lower) {
-                t.text = (*code).into();
-                found = true;
-            } else if FEND_CURRENCY_WORDS.contains(&lower.as_str()) {
-                found = true;
-            }
-        }
-        out.push(t);
-        i += 1;
-    }
-    *tokens = out;
-    found
-}
-
-fn is_money_word(t: &Token) -> bool {
-    if t.kind != Kind::Word {
-        return false;
-    }
-    let lower = t.text.to_ascii_lowercase();
-    UPPERCASE_CODES.contains(&t.text.as_str())
-        || LOWERCASE_CODES.contains(&lower.as_str())
-        || CURRENCY_NAMES.iter().any(|(_, code)| *code == t.text)
-        || FEND_CURRENCY_WORDS.contains(&lower.as_str())
-}
-
-/// "sq ft" → "ft^2", "cubic m" → "m^3", "fl oz" → "floz".
-fn merge_compound_units(tokens: &mut Vec<Token>) {
-    let mut i = 0;
-    while i + 1 < tokens.len() {
-        let next_is_word = tokens[i + 1].kind == Kind::Word;
-        let power = if tokens[i].is("sq") || tokens[i].is("square") {
-            Some("2")
-        } else if tokens[i].is("cu") || tokens[i].is("cubic") {
-            Some("3")
-        } else {
-            None
-        };
-        if let (Some(power), true) = (power, next_is_word) {
-            let unit = tokens.remove(i + 1);
-            tokens[i].text = format!("{}^{power}", unit.text);
-        } else if tokens[i].is("fl") && tokens[i + 1].is("oz") {
-            tokens.remove(i + 1);
-            tokens[i].text = "floz".into();
-        }
-        i += 1;
-    }
-}
-
-/// Where the conversion keyword is ("5 mi to km"): the last `to`, `as`,
-/// `into` or `in` with something on both sides, unless that `in` means
-/// inches.
-fn conversion_keyword(tokens: &[Token]) -> Option<usize> {
-    (1..tokens.len().saturating_sub(1))
-        .rev()
-        .find(|&i| is_keyword(&tokens[i]) && !is_inch(tokens, i))
-}
-
-fn is_keyword(t: &Token) -> bool {
-    t.is("to") || t.is("as") || t.is("into") || t.is("in")
-}
-
-/// An `in` that means inches: after a number, and at the end or before the
-/// keyword ("12 in", "1 in to cm"). "10 in binary" is a conversion.
-fn is_inch(tokens: &[Token], i: usize) -> bool {
-    tokens[i].is("in")
-        && i > 0
-        && tokens[i - 1].kind == Kind::Number
-        && tokens.get(i + 1).is_none_or(is_keyword)
-}
-
-/// "12 in" → "12 inch" (fend reads `in` as the keyword).
-fn rewrite_inches(tokens: &mut [Token], split: Option<usize>) {
-    for i in 1..tokens.len() {
-        if Some(i) != split && is_inch(tokens, i) {
-            tokens[i].text = "inch".into();
-        }
-    }
-}
-
-/// "mb" → "MB": typed in lower case, file sizes mean bytes (fend would
-/// read millibits).
-fn rewrite_bytes(tokens: &mut [Token]) {
-    const BYTES: &[(&str, &str)] = &[
-        ("kb", "kB"),
-        ("mb", "MB"),
-        ("gb", "GB"),
-        ("tb", "TB"),
-        ("pb", "PB"),
-        ("kib", "KiB"),
-        ("mib", "MiB"),
-        ("gib", "GiB"),
-        ("tib", "TiB"),
-    ];
-    for t in tokens.iter_mut().filter(|t| t.kind == Kind::Word) {
-        if let Some((_, unit)) = BYTES.iter().find(|(lower, _)| t.text == *lower) {
-            t.text = (*unit).into();
-        }
-    }
-}
-
-/// "3 x 4" and "3x4" → "3 × 4". Hex literals ("0x4") are numbers already.
-fn rewrite_times(tokens: &mut Vec<Token>) {
-    let mut i = 1;
-    while i < tokens.len() {
-        let after_number = tokens[i - 1].kind == Kind::Number;
-        if after_number && tokens[i].is("x") && tokens.get(i + 1).is_some_and(|n| n.kind == Kind::Number)
-        {
-            tokens[i] = Token::new("×", Kind::Op);
-        } else if after_number
-            && tokens[i].kind == Kind::Word
-            && tokens[i].text.len() > 1
-            && tokens[i].text.starts_with(['x', 'X'])
-            && tokens[i].text[1..].chars().all(|c| c.is_ascii_digit())
-        {
-            let number = tokens[i].text[1..].to_owned();
-            tokens[i] = Token::new("×", Kind::Op);
-            tokens.insert(i + 1, Token::new(number, Kind::Number));
-        }
-        i += 1;
-    }
-}
-
-/// The temperature scale `tokens` names, if they're exactly one.
-fn temperature(tokens: &[Token]) -> Option<&'static str> {
-    let scale = |t: &Token| -> Option<&'static str> {
-        let word = t.text.to_lowercase();
-        let word = word.trim_start_matches('°');
-        match word {
-            "f" | "fahrenheit" | "degf" => Some("°F"),
-            "c" | "celsius" | "centigrade" | "degc" => Some("°C"),
-            "k" | "kelvin" | "kelvins" => Some("K"),
-            _ => None,
-        }
-    };
-    match tokens {
-        [unit] if unit.kind == Kind::Word => scale(unit),
-        [deg, unit]
-            if deg.is("deg") || deg.is("degree") || deg.is("degrees") || deg.text == "°" =>
-        {
-            scale(unit)
-        }
-        _ => None,
-    }
-}
-
-/// "72 f to c" → "72 °F to °C": only when both sides are temperatures, so
-/// "1 c to mph" (the speed of light) still works. Returns where the
-/// keyword is afterwards.
-fn rewrite_temperatures(tokens: &mut Vec<Token>, k: usize) -> usize {
-    let Some(to) = temperature(&tokens[k + 1..]) else {
-        return k;
-    };
-    for len in [2, 1] {
-        if k < len + 1 {
-            continue;
-        }
-        let unit_at = k - len;
-        if tokens[unit_at - 1].kind != Kind::Number {
-            continue;
-        }
-        if let Some(from) = temperature(&tokens[unit_at..k]) {
-            tokens.truncate(unit_at);
-            tokens.push(Token::new(from, Kind::Word));
-            tokens.push(Token::new("to", Kind::Word));
-            tokens.push(Token::new(to, Kind::Word));
-            return unit_at + 1;
-        }
-    }
-    k
-}
-
-/// "ff in decimal" → "0xff in decimal". Returns whether it did.
-fn rewrite_hex_word(tokens: &mut [Token], k: usize) -> bool {
-    let to_decimal =
-        tokens.len() == k + 2 && (tokens[k + 1].is("decimal") || tokens[k + 1].is("dec"));
-    let word = &tokens[0];
-    if k == 1 && to_decimal && word.kind == Kind::Word && word.text.chars().all(|c| c.is_ascii_hexdigit())
-    {
-        tokens[0] = Token::new(format!("0x{}", word.text), Kind::Number);
-        return true;
-    }
-    false
-}
-
-fn target_base(rhs: &[Token]) -> Option<Base> {
-    match rhs {
-        [t] if t.is("hex") || t.is("hexadecimal") => Some(Base::Hex),
-        [t] if t.is("bin") || t.is("binary") => Some(Base::Binary),
-        [t] if t.is("oct") || t.is("octal") => Some(Base::Octal),
-        _ => None,
-    }
 }
 
 fn is_base_literal(t: &Token) -> bool {
@@ -623,87 +208,6 @@ fn has_operation(tokens: &[Token]) -> bool {
         }
         _ => false,
     })
-}
-
-/// How deep the brackets go.
-fn depth(tokens: &[Token]) -> usize {
-    let mut level = 0usize;
-    let mut deepest = 0;
-    for t in tokens {
-        if t.is_op("(") {
-            level += 1;
-            deepest = deepest.max(level);
-        } else if t.is_op(")") {
-            level = level.saturating_sub(1);
-        }
-    }
-    deepest
-}
-
-/// Percentages the way a desk calculator does them: "200 + 10%" is 220,
-/// "80 * 15%" is 12. fend would add a tenth of a unit and print "1200%".
-/// "15% of 80" is fend's own and stays.
-fn rewrite_percentages(tokens: Vec<Token>) -> Vec<Token> {
-    let n = tokens.len();
-    let is_percent = |i: usize| -> bool {
-        tokens[i].is_op("%")
-            && tokens[i].glued
-            && i > 0
-            && tokens[i - 1].kind == Kind::Number
-            && !tokens.get(i + 1).is_some_and(|t| t.is("of"))
-    };
-    // "<lhs> + N%" at the end, with the + outside any brackets.
-    if n >= 4 && is_percent(n - 1) {
-        let op = &tokens[n - 3];
-        let lhs = &tokens[..n - 3];
-        let operand = lhs
-            .last()
-            .is_some_and(|t| matches!(t.kind, Kind::Number | Kind::Word) || t.is_op(")") || t.is_op("!"));
-        if (op.is_op("+") || op.is_op("-")) && operand && balanced(lhs) {
-            let expr = format!("({}) * (1 {} {} / 100)", join(lhs), op.text, tokens[n - 2].text);
-            return vec![Token::new(expr, Kind::Word)];
-        }
-    }
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        if i + 1 < n && is_percent(i + 1) {
-            let mut t = Token::new(format!("({} / 100)", tokens[i].text), Kind::Word);
-            t.glued = tokens[i].glued;
-            out.push(t);
-        } else if is_percent(i) {
-            continue;
-        } else {
-            out.push(tokens[i].clone());
-        }
-    }
-    out
-}
-
-/// Brackets close as often as they open, never going below zero.
-fn balanced(tokens: &[Token]) -> bool {
-    let mut level = 0i32;
-    for t in tokens {
-        if t.is_op("(") {
-            level += 1;
-        } else if t.is_op(")") {
-            level -= 1;
-            if level < 0 {
-                return false;
-            }
-        }
-    }
-    level == 0
-}
-
-fn join(tokens: &[Token]) -> String {
-    let mut text = String::new();
-    for (i, t) in tokens.iter().enumerate() {
-        if i > 0 && !t.glued {
-            text.push(' ');
-        }
-        text.push_str(&t.text);
-    }
-    text
 }
 
 #[cfg(test)]
@@ -782,7 +286,9 @@ mod tests {
 
     #[test]
     fn one_letter_prefixes_belong_to_other_features() {
-        for query in ["c 2+2", "g 5 + 5", "f 2024-1", "d 10 * 3", "x 2*3", "k-9", "t-1000"] {
+        for query in [
+            "c 2+2", "g 5 + 5", "f 2024-1", "d 10 * 3", "x 2*3", "k-9", "t-1000",
+        ] {
             assert_eq!(prepare(query), None, "{query:?}");
         }
     }
@@ -824,7 +330,10 @@ mod tests {
         assert_eq!(p.expr, "(200) * (1 + 10 / 100)");
         assert_eq!(p.shown, "200 + 10%");
         assert_eq!(expr("200 - 10%").as_deref(), Some("(200) * (1 - 10 / 100)"));
-        assert_eq!(expr("(1 + 1) + 50%").as_deref(), Some("((1 + 1)) * (1 + 50 / 100)"));
+        assert_eq!(
+            expr("(1 + 1) + 50%").as_deref(),
+            Some("((1 + 1)) * (1 + 50 / 100)")
+        );
         assert_eq!(expr("80 * 15%").as_deref(), Some("80 * (15 / 100)"));
         assert_eq!(expr("15% of 80").as_deref(), Some("15% of 80"));
     }

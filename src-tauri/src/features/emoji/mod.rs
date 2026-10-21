@@ -93,7 +93,8 @@ fn term(query: &str) -> Option<&str> {
         return Some(rest.trim());
     }
     let (head, rest) = (query.get(..5)?, query.get(5..)?);
-    let prefixed = head.eq_ignore_ascii_case("emoji") && (rest.is_empty() || rest.starts_with(char::is_whitespace));
+    let prefixed = head.eq_ignore_ascii_case("emoji")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace));
     prefixed.then(|| rest.trim())
 }
 
@@ -134,10 +135,14 @@ impl EmojiProvider {
 
     fn item(&self, i: usize, score: f32, tone: SkinTone) -> ResultItem {
         let entry = self.index.get(i);
-        let mut item = ResultItem::new(format!("{ID_PREFIX}{}", entry.glyph), ItemKind::Emoji, title(entry))
-            .with_icon(text_icon(&self.toned(entry.glyph, tone)))
-            .with_score(score)
-            .with_actions([Action::Paste, Action::Copy]);
+        let mut item = ResultItem::new(
+            format!("{ID_PREFIX}{}", entry.glyph),
+            ItemKind::Emoji,
+            title(entry),
+        )
+        .with_icon(text_icon(&self.toned(entry.glyph, tone)))
+        .with_score(score)
+        .with_actions([Action::Paste, Action::Copy]);
         if let Some(accessory) = entry.accessory() {
             item = item.with_accessory(accessory);
         }
@@ -148,7 +153,9 @@ impl EmojiProvider {
     fn recent_and_popular(&self, limit: usize) -> Vec<(usize, f32)> {
         let mut recent: Vec<(usize, f64)> = (0..self.index.len())
             .filter_map(|i| {
-                let used = self.store.frecency(&format!("{ID_PREFIX}{}", self.index.get(i).glyph));
+                let used = self
+                    .store
+                    .frecency(&format!("{ID_PREFIX}{}", self.index.get(i).glyph));
                 (used > 0.0).then_some((i, used))
             })
             .collect();
@@ -257,7 +264,10 @@ mod tests {
     use std::sync::RwLock;
 
     fn provider(settings: Settings) -> EmojiProvider {
-        EmojiProvider::new(Arc::new(RwLock::new(settings)), Arc::new(Store::in_memory()))
+        EmojiProvider::new(
+            Arc::new(RwLock::new(settings)),
+            Arc::new(Store::in_memory()),
+        )
     }
 
     async fn icons(p: &EmojiProvider, query: &str, n: usize) -> Vec<String> {
@@ -296,7 +306,7 @@ mod tests {
         assert_eq!(first.actions, [Action::Paste, Action::Copy]);
         assert!(items.len() > 1);
         assert_eq!(icons(&p, ":)", 1).await, ["text:🙂"]);
-        assert_eq!(icons(&p, ":arrow", 32).await.contains(&"text:→".to_owned()), true);
+        assert!(icons(&p, ":arrow", 32).await.contains(&"text:→".to_owned()));
     }
 
     #[tokio::test]

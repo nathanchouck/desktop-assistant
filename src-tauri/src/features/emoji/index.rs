@@ -43,9 +43,9 @@ impl Entry {
     /// spaces), from 0 to 1.
     fn score(&self, term: &str, shortcode: &str, terms: &[&str]) -> Option<f32> {
         let short = term.chars().count() < 3;
-        let score = if self.lower == term || self.shortcodes.iter().any(|s| *s == shortcode) {
+        let score = if self.lower == term || self.shortcodes.contains(&shortcode) {
             1.0
-        } else if self.keywords.iter().any(|k| *k == term) {
+        } else if self.keywords.contains(&term) {
             0.95
         } else if self.lower.starts_with(term) {
             0.9
@@ -111,9 +111,9 @@ impl Index {
         );
         for e in &mut entries {
             e.popular = !e.keywords.is_empty() && e.emoji.is_some()
-                || POPULAR
-                    .iter()
-                    .any(|p| *p == e.glyph || emojis::get(p).is_some_and(|x| x.as_str() == e.glyph));
+                || POPULAR.iter().any(|p| {
+                    *p == e.glyph || emojis::get(p).is_some_and(|x| x.as_str() == e.glyph)
+                });
         }
 
         let mut by_glyph = HashMap::new();

@@ -224,7 +224,9 @@ fn fetch() -> Result<Vec<u8>, String> {
 /// Only the Windows build downloads; elsewhere the saved file is used.
 #[cfg(not(windows))]
 fn fetch() -> Result<Vec<u8>, String> {
-    Err(format!("downloading from {HOST}{PATH} is only built for Windows"))
+    Err(format!(
+        "downloading from {HOST}{PATH} is only built for Windows"
+    ))
 }
 
 fn unix_now() -> i64 {
@@ -280,7 +282,10 @@ mod tests {
 
     #[test]
     fn attributes_match_whole_names() {
-        assert_eq!(attribute(" currency='USD' rate='1.5'/", "rate"), Some("1.5"));
+        assert_eq!(
+            attribute(" currency='USD' rate='1.5'/", "rate"),
+            Some("1.5")
+        );
         assert_eq!(attribute(" xrate='2' rate = \"3\"", "rate"), Some("3"));
         assert_eq!(attribute(" currency='USD'", "rate"), None);
     }

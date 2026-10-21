@@ -29,7 +29,8 @@ pub fn is_usable(link: &Quicklink) -> bool {
 pub fn is_web_url(url: &str) -> bool {
     let url = url.trim();
     let lower = url.get(..8).unwrap_or(url).to_ascii_lowercase();
-    (lower.starts_with("https://") && url.len() > 8) || (lower.starts_with("http://") && url.len() > 7)
+    (lower.starts_with("https://") && url.len() > 8)
+        || (lower.starts_with("http://") && url.len() > 7)
 }
 
 /// Whether the link searches for what you type (has `{query}`).
@@ -53,7 +54,8 @@ pub fn find<'a>(links: &'a [Quicklink], query: &'a str) -> Vec<Match<'a>> {
             } else if takes_text(link) {
                 found.push(Match::Search(link, rest));
             }
-        } else if lower.chars().count() >= MIN_NAME_PREFIX && link.name.to_lowercase().starts_with(&lower)
+        } else if lower.chars().count() >= MIN_NAME_PREFIX
+            && link.name.to_lowercase().starts_with(&lower)
         {
             found.push(Match::Link(link, false));
         }
@@ -103,7 +105,11 @@ mod tests {
 
     fn links() -> Vec<Quicklink> {
         vec![
-            link("yt", "YouTube", "https://www.youtube.com/results?search_query={query}"),
+            link(
+                "yt",
+                "YouTube",
+                "https://www.youtube.com/results?search_query={query}",
+            ),
             link("gh", "GitHub", "https://github.com/search?q={query}"),
             link("mail", "Gmail", "https://mail.google.com"),
             link("bad", "Bad", "file:///C:/Windows/System32/calc.exe"),
@@ -114,9 +120,18 @@ mod tests {
     #[test]
     fn keyword_and_text_searches() {
         let links = links();
-        assert_eq!(find(&links, "yt lofi beats"), [Match::Search(&links[0], "lofi beats")]);
-        assert_eq!(find(&links, "YT  cats "), [Match::Search(&links[0], "cats")]);
-        assert_eq!(find(&links, "gh tauri"), [Match::Search(&links[1], "tauri")]);
+        assert_eq!(
+            find(&links, "yt lofi beats"),
+            [Match::Search(&links[0], "lofi beats")]
+        );
+        assert_eq!(
+            find(&links, "YT  cats "),
+            [Match::Search(&links[0], "cats")]
+        );
+        assert_eq!(
+            find(&links, "gh tauri"),
+            [Match::Search(&links[1], "tauri")]
+        );
     }
 
     #[test]
@@ -157,7 +172,10 @@ mod tests {
 
     #[test]
     fn hosts() {
-        assert_eq!(host("https://www.youtube.com/results?q=1"), "www.youtube.com");
+        assert_eq!(
+            host("https://www.youtube.com/results?q=1"),
+            "www.youtube.com"
+        );
         assert_eq!(host("http://localhost:8080"), "localhost:8080");
         assert_eq!(host("https://example.com?x"), "example.com");
     }
