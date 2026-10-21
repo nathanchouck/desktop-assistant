@@ -56,7 +56,7 @@
         />
       </Row>
     {:else}
-      <p class="note">Builds from the release workflow, signed with the update key, check GitHub for new versions.</p>
+      <p class="note">Only copies installed from a signed GitHub release update themselves.</p>
     {/if}
   </Section>
 {/if}

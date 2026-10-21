@@ -133,9 +133,15 @@ Not worth it here: end-to-end UI automation, mocking Win32.
 - `test.yml`: UI typecheck/tests/build on Linux; Rust fmt, clippy and tests
   on both Linux and Windows (the Windows job covers the keyboard hook).
 - `build.yml` (windows-latest, every push): `tauri build` produces an
-  `.msi`/`.exe` installer uploaded as a workflow artifact. Tags `v*` create a GitHub Release
-  that the in-app updater reads (later milestone).
-- Version lives in `src-tauri/tauri.conf.json` and is bumped per release.
+  `.msi`/`.exe` installer uploaded as a workflow artifact. These builds
+  have no update key, so they don't update themselves.
+- `release.yml` (tags `v*`, or run by hand): builds the NSIS installer,
+  signs it for the updater and publishes a GitHub Release with
+  `latest.json`, which installed copies check. Without the signing secrets
+  it still publishes the installer, with a warning and no update files.
+- Releasing: set the same version in `src-tauri/tauri.conf.json`,
+  `src-tauri/Cargo.toml` and `package.json` (the workflow checks), commit,
+  then tag `v<version>` and push the tag.
 
 ## Settings sync across my computers
 

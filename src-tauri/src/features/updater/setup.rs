@@ -73,6 +73,9 @@ mod tests {
         assert_eq!(section["pubkey"], "");
         assert_eq!(section["endpoints"], json!([DEFAULT_ENDPOINT]));
         assert_eq!(section["requireSignedVersion"], true);
+        let parsed: tauri_plugin_updater::Config = serde_json::from_value(section).unwrap();
+        assert!(parsed.require_signed_version);
+        assert_eq!(parsed.endpoints[0].as_str(), DEFAULT_ENDPOINT);
         // An empty variable (an unset CI secret) counts as no key.
         assert_eq!(prepare(None, Some("  \n")).1, None);
     }
