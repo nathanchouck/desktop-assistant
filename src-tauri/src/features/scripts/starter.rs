@@ -38,9 +38,10 @@ argument: $args[0] or param() in PowerShell, sys.argv[1] in Python,
 
 Scripts run without a window, in this folder (or, with @cwd explorer,
 in the folder File Explorer showed when you opened the launcher). They
-are stopped after 60 seconds (Settings > Script commands). Exit with a
-non-zero code (exit 1) to report a failure; the launcher then shows the
-last error line.
+are stopped, with anything they started, after a time limit: 60 seconds
+unless you change it in Settings > Script commands. Exit with a non-zero
+code (exit 1) to report a failure; the launcher then shows the last
+error line.
 
 Changes here are picked up at once. Subfolders are ignored, so helper
 files can go in one.
@@ -49,7 +50,9 @@ Scripts run with your own rights, like anything you start yourself. Only
 put scripts here that you wrote or trust.
 
 Windows PowerShell reads a .ps1 file without a byte order mark as ANSI:
-save scripts as \"UTF-8 with BOM\" if they print accented letters or emoji.
+save scripts as \"UTF-8 with BOM\" if they contain accented letters or
+emoji. To print emoji, also start the script with
+  [Console]::OutputEncoding = [Text.Encoding]::UTF8
 ";
 
 pub const HELLO: &str = "\

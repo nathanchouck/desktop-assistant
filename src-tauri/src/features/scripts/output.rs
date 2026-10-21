@@ -93,6 +93,8 @@ impl Capped {
 /// or, on Windows, the console's OEM code page (cmd's `echo`, Windows
 /// PowerShell). Text that isn't valid UTF-8 is read as the latter.
 pub fn decode(bytes: &[u8]) -> String {
+    // PowerShell set to UTF-8 output may start with a byte order mark.
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     match std::str::from_utf8(bytes) {
         Ok(text) => text.to_owned(),
         // Only cut short at the end (the cap split a character).
@@ -265,6 +267,7 @@ mod tests {
     #[test]
     fn decodes_utf8() {
         assert_eq!(decode("héllo 👋".as_bytes()), "héllo 👋");
+        assert_eq!(decode(b"\xEF\xBB\xBFok"), "ok");
         // Not UTF-8 and no code page to try (off Windows): replaced, not lost.
         #[cfg(not(windows))]
         assert_eq!(decode(b"caf\x82"), "caf\u{FFFD}");

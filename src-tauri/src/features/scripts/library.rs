@@ -14,7 +14,7 @@ use super::index::{self, Index};
 use super::language::Interpreters;
 use super::{starter, ScriptSettings};
 use crate::paths::AppPaths;
-use crate::settings::{self, SharedSettings};
+use crate::settings::SharedSettings;
 
 /// The scripts folder for the settings menu.
 #[derive(Debug, Clone, Serialize, specta::Type)]
@@ -74,8 +74,13 @@ impl Library {
         }
     }
 
+    /// Read on every search and every second by the watcher, so only this
+    /// section is copied, not all the settings.
     pub fn settings(&self) -> ScriptSettings {
-        settings::current(&self.settings).scripts
+        match self.settings.read() {
+            Ok(s) => s.scripts.clone(),
+            Err(poisoned) => poisoned.into_inner().scripts.clone(),
+        }
     }
 
     /// `scripts` in the settings folder (`%APPDATA%\desktop-assistant`).
