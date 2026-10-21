@@ -2,6 +2,7 @@
 //! UI how it's going, and installs when asked.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
@@ -32,6 +33,9 @@ pub struct UpdateStatus {
     pub summary: String,
     /// When a check last got an answer on this PC (seconds since 1970).
     pub last_checked: Option<u32>,
+    /// Goes up with every change, so the UI can tell an answer that
+    /// arrives late (a command's reply after newer events) and ignore it.
+    pub revision: u32,
 }
 
 /// Sent whenever `UpdateStatus` changes (a few times a second at most
@@ -57,6 +61,8 @@ pub struct Updates {
     last_attempt: Mutex<Option<Attempt>>,
     /// The toast waiting for the launcher to open, so a newer one replaces it.
     announcement: Mutex<Option<EventId>>,
+    /// Counts status changes (`UpdateStatus::revision`).
+    revision: AtomicU32,
 }
 
 /// A poisoned lock (a panic elsewhere) still holds usable state.
@@ -75,6 +81,7 @@ impl Updates {
             saved: Mutex::new(saved),
             last_attempt: Mutex::new(None),
             announcement: Mutex::new(None),
+            revision: AtomicU32::new(0),
         }
     }
 
@@ -111,6 +118,9 @@ impl Updates {
     }
 
     pub fn status(&self) -> UpdateStatus {
+        // Read before the state: a change counts up after it's made, so
+        // this state is at least as new as its revision says.
+        let revision = self.revision.load(Ordering::SeqCst);
         let phase = lock(&self.tracker).phase().clone();
         UpdateStatus {
             current_version: self.current_version(),
@@ -119,6 +129,7 @@ impl Updates {
             last_checked: lock(&self.saved)
                 .last_checked
                 .and_then(|t| u32::try_from(t).ok()),
+            revision,
         }
     }
 
@@ -215,6 +226,11 @@ impl Updates {
             }
             Err(e) => {
                 tracing::warn!("could not download update {version}: {e}");
+                // Try again after the shorter wait, like a failed check.
+                *lock(&self.last_attempt) = Some(Attempt {
+                    at: unix_now(),
+                    failed: true,
+                });
                 lock(&self.tracker).download_failed(&describe(&e));
                 self.emit();
             }
@@ -284,6 +300,7 @@ impl Updates {
     }
 
     fn emit(&self) {
+        self.revision.fetch_add(1, Ordering::SeqCst);
         let Some(app) = self.app.get() else { return };
         if let Err(e) = (UpdateStatusChanged {
             status: self.status(),
