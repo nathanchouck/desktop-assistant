@@ -19,11 +19,17 @@ pub enum UpdatePhase {
         percent: Option<u32>,
     },
     /// Downloaded and its signature checked: installs on restart.
-    Ready { version: String },
+    Ready {
+        version: String,
+    },
     /// The installer is starting; the app is about to close.
-    Installing { version: String },
+    Installing {
+        version: String,
+    },
     /// A check or download failed; `message` says which and why.
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
 }
 
 impl UpdatePhase {
@@ -315,9 +321,10 @@ mod tests {
         assert_eq!(t.phase().summary(), "Downloading v0.2.0…");
         assert!(!t.start_check(), "no check while downloading");
         assert!(!t.progress(10, None), "size unknown: nothing to show");
-        assert!(t.progress(40, Some(100)));
-        assert!(!t.progress(41, Some(100)), "same percent: no event");
-        assert_eq!(t.phase().summary(), "Downloading v0.2.0… 41%");
+        assert!(t.progress(400, Some(1000)));
+        assert!(!t.progress(409, Some(1000)), "same percent: no event");
+        assert_eq!(t.phase().summary(), "Downloading v0.2.0… 40%");
+        assert!(t.progress(410, Some(1000)));
         assert_eq!(t.start_install(), None, "nothing downloaded yet");
         t.downloaded();
         assert_eq!(t.phase(), &ready("0.2.0"));

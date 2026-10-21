@@ -102,7 +102,9 @@ impl Updates {
                 self.announce(format!("Updated to v{version}"), false);
             }
             Some(AfterInstall::NotInstalled(version)) => self.announce(
-                format!("The update to v{version} didn't finish installing; it will download again."),
+                format!(
+                    "The update to v{version} didn't finish installing; it will download again."
+                ),
                 true,
             ),
             None => {}
@@ -257,9 +259,10 @@ impl Updates {
             state.chat.shut_down().await;
         }
         tracing::info!("installing update {version}");
-        let installed =
-            tauri::async_runtime::spawn_blocking(move || downloaded.update.install(&downloaded.bytes))
-                .await;
+        let installed = tauri::async_runtime::spawn_blocking(move || {
+            downloaded.update.install(&downloaded.bytes)
+        })
+        .await;
         let error = match installed {
             // Windows never gets here: the app has quit for the installer.
             // Elsewhere the new version is in place and needs a restart.

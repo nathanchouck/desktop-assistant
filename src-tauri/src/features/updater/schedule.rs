@@ -57,7 +57,10 @@ mod tests {
 
     #[test]
     fn then_every_six_hours() {
-        let ok = Some(Attempt { at: T0, failed: false });
+        let ok = Some(Attempt {
+            at: T0,
+            failed: false,
+        });
         assert_eq!(wait(T0, T0 - 100, ok), EVERY);
         assert_eq!(wait(T0 + 3600, T0, ok), Duration::from_secs(5 * 3600));
         assert_eq!(wait(T0 + 6 * 3600, T0, ok), Duration::ZERO);
@@ -65,14 +68,20 @@ mod tests {
 
     #[test]
     fn sooner_after_a_failure() {
-        let failed = Some(Attempt { at: T0, failed: true });
+        let failed = Some(Attempt {
+            at: T0,
+            failed: true,
+        });
         assert_eq!(wait(T0 + 60, T0, failed), Duration::from_secs(29 * 60));
         assert_eq!(wait(T0 + 31 * 60, T0, failed), Duration::ZERO);
     }
 
     #[test]
     fn a_long_sleep_makes_it_due_and_a_clock_set_back_waits_one_gap() {
-        let ok = Some(Attempt { at: T0, failed: false });
+        let ok = Some(Attempt {
+            at: T0,
+            failed: false,
+        });
         assert_eq!(wait(T0 + 3 * 24 * 3600, T0, ok), Duration::ZERO);
         assert_eq!(wait(T0 - 3600, T0, ok), EVERY);
     }

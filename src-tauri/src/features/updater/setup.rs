@@ -80,7 +80,10 @@ mod tests {
     #[test]
     fn the_build_variable_wins_over_the_config() {
         let config = json!({ "pubkey": "from-config" });
-        assert_eq!(prepare(Some(&config), None).1.as_deref(), Some("from-config"));
+        assert_eq!(
+            prepare(Some(&config), None).1.as_deref(),
+            Some("from-config")
+        );
         let (section, key) = prepare(Some(&config), Some(" from-env\n"));
         assert_eq!(key.as_deref(), Some("from-env"));
         assert_eq!(section["pubkey"], "from-env");
@@ -96,7 +99,10 @@ mod tests {
         });
         let (section, key) = prepare(Some(&config), None);
         assert_eq!(key, None);
-        assert_eq!(section["endpoints"], json!(["https://example.com/latest.json"]));
+        assert_eq!(
+            section["endpoints"],
+            json!(["https://example.com/latest.json"])
+        );
         assert_eq!(section["requireSignedVersion"], false);
         assert_eq!(section["windows"]["installMode"], "quiet");
         assert!(plugin_accepts(&section));
