@@ -162,9 +162,11 @@ impl EmojiProvider {
         recent.sort_by(|a, b| b.1.total_cmp(&a.1));
         let mut picked: Vec<usize> = recent.into_iter().map(|(i, _)| i).collect();
         for glyph in symbols::POPULAR {
-            let i = emojis::get(glyph)
-                .and_then(|e| self.index.by_glyph(e.as_str()))
-                .or_else(|| self.index.by_glyph(glyph));
+            // The exact text first: "©" is the symbol, not the emoji "©️".
+            let i = self
+                .index
+                .by_glyph(glyph)
+                .or_else(|| emojis::get(glyph).and_then(|e| self.index.by_glyph(e.as_str())));
             if let Some(i) = i.filter(|i| !picked.contains(i)) {
                 picked.push(i);
             }
@@ -313,6 +315,8 @@ mod tests {
     async fn recently_used_come_first() {
         let p = provider(Settings::default());
         assert_eq!(icons(&p, ":", 1).await, ["text:😂"]);
+        // Popular symbols are the plain text ones.
+        assert!(icons(&p, ":", 32).await.contains(&"text:©".to_owned()));
         p.store.record_open("emoji:🦀").unwrap();
         assert_eq!(icons(&p, ":", 2).await, ["text:🦀", "text:😂"]);
     }
