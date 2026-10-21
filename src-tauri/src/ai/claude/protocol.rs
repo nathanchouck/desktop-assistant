@@ -173,6 +173,11 @@ pub fn summarize(tool: &str, input: &Value) -> String {
         "WebSearch" => field("query").to_owned(),
         "Task" | "Agent" => field("description").to_owned(),
         "TodoWrite" => "updating the plan".to_owned(),
+        // Skills synced from claude.ai come namespaced; the name is enough.
+        "Skill" => {
+            let skill = field("skill");
+            skill.rsplit(':').next().unwrap_or(skill).to_owned()
+        }
         "mcp__launcher__search" => field("query").to_owned(),
         "mcp__launcher__open" | "mcp__launcher__reveal" => file_name(field("target")),
         "mcp__launcher__screenshot" => "the window you were in".to_owned(),
@@ -439,6 +444,10 @@ mod tests {
             "desktop · get_selection"
         );
         assert_eq!(summarize("Unknown", &json!({})), "");
+        assert_eq!(
+            summarize("Skill", &json!({"skill": "anthropic-skills:morning"})),
+            "morning"
+        );
         assert!(summarize("Bash", &json!({"command": "x".repeat(200)})).ends_with('…'));
     }
 }

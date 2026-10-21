@@ -353,8 +353,12 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
   silently prefers the key). API key mode currently uses the
   `ANTHROPIC_API_KEY` environment variable; the settings window (M6) moves it
   to Credential Manager. Same pattern for Codex with `OPENAI_API_KEY`.
-- **Connectors:** Claude gets claude.ai connectors automatically from its
-  login. Local MCP servers come from `mcp_registry`, which writes the same list
+- **Connectors and skills:** Claude gets claude.ai connectors and skills
+  automatically from its login. Claude Code (2.1.273+) syncs the account's
+  skills into `~/.claude/skills/synced/` in the background, and also loads
+  hand-written ones from `~/.claude/skills/`. Both need the claude.ai
+  sign-in: API key mode gets neither. A skill added on claude.ai shows up
+  once that sync has run (usually by the next question). Local MCP servers come from `mcp_registry`, which writes the same list
   into Claude's and Codex's config files so I only add a service once.
 - **Approvals (D-018):** with `--permission-prompt-tool stdio`, Claude Code
   sends a `can_use_tool` control request on stdout whenever its rules say a
