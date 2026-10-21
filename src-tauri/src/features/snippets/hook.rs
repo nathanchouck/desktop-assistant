@@ -49,8 +49,9 @@ const REINSTALL_MS: u32 = 10_000;
 /// pressing keys, so they don't mix in.
 const MODIFIER_WAIT: Duration = Duration::from_millis(600);
 /// How long the app gets to read the snippet off the clipboard before
-/// the old content goes back.
-const RESTORE_DELAY: Duration = Duration::from_millis(400);
+/// the old content goes back. Apps paste when they get to the keys, so a
+/// busy one takes a while; too short and it pastes the old content.
+const RESTORE_DELAY: Duration = Duration::from_millis(750);
 /// Leave the keyboard's dead-key state alone, so a pending accent still
 /// reaches the app (Windows 10 1607+).
 const TO_UNICODE_KEEP_STATE: u32 = 4;
