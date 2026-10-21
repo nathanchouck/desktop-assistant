@@ -44,11 +44,52 @@ describe("SearchStore", () => {
     commands.itemActivate.mockResolvedValue({ status: "ok", data: { type: "hide" } });
   });
 
-  it("asks Claude with the query", async () => {
+  it("asks the default AI with the query", async () => {
     const onAsk = vi.fn();
     const store = await storeWith([row("a"), row("ask-ai", "ask_ai")], onAsk);
     store.ask();
-    expect(onAsk).toHaveBeenCalledWith("query");
+    expect(onAsk).toHaveBeenCalledWith("query", null);
+  });
+
+  it("asks the AI a prefix names, without the prefix", async () => {
+    const onAsk = vi.fn();
+    const store = await storeWith([row("ask-ai", "ask_ai")], onAsk);
+    answer([row("ask-ai", "ask_ai")]);
+    await store.setQuery("g write a haiku");
+    store.ask();
+    expect(onAsk).toHaveBeenLastCalledWith("write a haiku", "chatgpt");
+    await store.activate(0);
+    expect(onAsk).toHaveBeenLastCalledWith("write a haiku", "chatgpt");
+    answer([row("ask-ai", "ask_ai")]);
+    await store.setQuery("c sort my files");
+    store.ask();
+    expect(onAsk).toHaveBeenLastCalledWith("sort my files", "claude");
+  });
+
+  it("asks the other AI with Shift+Tab", async () => {
+    const onAsk = vi.fn();
+    commands.searchQuery.mockResolvedValueOnce({ status: "ok", data: { seq: 1, items: [row("ask-ai", "ask_ai")] } });
+    const store = new SearchStore({ onAsk, defaultProvider: () => "chatgpt" });
+    await store.setQuery("what's up");
+    expect(store.otherProvider()).toBe("claude");
+    store.askOther();
+    expect(onAsk).toHaveBeenCalledWith("what's up", "claude");
+    // With a prefix, "other" is the AI the prefix didn't name.
+    answer([row("ask-ai", "ask_ai")]);
+    await store.setQuery("c what's up");
+    store.askOther();
+    expect(onAsk).toHaveBeenLastCalledWith("what's up", "chatgpt");
+  });
+
+  it("runs ChatGPT's fix when it can't answer, but not for the other AI", async () => {
+    const onAsk = vi.fn();
+    const store = await storeWith([row("cmd:codex-install", "command")], onAsk);
+    store.ask(undefined, "chatgpt");
+    expect(commands.itemActivate).toHaveBeenCalledWith("cmd:codex-install", "run");
+    expect(onAsk).not.toHaveBeenCalled();
+    // The fix row is ChatGPT's; asking Claude goes ahead.
+    store.ask(undefined, "claude");
+    expect(onAsk).toHaveBeenCalledWith("query", "claude");
   });
 
   it("runs the sign-in fix instead when Claude can't answer", async () => {

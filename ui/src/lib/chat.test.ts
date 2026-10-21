@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, approvalSummary, hasClaudePrefix, looksLikeAQuestion, isThinking, modelLabel, pendingApproval, stripClaudePrefix, type Transcript } from "./chat";
+import {
+  answeringLabel,
+  applyEvent,
+  approvalSummary,
+  forcedProvider,
+  looksLikeAQuestion,
+  isThinking,
+  modelLabel,
+  otherProvider,
+  pendingApproval,
+  type Transcript,
+} from "./chat";
 
 const fresh = (): Transcript => ({ entries: [{ kind: "user", text: "hi" }], running: true, model: "" });
 
@@ -48,17 +59,24 @@ describe("applyEvent", () => {
   });
 });
 
-describe("stripClaudePrefix", () => {
-  it("removes a leading c and space", () => {
-    expect(stripClaudePrefix("c what is 2+2")).toBe("what is 2+2");
-    expect(stripClaudePrefix("C  sort my downloads")).toBe("sort my downloads");
-    expect(stripClaudePrefix("calculator")).toBe("calculator");
+describe("forcedProvider", () => {
+  it("reads c for Claude and g for ChatGPT, without the prefix", () => {
+    expect(forcedProvider("c what is 2+2")).toEqual({ provider: "claude", text: "what is 2+2" });
+    expect(forcedProvider("C  sort my downloads")).toEqual({ provider: "claude", text: "sort my downloads" });
+    expect(forcedProvider("g write a haiku")).toEqual({ provider: "chatgpt", text: "write a haiku" });
+    expect(forcedProvider(" G hi ")).toEqual({ provider: "chatgpt", text: "hi" });
   });
 
   it("only counts a prefix followed by a question", () => {
-    expect(hasClaudePrefix("c sort my downloads")).toBe(true);
-    expect(hasClaudePrefix("c ")).toBe(false);
-    expect(hasClaudePrefix("calc")).toBe(false);
+    expect(forcedProvider("c ")).toBeNull();
+    expect(forcedProvider("calc")).toBeNull();
+    expect(forcedProvider("gh repo")).toBeNull();
+    expect(forcedProvider("chrome")).toBeNull();
+  });
+
+  it("pairs each AI with the other", () => {
+    expect(otherProvider("claude")).toBe("chatgpt");
+    expect(otherProvider("chatgpt")).toBe("claude");
   });
 });
 
@@ -92,7 +110,19 @@ describe("modelLabel", () => {
     expect(modelLabel("claude-sonnet-5-5")).toBe("Sonnet 5.5");
     expect(modelLabel("claude-haiku-5-5")).toBe("Haiku 5.5");
     expect(modelLabel("claude-opus-4-20250514")).toBe("Opus 4");
-    expect(modelLabel("gpt-5")).toBe("gpt-5");
+    expect(modelLabel("something-else")).toBe("something-else");
+  });
+
+  it("names ChatGPT models", () => {
+    expect(modelLabel("gpt-6.1-sol")).toBe("GPT-6.1-Sol");
+    expect(modelLabel("gpt-6-luna")).toBe("GPT-6-Luna");
+    expect(modelLabel("gpt-5.5")).toBe("GPT-5.5");
+  });
+
+  it("says who is answering in the footer", () => {
+    expect(answeringLabel("claude", "claude-sonnet-5-5")).toBe("Claude · Sonnet 5.5");
+    expect(answeringLabel("chatgpt", "gpt-6.1-sol")).toBe("ChatGPT · GPT-6.1-Sol");
+    expect(answeringLabel("chatgpt", "")).toBe("ChatGPT");
   });
 });
 
@@ -110,6 +140,7 @@ describe("looksLikeAQuestion", () => {
   const app = { kind: "app" };
   it("spots questions early", () => {
     expect(looksLikeAQuestion("c what", [])).toBe(true);
+    expect(looksLikeAQuestion("g what", [])).toBe(true);
     expect(looksLikeAQuestion("sort my downloads", [app, ask])).toBe(true);
     expect(looksLikeAQuestion("weather", [ask])).toBe(true);
   });

@@ -26,6 +26,8 @@ pub enum AskRow {
     Ask(ProviderId),
     InstallClaude,
     SignInToClaude,
+    InstallCodex,
+    SignInToChatgpt,
 }
 
 /// Time the providers get per keystroke before results are shown. A slower
@@ -247,7 +249,9 @@ fn finish(
     items
 }
 
-fn ask_ai_item(query: &str, ai: AskRow) -> ResultItem {
+/// The "Ask" row for `query` (or the fix that stops that AI answering),
+/// its icon showing which AI it is.
+pub fn ask_ai_item(query: &str, ai: AskRow) -> ResultItem {
     let fix = |cmd: BuiltinCommand, title: String, subtitle: &str| ResultItem {
         id: cmd.id().into(),
         kind: ItemKind::Command,
@@ -259,9 +263,9 @@ fn ask_ai_item(query: &str, ai: AskRow) -> ResultItem {
         accessory: None,
         confirm: None,
     };
-    let name = match ai {
-        AskRow::Ask(ProviderId::Claude) => "Claude",
-        AskRow::Ask(ProviderId::Chatgpt) => "ChatGPT",
+    let (provider, icon) = match ai {
+        AskRow::Ask(ProviderId::Claude) => (ProviderId::Claude, "sparkle"),
+        AskRow::Ask(ProviderId::Chatgpt) => (ProviderId::Chatgpt, "chatgpt"),
         AskRow::InstallClaude => {
             return fix(
                 BuiltinCommand::InstallClaude,
@@ -276,13 +280,27 @@ fn ask_ai_item(query: &str, ai: AskRow) -> ResultItem {
                 "Opens a sign-in window",
             )
         }
+        AskRow::InstallCodex => {
+            return fix(
+                BuiltinCommand::InstallCodex,
+                format!("Install Codex to ask ChatGPT: {query}"),
+                "Opens the install page",
+            )
+        }
+        AskRow::SignInToChatgpt => {
+            return fix(
+                BuiltinCommand::SignInToChatgpt,
+                format!("Sign in to ChatGPT to ask: {query}"),
+                "Opens a sign-in window",
+            )
+        }
     };
     ResultItem {
         id: "ask-ai".into(),
         kind: ItemKind::AskAi,
-        title: format!("Ask {name}: {query}"),
+        title: format!("Ask {}: {query}", provider.name()),
         subtitle: "Tab".into(),
-        icon: None,
+        icon: Some(glyph(icon)),
         score: 0.0,
         actions: vec![Action::AskAi],
         accessory: None,
@@ -385,6 +403,19 @@ mod tests {
             .items;
         assert_eq!(ids(&items), ["a:2", "a:1", "ask-ai"]);
         assert_eq!(items[2].title, "Ask ChatGPT: x");
+        assert_eq!(items[2].icon.as_deref(), Some("glyph:chatgpt"));
+    }
+
+    #[test]
+    fn the_ask_row_shows_which_ai() {
+        let claude = ask_ai_item("hi", AskRow::Ask(ProviderId::Claude));
+        assert_eq!(claude.icon.as_deref(), Some("glyph:sparkle"));
+        assert_eq!(claude.title, "Ask Claude: hi");
+        let install = ask_ai_item("hi", AskRow::InstallCodex);
+        assert_eq!(install.id, "cmd:codex-install");
+        assert_eq!(install.title, "Install Codex to ask ChatGPT: hi");
+        let sign_in = ask_ai_item("hi", AskRow::SignInToChatgpt);
+        assert_eq!(sign_in.id, "cmd:chatgpt-sign-in");
     }
 
     #[tokio::test]

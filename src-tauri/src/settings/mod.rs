@@ -105,10 +105,12 @@ impl Default for HotkeySettings {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct AiSettings {
-    /// Gets any query that doesn't match an app, file or command.
+    /// Gets any query that doesn't match an app, file or command, and Tab.
+    /// (`c ` and `g ` in front of a question pick one; Shift+Tab asks the
+    /// other.)
     pub default_provider: ProviderId,
     pub claude: ClaudeSettings,
-    pub chatgpt: ProviderSettings,
+    pub chatgpt: ChatGptSettings,
 }
 
 impl Default for AiSettings {
@@ -116,7 +118,25 @@ impl Default for AiSettings {
         Self {
             default_provider: ProviderId::Claude,
             claude: ClaudeSettings::default(),
-            chatgpt: ProviderSettings::default(),
+            chatgpt: ChatGptSettings::default(),
+        }
+    }
+}
+
+impl AiSettings {
+    /// Whether `provider` is told what's on screen.
+    pub fn desktop_context(&self, provider: ProviderId) -> bool {
+        match provider {
+            ProviderId::Claude => self.claude.desktop_context,
+            ProviderId::Chatgpt => self.chatgpt.desktop_context,
+        }
+    }
+
+    /// Whether `provider` may be started while a question is typed.
+    pub fn warm_start(&self, provider: ProviderId) -> bool {
+        match provider {
+            ProviderId::Claude => self.claude.warm_start,
+            ProviderId::Chatgpt => self.chatgpt.warm_start,
         }
     }
 }
@@ -153,9 +173,40 @@ impl Default for ClaudeSettings {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct ProviderSettings {
+/// ChatGPT, answered through OpenAI's Codex CLI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct ChatGptSettings {
+    /// "subscription": your ChatGPT plan through Codex's sign-in.
+    /// "api_key": the OPENAI_API_KEY environment variable, per token.
     pub billing: BillingMode,
+    /// The model Codex uses ("gpt-6-luna"...). Empty: Codex's default
+    /// (from its own config.toml, else its built-in choice).
+    pub model: String,
+    /// "ask": Codex runs in a read-only sandbox and you approve every
+    /// change. "auto": it changes files inside the Explorer folder you came
+    /// from without asking (no network), and asks for anything else.
+    pub approvals: Approvals,
+    /// Full path to `codex` (or its `codex.js`). Empty: find it automatically.
+    pub path: String,
+    /// Tell ChatGPT which window you were in, and Explorer's folder and
+    /// selection; Explorer's folder also becomes its working folder.
+    pub desktop_context: bool,
+    /// Start Codex while you're typing a question for ChatGPT, so the
+    /// answer starts sooner. Closed again if unused.
+    pub warm_start: bool,
+}
+
+impl Default for ChatGptSettings {
+    fn default() -> Self {
+        Self {
+            billing: BillingMode::Subscription,
+            model: String::new(),
+            approvals: Approvals::Ask,
+            path: String::new(),
+            desktop_context: true,
+            warm_start: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -318,8 +369,29 @@ mod tests {
         s.ai.claude.billing = BillingMode::ApiKey;
         s.ai.claude.model = "haiku".into();
         s.ai.claude.approvals = Approvals::Auto;
+        s.ai.chatgpt.billing = BillingMode::ApiKey;
+        s.ai.chatgpt.model = "gpt-6-luna".into();
+        s.ai.chatgpt.approvals = Approvals::Auto;
+        s.ai.chatgpt.path = r"C:\tools\codex.exe".into();
+        s.ai.chatgpt.desktop_context = false;
+        s.ai.chatgpt.warm_start = false;
         save(&path, &s).unwrap();
         assert_eq!(load_or_create(&path).unwrap(), s);
+    }
+
+    #[test]
+    fn chatgpt_defaults_and_older_files() {
+        let d = ChatGptSettings::default();
+        assert_eq!(d.billing, BillingMode::Subscription);
+        assert_eq!(d.model, "", "Codex's own default model");
+        assert_eq!(d.approvals, Approvals::Ask);
+        assert!(d.desktop_context && d.warm_start);
+        // A file from before these settings existed keeps its billing.
+        let (s, _) = parse("version = 1\n[ai.chatgpt]\nbilling = \"api_key\"\n").unwrap();
+        assert_eq!(s.ai.chatgpt.billing, BillingMode::ApiKey);
+        assert_eq!(s.ai.chatgpt.approvals, Approvals::Ask);
+        assert!(s.ai.desktop_context(ProviderId::Chatgpt));
+        assert!(s.ai.chatgpt.path.is_empty());
     }
 
     #[test]

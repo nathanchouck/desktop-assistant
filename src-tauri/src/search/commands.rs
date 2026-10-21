@@ -16,18 +16,22 @@ pub enum BuiltinCommand {
     ReindexApps,
     SignInToClaude,
     InstallClaude,
+    SignInToChatgpt,
+    InstallCodex,
     Restart,
     Quit,
 }
 
 impl BuiltinCommand {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::OpenSettings,
         Self::OpenSettingsFile,
         Self::OpenLogFolder,
         Self::ReindexApps,
         Self::SignInToClaude,
         Self::InstallClaude,
+        Self::SignInToChatgpt,
+        Self::InstallCodex,
         Self::Restart,
         Self::Quit,
     ];
@@ -41,6 +45,8 @@ impl BuiltinCommand {
             Self::ReindexApps => "cmd:reindex",
             Self::SignInToClaude => "cmd:claude-sign-in",
             Self::InstallClaude => "cmd:claude-install",
+            Self::SignInToChatgpt => "cmd:chatgpt-sign-in",
+            Self::InstallCodex => "cmd:codex-install",
             Self::Quit => "cmd:quit",
         }
     }
@@ -58,6 +64,8 @@ impl BuiltinCommand {
             Self::ReindexApps => "Reindex Apps",
             Self::SignInToClaude => "Sign In to Claude Code",
             Self::InstallClaude => "Install Claude Code",
+            Self::SignInToChatgpt => "Sign In to ChatGPT",
+            Self::InstallCodex => "Install Codex",
             Self::Quit => "Quit Desktop Assistant",
         }
     }
@@ -72,6 +80,8 @@ impl BuiltinCommand {
             Self::ReindexApps => &["refresh", "rescan", "rebuild"],
             Self::SignInToClaude => &["login", "log in", "claude account"],
             Self::InstallClaude => &["setup", "download claude"],
+            Self::SignInToChatgpt => &["login", "log in", "codex", "openai account"],
+            Self::InstallCodex => &["setup", "download codex", "chatgpt", "openai"],
             Self::Quit => &["exit", "close"],
         }
     }
@@ -141,6 +151,9 @@ mod tests {
         assert_eq!(titles("exit").await[0], "Quit Desktop Assistant");
         assert_eq!(titles("log").await[0], "Open Log Folder");
         assert_eq!(titles("reindex").await[0], "Reindex Apps");
+        assert_eq!(titles("sign in chatgpt").await[0], "Sign In to ChatGPT");
+        assert_eq!(titles("install codex").await[0], "Install Codex");
+        assert!(titles("openai").await.contains(&"Install Codex".to_owned()));
     }
 
     #[tokio::test]

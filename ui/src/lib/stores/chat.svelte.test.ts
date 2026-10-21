@@ -13,7 +13,8 @@ vi.mock("../bindings", () => ({ commands }));
 const { ChatStore } = await import("./chat.svelte");
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
-const reply = (conversation: number, context: string | null = null) => ok({ conversation, context });
+const reply = (conversation: number, context: string | null = null, provider = "claude") =>
+  ok({ conversation, context, provider });
 const text = (conversation: number, t: string): AiStream => ({
   conversation,
   event: { type: "text_delta", text: t },
@@ -72,7 +73,7 @@ describe("ChatStore", () => {
     chat.draft = "again";
     await chat.followUp();
     expect(commands.aiFollowUp).not.toHaveBeenCalled();
-    expect(commands.aiAsk).toHaveBeenLastCalledWith("again");
+    expect(commands.aiAsk).toHaveBeenLastCalledWith("again", null);
     chat.onEvent(text(5, "ok"));
     expect(chat.transcript.entries.at(-1)).toEqual({ kind: "assistant", text: "ok" });
   });
@@ -89,6 +90,36 @@ describe("ChatStore", () => {
     expect(chat.pending?.id).toBe("r1");
     await chat.answer(true);
     expect(commands.aiApprove).toHaveBeenCalledWith("r1", true);
+  });
+
+  it("asks the AI it was told to, and learns who answers", async () => {
+    commands.aiAsk.mockResolvedValueOnce(reply(1, null, "chatgpt"));
+    const chat = new ChatStore();
+    const asking = chat.ask("hi", "chatgpt");
+    expect(chat.provider).toBe("chatgpt");
+    await asking;
+    expect(commands.aiAsk).toHaveBeenCalledWith("hi", "chatgpt");
+
+    // The default AI: unknown until the backend says.
+    commands.aiAsk.mockResolvedValueOnce(reply(2, null, "claude"));
+    const second = chat.ask("hello");
+    expect(chat.provider).toBeNull();
+    await second;
+    expect(commands.aiAsk).toHaveBeenLastCalledWith("hello", null);
+    expect(chat.provider).toBe("claude");
+
+    await chat.close();
+    expect(chat.provider).toBeNull();
+  });
+
+  it("retries a failed first question with the same AI", async () => {
+    commands.aiAsk.mockResolvedValueOnce({ status: "error", error: { message: "Codex isn't installed" } });
+    const chat = new ChatStore();
+    await chat.ask("hi", "chatgpt");
+    commands.aiAsk.mockResolvedValueOnce(reply(3, null, "chatgpt"));
+    chat.draft = "again";
+    await chat.followUp();
+    expect(commands.aiAsk).toHaveBeenLastCalledWith("again", "chatgpt");
   });
 
   it("shows what Claude was told about the screen under your message", async () => {

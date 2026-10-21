@@ -1,8 +1,8 @@
-import type { AiEvent } from "./bindings";
+import type { AiEvent, ProviderId } from "./bindings";
 
 /** One line of the conversation as the chat pane shows it. */
 export type Entry =
-  /** `context`: what Claude was told about the screen, e.g. "Downloads · 2 selected". */
+  /** `context`: what the AI was told about the screen, e.g. "Downloads · 2 selected". */
   | { kind: "user"; text: string; context?: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; name: string; summary: string; state: "running" | "ok" | "failed" }
@@ -84,16 +84,32 @@ export function pendingApproval(t: Transcript): Extract<Entry, { kind: "approval
   return undefined;
 }
 
-const CLAUDE_PREFIX = /^\s*c\s+(?=\S)/i;
+const PROVIDER_PREFIX = /^\s*([cg])\s+(?=\S)/i;
 
-/** "c what's the weather" goes straight to Claude on Enter. */
-export function hasClaudePrefix(query: string): boolean {
-  return CLAUDE_PREFIX.test(query);
+/**
+ * "c what's the weather" goes straight to Claude on Enter, "g …" to
+ * ChatGPT: the provider and the question without the prefix.
+ */
+export function forcedProvider(query: string): { provider: ProviderId; text: string } | null {
+  const m = PROVIDER_PREFIX.exec(query);
+  if (!m?.[1]) return null;
+  return {
+    provider: m[1].toLowerCase() === "g" ? "chatgpt" : "claude",
+    text: query.slice(m[0].length).trim(),
+  };
 }
 
-/** "c what's the weather" → "what's the weather". */
-export function stripClaudePrefix(query: string): string {
-  return query.replace(CLAUDE_PREFIX, "").trim();
+export const PROVIDER_NAMES: Record<ProviderId, string> = { claude: "Claude", chatgpt: "ChatGPT" };
+
+/** The AI that isn't `provider` (Shift+Tab asks it). */
+export function otherProvider(provider: ProviderId): ProviderId {
+  return provider === "claude" ? "chatgpt" : "claude";
+}
+
+/** The footer while chatting: "Claude · Sonnet 5.5", "ChatGPT · GPT-6.1-Sol". */
+export function answeringLabel(provider: ProviderId, model: string): string {
+  const name = PROVIDER_NAMES[provider];
+  return model ? `${name} · ${modelLabel(model)}` : name;
 }
 
 /** The approval card's title text after the tool name: its summary, unless
@@ -112,8 +128,17 @@ export function isThinking(t: Transcript): boolean {
   return true;
 }
 
-/** "claude-sonnet-5-5" → "Sonnet 5.5"; anything else as is. */
+/**
+ * "claude-sonnet-5-5" → "Sonnet 5.5", "gpt-6.1-sol" → "GPT-6.1-Sol";
+ * anything else as is.
+ */
 export function modelLabel(id: string): string {
+  if (/^gpt-[\w.-]+$/i.test(id)) {
+    return id
+      .split("-")
+      .map((part, i) => (i === 0 ? "GPT" : part.charAt(0).toUpperCase() + part.slice(1)))
+      .join("-");
+  }
   const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
   if (!m?.[1] || !m[2]) return id;
   const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);
@@ -121,13 +146,13 @@ export function modelLabel(id: string): string {
 }
 
 /**
- * Whether the query reads like a question for Claude, so it's worth
- * starting Claude Code early: the `c ` prefix, three or more words, or
- * nothing but the "Ask" row matching.
+ * Whether the query reads like a question for the AI, so it's worth
+ * starting it early: a `c `/`g ` prefix, three or more words, or nothing
+ * but the "Ask" row matching.
  */
 export function looksLikeAQuestion(query: string, items: { kind: string }[]): boolean {
   const text = query.trim();
-  if (hasClaudePrefix(text)) return true;
+  if (forcedProvider(text)) return true;
   if (text.split(/\s+/).length >= 3) return true;
   const onlyAsk = items.length > 0 && items.every((item) => item.kind === "ask_ai");
   return onlyAsk && text.length >= 4;

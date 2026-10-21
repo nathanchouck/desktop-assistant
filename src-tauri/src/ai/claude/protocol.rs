@@ -152,7 +152,7 @@ fn explain_error(text: &str) -> String {
 }
 
 /// `mcp__desktop__get_selection` → "desktop · get_selection".
-fn display_tool_name(tool: &str) -> String {
+pub(crate) fn display_tool_name(tool: &str) -> String {
     match tool
         .strip_prefix("mcp__")
         .and_then(|rest| rest.split_once("__"))
@@ -211,15 +211,15 @@ pub fn detail(tool: &str, input: &Value) -> String {
     truncate(&text, 1200)
 }
 
-fn file_name(path: &str) -> String {
+pub(crate) fn file_name(path: &str) -> String {
     path.rsplit(['\\', '/']).next().unwrap_or(path).to_owned()
 }
 
-fn first_line(text: &str) -> String {
+pub(crate) fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or_default().to_owned()
 }
 
-fn truncate(text: &str, max_chars: usize) -> String {
+pub(crate) fn truncate(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_owned();
     }

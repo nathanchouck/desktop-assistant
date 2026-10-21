@@ -57,9 +57,10 @@ describe("intentFor", () => {
     expect(intentFor(key(","))).toBeNull();
   });
 
-  it("asks the AI with Tab", () => {
+  it("asks the AI with Tab, the other one with Shift+Tab", () => {
     expect(intentFor(key("Tab"))).toEqual({ type: "ask" });
-    expect(intentFor(key("Tab", { shift: true }))).toBeNull();
+    expect(intentFor(key("Tab", { shift: true }))).toEqual({ type: "ask", other: true });
+    expect(intentFor(key("Tab", { ctrl: true }))).toBeNull();
   });
 });
 
@@ -110,6 +111,15 @@ describe("hints", () => {
       "Esc",
     ]);
     expect(searchHints(["ask_ai"])[0]).toEqual(["↵", "Ask"]);
+  });
+
+  it("offers the other AI on the Ask row", () => {
+    expect(searchHints(["ask_ai"], "ChatGPT")).toEqual([
+      ["↵", "Ask"],
+      ["⇧ Tab", "Ask ChatGPT"],
+      ["Esc", "Clear"],
+    ]);
+    expect(searchHints(["open"], "ChatGPT").map(([k]) => k)).not.toContain("⇧ Tab");
   });
 
   it("names Enter after the default action and skips repeats of a key", () => {

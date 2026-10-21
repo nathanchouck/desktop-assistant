@@ -5,8 +5,8 @@
   import ChatPane from "./components/ChatPane.svelte";
   import SettingsPane from "./components/SettingsPane.svelte";
   import Footer from "./components/Footer.svelte";
-  import { commands, events, type IndexStatus } from "./lib/bindings";
-  import { hasClaudePrefix, looksLikeAQuestion, modelLabel, stripClaudePrefix } from "./lib/chat";
+  import { commands, events, type IndexStatus, type ProviderId } from "./lib/bindings";
+  import { answeringLabel, forcedProvider, looksLikeAQuestion, PROVIDER_NAMES } from "./lib/chat";
   import { indexNotice } from "./lib/display";
   import { chatHints, chatIntentFor, intentFor, searchHints } from "./lib/keys";
   import { ChatStore } from "./lib/stores/chat.svelte";
@@ -20,13 +20,15 @@
 
   const chat = new ChatStore();
   const settings = new SettingsStore();
+  /** The AI that Tab and the "Ask" row use (loaded at start, kept current by the menu). */
+  const defaultProvider = (): ProviderId => settings.settings?.ai.default_provider ?? "claude";
   const search = new SearchStore({
-    // The provider choice arrives with M5 (ChatGPT); Claude answers for now.
-    onAsk: (text) => {
+    onAsk: (text, provider) => {
       search.clear();
-      void chat.ask(text);
+      void chat.ask(text, provider);
     },
     onSettings: () => void openSettings(),
+    defaultProvider,
   });
   const toasts = new ToastStore();
   let bar: SearchBar | undefined = $state();
@@ -37,15 +39,15 @@
   let content: HTMLDivElement;
   let hiddenAt = 0;
   let indexStatus = $state<IndexStatus | null>(null);
-  /** Claude Code was started early for the query being typed. */
+  /** The AI was started early for the query being typed. */
   let warmed = false;
 
-  // A question is being typed: start Claude Code now so it answers sooner.
+  // A question is being typed: start the AI it's for now so it answers sooner.
   $effect(() => {
     if (!search.query.trim()) warmed = false;
     else if (!warmed && !chat.active && looksLikeAQuestion(search.query, search.items)) {
       warmed = true;
-      void commands.aiWarm();
+      void commands.aiWarm(forcedProvider(search.query)?.provider ?? null);
     }
   });
 
@@ -54,7 +56,7 @@
     settingsOpen
       ? "Changes are saved as you make them"
       : chat.active
-        ? `Claude${chat.transcript.model ? ` · ${modelLabel(chat.transcript.model)}` : ""}`
+        ? answeringLabel(chat.provider ?? defaultProvider(), chat.transcript.model)
         : (search.notice ?? indexNotice(indexStatus)),
   );
   const hints = $derived(
@@ -62,7 +64,7 @@
       ? ([["Esc", "Close"]] as [string, string][])
       : chat.active
         ? chatHints({ running: chat.transcript.running, pending: chat.pending !== undefined })
-        : searchHints(search.current?.actions ?? []),
+        : searchHints(search.current?.actions ?? [], PROVIDER_NAMES[search.otherProvider()]),
   );
 
   async function openSettings() {
@@ -87,15 +89,17 @@
         search.move(intent.delta);
         break;
       case "activate":
-        // "c <question>" + Enter skips the results and asks Claude.
-        if (intent.index === undefined && !intent.actions && hasClaudePrefix(search.query)) {
-          search.ask(stripClaudePrefix(search.query));
+        // "c <question>" / "g <question>" + Enter skips the results and
+        // asks that AI.
+        if (intent.index === undefined && !intent.actions && forcedProvider(search.query)) {
+          search.ask();
         } else {
           void search.activate(intent.index, intent.actions);
         }
         break;
       case "ask":
-        search.ask(hasClaudePrefix(search.query) ? stripClaudePrefix(search.query) : search.query);
+        if (intent.other) search.askOther();
+        else search.ask();
         break;
       case "settings":
         void openSettings();
@@ -167,6 +171,8 @@
       events.toast.listen((e) => toasts.show(e.payload)),
     ];
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
+    // Which AI is the default (for Tab, Shift+Tab and the chat footer).
+    void settings.load();
 
     return () => {
       observer.disconnect();

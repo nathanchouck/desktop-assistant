@@ -37,13 +37,17 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
+    pub fn url(&self) -> String {
+        format!("http://127.0.0.1:{}{PATH}", self.port)
+    }
+
     /// The `--mcp-config` JSON naming this server.
     pub fn config(&self) -> Value {
         json!({
             "mcpServers": {
                 SERVER_NAME: {
                     "type": "http",
-                    "url": format!("http://127.0.0.1:{}{PATH}", self.port),
+                    "url": self.url(),
                     "headers": { "Authorization": format!("Bearer {}", self.token) },
                 }
             }

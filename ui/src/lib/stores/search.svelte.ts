@@ -6,20 +6,26 @@ import {
   type ResultItem,
   type SearchUpdated,
 } from "../bindings";
+import { forcedProvider, otherProvider } from "../chat";
 import { LatestOnly } from "../latest";
 
-/** Rows that stand in for "Ask Claude" when it can't answer yet. */
-const FIX_ROWS = ["cmd:claude-install", "cmd:claude-sign-in"];
+/** Rows that stand in for "Ask …" while that AI can't answer yet. */
+const FIX_ROWS: Record<ProviderId, string[]> = {
+  claude: ["cmd:claude-install", "cmd:claude-sign-in"],
+  chatgpt: ["cmd:codex-install", "cmd:chatgpt-sign-in"],
+};
 
 /** A risky command waits this long for Enter again. */
 export const CONFIRM_MS = 4000;
 
 /** What the store needs from the rest of the app. */
 export interface SearchHooks {
-  /** The query (or a result's prompt) should go to the AI. */
-  onAsk: (text: string, provider?: ProviderId | null) => void;
+  /** The query (or a result's prompt) should go to the AI: `provider`, or the default one. */
+  onAsk: (text: string, provider: ProviderId | null) => void;
   /** Show the settings menu. */
   onSettings?: () => void;
+  /** The AI that Tab and the "Ask" row use. */
+  defaultProvider?: () => ProviderId;
 }
 
 /** State for the search box and results list. */
@@ -39,7 +45,7 @@ export class SearchStore {
   #armed: { id: string; until: number } | null = null;
 
   constructor(hooks: SearchHooks) {
-    this.#hooks = { onSettings: () => {}, ...hooks };
+    this.#hooks = { onSettings: () => {}, defaultProvider: () => "claude", ...hooks };
   }
 
   async setQuery(query: string, keepSelection = false): Promise<void> {
@@ -90,18 +96,35 @@ export class SearchStore {
     this.#disarm();
   }
 
-  /** Sends the query to the AI, whatever the results. */
-  ask(text = this.query): void {
-    const question = text.trim();
+  /**
+   * Sends the query to the AI, whatever the results: `provider`, else the
+   * one a `c `/`g ` prefix names, else the default one.
+   */
+  ask(text = this.query, provider: ProviderId | null = null): void {
+    const forced = forcedProvider(text);
+    const question = (forced?.text ?? text).trim();
     if (!question) return;
-    // When Claude can't answer yet, the last row offers the fix instead
-    // (install or sign in): run that.
+    const target = provider ?? forced?.provider ?? null;
+    // When that AI can't answer yet, the last row offers the fix instead
+    // (install or sign in): run that. Without a target, the row is the
+    // default AI's.
+    const fixes = target ? FIX_ROWS[target] : [...FIX_ROWS.claude, ...FIX_ROWS.chatgpt];
     const last = this.items.length - 1;
-    if (FIX_ROWS.includes(this.items[last]?.id ?? "")) {
+    if (fixes.includes(this.items[last]?.id ?? "")) {
       void this.activate(last);
       return;
     }
-    this.#hooks.onAsk(question);
+    this.#hooks.onAsk(question, target);
+  }
+
+  /** The AI that Shift+Tab asks: the one Tab wouldn't. */
+  otherProvider(): ProviderId {
+    return otherProvider(forcedProvider(this.query)?.provider ?? this.#hooks.defaultProvider());
+  }
+
+  /** Shift+Tab. */
+  askOther(): void {
+    this.ask(this.query, this.otherProvider());
   }
 
   /**
