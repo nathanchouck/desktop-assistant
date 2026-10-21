@@ -72,7 +72,7 @@ pub fn read(handle: isize) -> Result<WindowState, String> {
         if IsHungAppWindow(hwnd).as_bool() {
             return Err("That window isn't responding.".into());
         }
-        let (window, frame) = bounds(hwnd)?;
+        let (_, frame) = bounds(hwnd)?;
         let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         let work = work_area(monitor).ok_or("Couldn't find the window's monitor.")?;
         let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
@@ -83,7 +83,6 @@ pub fn read(handle: isize) -> Result<WindowState, String> {
                 works: work_areas(),
                 resizable: style & WS_THICKFRAME.0 != 0,
             },
-            insets: Insets::between(window, frame),
             maximized: IsZoomed(hwnd).as_bool(),
             minimized: IsIconic(hwnd).as_bool(),
         })
