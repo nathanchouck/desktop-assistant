@@ -23,6 +23,11 @@ pub fn rank(items: &mut [ResultItem], query: &str, frecency: &dyn Fn(&str) -> f6
         .iter()
         .enumerate()
         .map(|(i, item)| {
+            // Clipboard history keeps its own order (pinned, then newest):
+            // when you copied something matters more than how it matches.
+            if item.kind == ItemKind::Clip {
+                return (0, item.score, i);
+            }
             let title = item.title.to_lowercase();
             let tier = match item.kind {
                 ItemKind::Answer => ANSWER_TIER,
@@ -154,6 +159,18 @@ mod tests {
         let mut items = vec![item("a", "Same", 0.5), item("b", "Same", 0.5)];
         rank(&mut items, "zz", &none);
         assert_eq!(items[0].id, "a");
+    }
+
+    #[test]
+    fn clips_keep_their_order() {
+        let clip = |id: &str, title: &str, score: f32| {
+            ResultItem::new(id, ItemKind::Clip, title).with_score(score)
+        };
+        // Neither a name match nor frequent pasting reorders the history.
+        let mut items = vec![clip("clip:2", "newest", 1.0), clip("clip:1", "clip", 0.5)];
+        let heavy = |id: &str| if id == "clip:1" { 100.0 } else { 0.0 };
+        rank(&mut items, "clip", &heavy);
+        assert_eq!(titles(&items), ["newest", "clip"]);
     }
 
     #[test]

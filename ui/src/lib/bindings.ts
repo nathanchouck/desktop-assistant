@@ -233,7 +233,17 @@ export type ClaudeStatus = "ready" | "not_installed" | "signed_out" |
 "unknown";
 
 export type ClipboardSettings = {
+	/**  Record what you copy. */
 	enabled: boolean,
+	/**  Entries kept, not counting pinned ones. */
+	max_items: number,
+	/**
+	 *  Copies made in these programs are never recorded: program names
+	 *  ("KeePassXC" for KeePassXC.exe).
+	 */
+	ignore_apps: string[],
+	/**  Record copied images too (kept as PNG files). */
+	keep_images: boolean,
 };
 
 export type ColorSettings = {
@@ -418,8 +428,25 @@ export type ShowSettings = null;
 /**  Skin tone for emoji that have them. `None` is the default yellow. */
 export type SkinTone = "none" | "light" | "medium_light" | "medium" | "medium_dark" | "dark";
 
+export type Snippet = {
+	name: string,
+	/**  Typed to find or expand it, e.g. ";sig". May be empty. */
+	keyword: string,
+	/**  The text, with optional placeholders. */
+	text: string,
+};
+
 export type SnippetSettings = {
+	/**  Snippets show up in search. */
 	enabled: boolean,
+	items: Snippet[],
+	/**  Typing a keyword in any app replaces it with the snippet. */
+	expand_as_you_type: boolean,
+	/**
+	 *  Only keywords starting with this expand as you type, so ordinary
+	 *  words never do.
+	 */
+	trigger: string,
 };
 
 export type SystemSettings = {
