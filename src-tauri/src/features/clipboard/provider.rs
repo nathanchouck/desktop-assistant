@@ -74,10 +74,18 @@ pub fn entry_rows(entries: &[Entry], filter: &str, now_ms: i64, limit: usize) ->
     let mut fuzzy = (!filter.is_empty()).then(|| FuzzyQuery::new(filter));
     let matching = entries.iter().filter(|e| match fuzzy.as_mut() {
         None => true,
-        Some(q) => [&e.title, &e.preview, &e.source]
-            .iter()
-            .filter_map(|text| q.score(text))
-            .any(|score| score >= MIN_FILTER_SCORE),
+        // The text (images have only their title), or the app it came from.
+        Some(q) => {
+            let content = if e.preview.is_empty() {
+                &e.title
+            } else {
+                &e.preview
+            };
+            [content, &e.source]
+                .iter()
+                .filter_map(|text| q.score(text))
+                .any(|score| score >= MIN_FILTER_SCORE)
+        }
     });
     matching
         .take(limit)

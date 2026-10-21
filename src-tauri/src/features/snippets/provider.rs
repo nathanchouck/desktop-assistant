@@ -182,7 +182,10 @@ impl SearchProvider for SnippetProvider {
     }
 
     fn claims(&self, query: &str) -> bool {
-        list_filter(query).is_some() && settings::current(&self.settings).snippets.enabled
+        // "snip" alone still lists the snippets but doesn't claim the
+        // query: it's also how you'd find Snipping Tool.
+        let listing = list_filter(query).is_some() && !query.eq_ignore_ascii_case("snip");
+        listing && settings::current(&self.settings).snippets.enabled
     }
 
     fn owns(&self, id: &str) -> bool {
@@ -285,7 +288,11 @@ mod tests {
             ..crate::settings::Settings::default()
         };
         let p = SnippetProvider::new(Arc::new(RwLock::new(all)));
-        assert!(p.claims("snip"));
+        // "snip" is shared with apps (Snipping Tool); the longer forms aren't.
+        assert!(!p.claims("snip"));
+        assert_eq!(p.query("snip", 32).await.unwrap().len(), 4);
+        assert!(p.claims("snippets"));
+        assert!(p.claims("snip sig"));
         assert!(p.owns("snippet:;sig"));
         assert_eq!(
             p.activate("snippet:;sig", Action::Paste).await.unwrap(),
@@ -313,7 +320,7 @@ mod tests {
         let found = p.query("snip", 32).await.unwrap();
         assert_eq!(ids(&found), [SETTINGS_ID]);
         p.settings.write().unwrap().snippets.enabled = false;
-        assert!(!p.claims("snip"));
+        assert!(!p.claims("snippets"));
         assert!(p.query("snip", 32).await.unwrap().is_empty());
     }
 }
