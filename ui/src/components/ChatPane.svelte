@@ -59,7 +59,7 @@
     {#if entry.kind === "user"}
       <p class="user">{entry.text}</p>
       {#if entry.context}
-        <p class="context" title="What Claude was told about your screen">Sees: {entry.context}</p>
+        <p class="context" title="What the AI was told about your screen">Sees: {entry.context}</p>
       {/if}
     {:else if entry.kind === "assistant"}
       <div class="answer">{@html renderMarkdown(entry.text)}</div>

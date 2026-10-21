@@ -8,8 +8,11 @@ export type Intent =
    * first one the result offers runs. Unset means its default action.
    */
   | { type: "activate"; index?: number; actions?: Action[] }
-  /** Send the query to the AI, whatever the results. */
-  | { type: "ask" }
+  /**
+   * Send the query to the AI, whatever the results: the default one (Tab),
+   * or the other one (`other`, Shift+Tab).
+   */
+  | { type: "ask"; other?: true }
   /** Open the settings menu (Ctrl+,). */
   | { type: "settings" }
   | { type: "escape" };
@@ -36,7 +39,8 @@ export function intentFor(e: KeyLike): Intent | null {
       if (ctrlOnly) return { type: "activate", actions: ["reveal_in_explorer", "paste"] };
       return { type: "activate" };
     case "Tab":
-      return e.shiftKey || e.ctrlKey || e.altKey || e.metaKey ? null : { type: "ask" };
+      if (e.ctrlKey || e.altKey || e.metaKey) return null;
+      return e.shiftKey ? { type: "ask", other: true } : { type: "ask" };
     case "Escape":
       return { type: "escape" };
   }
@@ -92,10 +96,16 @@ const enterLabels: Record<Action, string> = {
 /** At most this many extra-action hints, so the footer fits. */
 const MAX_ACTION_HINTS = 3;
 
-/** Footer hints while searching, for the selected result's actions. */
-export function searchHints(actions: Action[]): Hint[] {
+/**
+ * Footer hints while searching, for the selected result's actions. On the
+ * "Ask" row, `otherAi` names the AI that Shift+Tab asks instead.
+ */
+export function searchHints(actions: Action[], otherAi?: string): Hint[] {
   const [first, ...rest] = actions;
-  if (first === "ask_ai") return [["↵", "Ask"], ["Esc", "Clear"]];
+  if (first === "ask_ai") {
+    const other: Hint[] = otherAi ? [["⇧ Tab", `Ask ${otherAi}`]] : [];
+    return [["↵", "Ask"], ...other, ["Esc", "Clear"]];
+  }
   const shownKeys = new Set<string>();
   const extra = actionHints
     .filter(([action]) => rest.includes(action))

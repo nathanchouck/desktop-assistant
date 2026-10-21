@@ -35,19 +35,19 @@ export const commands = {
 	/**  The UI reports its content height so the window can fit it. */
 	launcherSetHeight: (height: number) => __TAURI_INVOKE<void>("launcher_set_height", { height }),
 	/**
-	 *  Starts Claude Code ahead of a question you seem to be typing, so the
-	 *  answer starts sooner. Does nothing if it's off, Claude Code can't
-	 *  answer, or a matching one is already waiting.
+	 *  Starts the AI ahead of a question you seem to be typing, so the answer
+	 *  starts sooner: `provider`, else the default one. Does nothing if that's
+	 *  off, the AI can't answer, or a matching one is already waiting.
 	 */
-	aiWarm: () => typedError<null, IpcError>(__TAURI_INVOKE("ai_warm")),
+	aiWarm: (provider: "claude" | "chatgpt" | null) => typedError<null, IpcError>(__TAURI_INVOKE("ai_warm", { provider })),
 	/**
-	 *  Asks Claude, starting a new conversation in the folder File Explorer
-	 *  showed (else your home folder).
+	 *  Asks `provider` (else the default AI), starting a new conversation in
+	 *  the folder File Explorer showed (else your home folder).
 	 */
-	aiAsk: (text: string) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_ask", { text })),
+	aiAsk: (text: string, provider: "claude" | "chatgpt" | null) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_ask", { text, provider })),
 	/**
-	 *  Sends a follow-up in the current conversation, with the desktop
-	 *  context if it changed since the last message.
+	 *  Sends a follow-up in the current conversation (to the AI it started
+	 *  with), with the desktop context if it changed since the last message.
 	 */
 	aiFollowUp: (text: string) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_follow_up", { text })),
 	/**  Approves or denies a pending action. */
@@ -126,11 +126,11 @@ export type AiEvent =
 { type: "started"; model: string } | 
 /**  More answer text (append to the current reply). */
 { type: "text_delta"; text: string } | 
-/**  Claude started using a tool, e.g. "Write · notes.txt". */
+/**  The AI started using a tool, e.g. "Write · notes.txt". */
 { type: "tool_started"; id: string; name: string; summary: string } | { type: "tool_finished"; id: string; ok: boolean } | 
 /**  Waiting for Approve / Deny. */
 { type: "approval_requested"; id: string; tool: string; summary: string; detail: string } | 
-/**  The approval was answered (by you) or withdrawn (by Claude). */
+/**  The approval was answered (by you) or withdrawn (by the AI). */
 { type: "approval_resolved"; id: string; allowed: boolean } | 
 /**  The turn finished; a follow-up can be sent. */
 { type: "done" } | 
@@ -138,10 +138,14 @@ export type AiEvent =
 { type: "stopped" } | { type: "error"; message: string };
 
 export type AiSettings = {
-	/**  Gets any query that doesn't match an app, file or command. */
+	/**
+	 *  Gets any query that doesn't match an app, file or command, and Tab.
+	 *  (`c ` and `g ` in front of a question pick one; Shift+Tab asks the
+	 *  other.)
+	 */
 	default_provider: ProviderId,
 	claude: ClaudeSettings,
-	chatgpt: ProviderSettings,
+	chatgpt: ChatGptSettings,
 };
 
 /**  One step of a conversation, streamed to the UI. */
@@ -161,6 +165,8 @@ export type AppInfo = {
 /**  What the settings menu shows under "Status". */
 export type AppStatus = {
 	claude: ClaudeStatus,
+	/**  Codex's install and ChatGPT sign-in ("Codex health"). */
+	chatgpt: CodexStatus,
 	file_index: IndexStatus,
 	/**  Everything is running, so file search covers every drive. */
 	everything: boolean,
@@ -171,17 +177,23 @@ export type AppStatus = {
 export type Approvals = 
 /**  You do: an Approve / Deny card in the launcher. */
 "ask" | 
-/**  Claude Code's auto mode decides, and asks you only when it isn't sure. */
+/**
+ *  The CLI's own automatic mode: Claude Code's auto mode decides and asks
+ *  only when unsure; Codex works freely inside its sandbox (the folder
+ *  you came from) and asks for anything outside it.
+ */
 "auto";
 
 /**  A question was sent. */
 export type AskReply = {
 	conversation: number,
 	/**
-	 *  What Claude was told about the screen, in a few words
+	 *  What the AI was told about the screen, in a few words
 	 *  ("Downloads · 2 selected"). `None` when nothing was added.
 	 */
 	context: string | null,
+	/**  Who answers this conversation (fixed when it starts). */
+	provider: ProviderId,
 };
 
 /**  How a provider is paid for. */
@@ -191,11 +203,46 @@ export type BillingMode =
  *  env vars are stripped from the child process so they can't take over.
  */
 "subscription" | 
-/**  Use the API key from the environment (`ANTHROPIC_API_KEY`). */
+/**
+ *  Use the API key from the environment (`ANTHROPIC_API_KEY` for
+ *  Claude, `OPENAI_API_KEY` for ChatGPT).
+ */
 "api_key";
 
 export type CalcSettings = {
 	enabled: boolean,
+};
+
+/**  ChatGPT, answered through OpenAI's Codex CLI. */
+export type ChatGptSettings = {
+	/**
+	 *  "subscription": your ChatGPT plan through Codex's sign-in.
+	 *  "api_key": the OPENAI_API_KEY environment variable, per token.
+	 */
+	billing: BillingMode,
+	/**
+	 *  The model Codex uses ("gpt-6-luna"...). Empty: Codex's default
+	 *  (from its own config.toml, else its built-in choice).
+	 */
+	model: string,
+	/**
+	 *  "ask": Codex runs in a read-only sandbox and you approve every
+	 *  change. "auto": it changes files inside the Explorer folder you came
+	 *  from without asking (no network), and asks for anything else.
+	 */
+	approvals: Approvals,
+	/**  Full path to `codex` (or its `codex.js`). Empty: find it automatically. */
+	path: string,
+	/**
+	 *  Tell ChatGPT which window you were in, and Explorer's folder and
+	 *  selection; Explorer's folder also becomes its working folder.
+	 */
+	desktop_context: boolean,
+	/**
+	 *  Start Codex while you're typing a question for ChatGPT, so the
+	 *  answer starts sooner. Closed again if unused.
+	 */
+	warm_start: boolean,
 };
 
 export type ClaudeSettings = {
@@ -233,6 +280,19 @@ export type ClaudeStatus = "ready" | "not_installed" | "signed_out" |
 export type ClipboardSettings = {
 	enabled: boolean,
 };
+
+/**  Whether Codex can answer with ChatGPT. */
+export type CodexStatus = "ready" | "not_installed" | 
+/**
+ *  Not signed in, or signed in with an API key (which would bill per
+ *  token, not the ChatGPT plan).
+ */
+"signed_out" | 
+/**
+ *  The check didn't work: assume it can answer and let a real error
+ *  say otherwise.
+ */
+"unknown";
 
 export type ColorSettings = {
 	enabled: boolean,
@@ -299,10 +359,6 @@ export type ItemKind = "app" | "file" | "folder" | "command" | "ask_ai" |
 export type LauncherShown = null;
 
 export type ProviderId = "claude" | "chatgpt";
-
-export type ProviderSettings = {
-	billing: BillingMode,
-};
 
 export type QuicklinkSettings = {
 	enabled: boolean,

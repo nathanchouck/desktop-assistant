@@ -1,15 +1,17 @@
-import { commands, type AiStream } from "../bindings";
+import { commands, type AiStream, type ProviderId } from "../bindings";
 import { applyEvent, pendingApproval, type Transcript } from "../chat";
 
 const empty = (): Transcript => ({ entries: [], running: false, model: "" });
 
-/** The conversation with Claude shown in the launcher. */
+/** The conversation with Claude or ChatGPT shown in the launcher. */
 export class ChatStore {
   /** The chat view is showing (instead of search results). */
   active = $state(false);
   transcript = $state<Transcript>(empty());
   /** The follow-up being typed. */
   draft = $state("");
+  /** Who answers; null for the default AI until the backend says which. */
+  provider = $state<ProviderId | null>(null);
 
   pending = $derived(pendingApproval(this.transcript));
 
@@ -19,11 +21,15 @@ export class ChatStore {
   #buffer: AiStream[] | null = null;
   /** Bumped by `ask` and `close`, so a late reply can tell it's stale. */
   #generation = 0;
+  /** The AI asked for (null: the default), kept for a retry. */
+  #requested: ProviderId | null = null;
 
-  /** Starts a new conversation and shows it. */
-  async ask(text: string): Promise<void> {
+  /** Starts a new conversation with `provider` (or the default AI) and shows it. */
+  async ask(text: string, provider: ProviderId | null = null): Promise<void> {
     this.#generation++;
     this.#conversation = null;
+    this.#requested = provider;
+    this.provider = provider;
     this.active = true;
     this.draft = "";
     this.transcript = { entries: [{ kind: "user", text }], running: true, model: "" };
@@ -36,11 +42,12 @@ export class ChatStore {
     this.draft = "";
     this.transcript.entries.push({ kind: "user", text });
     this.transcript.running = true;
-    // If the first question never reached Claude (say it wasn't installed
+    // If the first question never reached the AI (say it wasn't installed
     // yet), this one starts the conversation instead.
     if (this.#conversation === null) return this.#start(text);
     const res = await commands.aiFollowUp(text);
     if (res.status === "error") return this.#fail(res.error.message);
+    this.provider = res.data.provider;
     this.#noteContext(res.data.context);
   }
 
@@ -70,6 +77,8 @@ export class ChatStore {
     this.#generation++;
     this.#conversation = null;
     this.#buffer = null;
+    this.#requested = null;
+    this.provider = null;
     this.active = false;
     this.transcript = empty();
     this.draft = "";
@@ -80,17 +89,18 @@ export class ChatStore {
     const generation = this.#generation;
     // Events can beat `aiAsk`'s reply; hold them until we know the id.
     this.#buffer = [];
-    const res = await commands.aiAsk(text);
+    const res = await commands.aiAsk(text, this.#requested);
     if (generation !== this.#generation) return;
     const held = this.#buffer ?? [];
     this.#buffer = null;
     if (res.status === "error") return this.#fail(res.error.message);
     this.#conversation = res.data.conversation;
+    this.provider = res.data.provider;
     this.#noteContext(res.data.context);
     for (const message of held) this.onEvent(message);
   }
 
-  /** Shows under your last message what Claude was told about the screen. */
+  /** Shows under your last message what the AI was told about the screen. */
   #noteContext(context: string | null): void {
     if (!context) return;
     const entries = this.transcript.entries;
