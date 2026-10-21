@@ -8,10 +8,13 @@
 //! So a feature lives in its own folder and only touches shared files to
 //! register commands or events (see docs/CONVENTIONS.md).
 
+pub mod ai_commands;
 pub mod calc;
 pub mod clipboard;
 pub mod color;
 pub mod emoji;
+pub mod google;
+pub mod history;
 pub mod media;
 pub mod processes;
 pub mod quicklinks;
@@ -61,6 +64,9 @@ pub fn providers(ctx: &ProviderContext) -> Vec<Arc<dyn SearchProvider>> {
         processes::provider(ctx),
         media::provider(ctx),
         color::provider(ctx),
+        history::provider(ctx),
+        ai_commands::provider(ctx),
+        google::provider(ctx),
     ]
     .into_iter()
     .flatten()
@@ -81,4 +87,7 @@ pub fn start(app: &AppHandle) {
     processes::start(app);
     media::start(app);
     color::start(app);
+    history::start(app);
+    ai_commands::start(app);
+    google::start(app);
 }

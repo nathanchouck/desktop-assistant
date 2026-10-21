@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::{Approvals, BillingMode, ProviderId};
 use crate::features;
+use crate::integrations::McpSettings;
+
+mod appearance;
+pub use appearance::AppearanceSettings;
 
 pub const CURRENT_VERSION: u32 = 1;
 
@@ -59,6 +63,11 @@ pub struct Settings {
     pub updates: features::updater::UpdateSettings,
     pub system: features::system::SystemSettings,
     pub color_picker: features::color::ColorSettings,
+    pub history: features::history::HistorySettings,
+    pub ai_commands: features::ai_commands::AiCommandSettings,
+    pub google: features::google::GoogleSettings,
+    pub mcp: McpSettings,
+    pub appearance: AppearanceSettings,
 }
 
 impl Default for Settings {
@@ -78,6 +87,11 @@ impl Default for Settings {
             updates: Default::default(),
             system: Default::default(),
             color_picker: Default::default(),
+            history: Default::default(),
+            ai_commands: Default::default(),
+            google: Default::default(),
+            mcp: Default::default(),
+            appearance: Default::default(),
         }
     }
 }

@@ -433,6 +433,10 @@ pub fn builder() -> Builder<Wry> {
             // [scripts]
             // [updater]
             // [integrations]
+            // [ai_commands]
+            // [appearance]
+            // [google]
+            // [polish]
         ])
         .events(collect_events![
             LauncherShown,
@@ -446,6 +450,9 @@ pub fn builder() -> Builder<Wry> {
             // [clipboard]
             // [color]
             // [updater]
+            // [ai_commands]
+            // [google]
+            // [polish]
         ])
 }
 

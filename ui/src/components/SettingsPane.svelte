@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { SettingsStore } from "../lib/stores/settings.svelte";
   import AdvancedSection from "./settings/AdvancedSection.svelte";
+  import AiCommandsSection from "./settings/AiCommandsSection.svelte";
+  import AppearanceSection from "./settings/AppearanceSection.svelte";
   import CalculatorSection from "./settings/CalculatorSection.svelte";
   import ChatGptSection from "./settings/ChatGptSection.svelte";
   import ClaudeSection from "./settings/ClaudeSection.svelte";
@@ -8,6 +10,9 @@
   import ColorSection from "./settings/ColorSection.svelte";
   import EmojiSection from "./settings/EmojiSection.svelte";
   import GeneralSection from "./settings/GeneralSection.svelte";
+  import GoogleSection from "./settings/GoogleSection.svelte";
+  import HistorySection from "./settings/HistorySection.svelte";
+  import IntegrationsSection from "./settings/IntegrationsSection.svelte";
   import QuicklinksSection from "./settings/QuicklinksSection.svelte";
   import ScriptsSection from "./settings/ScriptsSection.svelte";
   import SearchSection from "./settings/SearchSection.svelte";
@@ -52,6 +57,9 @@
   <GeneralSection {store} />
   <ClaudeSection {store} />
   <ChatGptSection {store} />
+  <HistorySection {store} />
+  <AiCommandsSection {store} />
+  <IntegrationsSection {store} />
   <SearchSection {store} />
   <CalculatorSection {store} />
   <ClipboardSection {store} />
@@ -61,6 +69,8 @@
   <ScriptsSection {store} />
   <SystemSection {store} />
   <ColorSection {store} />
+  <GoogleSection {store} />
+  <AppearanceSection {store} />
   <UpdatesSection {store} />
   <AdvancedSection {store} />
 </div>

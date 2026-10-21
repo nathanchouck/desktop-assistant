@@ -126,6 +126,10 @@ export type Activation =
 /**  Show the settings menu. */
 { type: "open_settings" };
 
+export type AiCommandSettings = {
+	enabled: boolean,
+};
+
 /**  What the UI hears about a conversation, in order. */
 export type AiEvent = 
 /**  The model is connected and answering. */
@@ -177,6 +181,11 @@ export type AppStatus = {
 	/**  Everything is running, so file search covers every drive. */
 	everything: boolean,
 	win_key: WinKeyStatus,
+};
+
+export type AppearanceSettings = {
+	/**  Empty: the default look. */
+	tint: string,
 };
 
 /**  Who approves actions that change things (writing files, running commands). */
@@ -334,6 +343,14 @@ export type GeneralSettings = {
 	launch_at_login: boolean,
 };
 
+export type GoogleSettings = {
+	enabled: boolean,
+};
+
+export type HistorySettings = {
+	enabled: boolean,
+};
+
 export type HotkeySettings = {
 	/**  Global shortcut that toggles the launcher, e.g. "Ctrl+Space". */
 	toggle: string,
@@ -382,6 +399,10 @@ export type ItemKind = "app" | "file" | "folder" | "command" | "ask_ai" |
 
 /**  Sent each time the launcher appears, so the UI can focus the search box. */
 export type LauncherShown = null;
+
+export type McpSettings = {
+	enabled: boolean,
+};
 
 export type ProviderId = "claude" | "chatgpt";
 
@@ -478,6 +499,11 @@ export type Settings = {
 	updates: UpdateSettings,
 	system: SystemSettings,
 	color_picker: ColorSettings,
+	history: HistorySettings,
+	ai_commands: AiCommandSettings,
+	google: GoogleSettings,
+	mcp: McpSettings,
+	appearance: AppearanceSettings,
 };
 
 /**  The result of saving settings. */

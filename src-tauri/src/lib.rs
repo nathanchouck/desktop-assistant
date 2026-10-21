@@ -10,6 +10,7 @@ pub mod file_index;
 pub mod fuzzy;
 pub mod hotkey;
 pub mod icons;
+pub mod integrations;
 pub mod ipc;
 pub mod logging;
 pub mod mcp;
