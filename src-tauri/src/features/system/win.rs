@@ -88,7 +88,8 @@ pub fn suspend(hibernate: bool) -> Result<(), String> {
 fn modern_standby() -> bool {
     let mut caps = SYSTEM_POWER_CAPABILITIES::default();
     // SAFETY: `caps` is a valid out parameter.
-    unsafe { GetPwrCapabilities(&mut caps) } && caps.AoAc
+    let read = unsafe { GetPwrCapabilities(&mut caps) };
+    read && caps.AoAc
 }
 
 /// Restart, shut down or sign out, the way the Start menu does: apps can
