@@ -12,31 +12,39 @@
 //!
 //! The hook lives on its own high-priority thread with a message loop,
 //! because Windows calls a low-level hook on the thread that installed it,
-//! and skips it if it's slow to answer (`LowLevelHooksTimeout`). So the
-//! callback only updates the detector, injects keys, and hands work off.
+//! and stops waiting for it if it's slow (`LowLevelHooksTimeout`): then
+//! Windows uses the key anyway. So the callback only updates the detector,
+//! injects keys and posts to the Start guard thread (`start_guard_win.rs`),
+//! which opens the launcher and closes Start if it opened anyway. The
+//! thread stays off efficiency cores with its pages in memory
+//! (`hook_boost.rs`), and how late each Windows key event was answered is
+//! logged.
 //!
 //! Windows also *removes* a hook for good after it times out, without
 //! telling us, and calls the most recently installed hook first. So the
 //! hook is re-installed every few seconds while no Windows key is held:
 //! it comes back if it was removed, and goes back to the front of the line
-//! if another app installed one since (D-025).
+//! if another app installed one since (D-025). A release the hook never
+//! saw would leave a key "held" for good and stop that, so a held key that
+//! has gone quiet (and that Windows says is up) is forgotten first.
 
 use std::cell::RefCell;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Shutdown::LockWorkStation;
+use windows_sys::Win32::System::SystemInformation::GetTickCount;
 use windows_sys::Win32::System::Threading::{
     GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-    KEYEVENTF_KEYUP, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    KEYEVENTF_KEYUP, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, KillTimer, PeekMessageW, PostThreadMessageW,
@@ -45,12 +53,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER,
 };
 
+use super::hook_timeout::answer_delay_ms;
+use super::start_guard_win as guard;
 use super::tap::{KeyEvent, Side, TapDetector, Verdict};
+use super::HotkeyError;
 
 /// Scan codes for the Windows keys (both "extended").
 const SCAN_LWIN: u16 = 0x5B;
 const SCAN_RWIN: u16 = 0x5C;
-use super::HotkeyError;
 
 /// An unassigned virtual-key code. Pressing it while Win is held makes
 /// Windows treat the press as a combo, so releasing Win doesn't open Start.
@@ -83,6 +93,7 @@ fn now_ms() -> u64 {
 
 struct HookState {
     detector: TapDetector,
+    /// Opens the launcher when the Start guard thread isn't running.
     on_tap: Box<dyn Fn()>,
 }
 
@@ -107,8 +118,9 @@ impl Drop for WinKeyHook {
     }
 }
 
-/// Installs the hook. `on_tap` runs on the hook thread, so it must be quick:
-/// post work elsewhere instead of doing it inline.
+/// Installs the hook. Taps go to the Start guard thread; only if that isn't
+/// running does `on_tap` run, on the hook thread, so it must be quick: post
+/// work elsewhere instead of doing it inline.
 pub fn start(on_tap: impl Fn() + Send + 'static) -> Result<WinKeyHook, HotkeyError> {
     let (ready_tx, ready_rx) = mpsc::channel();
     let on_tap: Box<dyn Fn() + Send> = Box::new(on_tap);
@@ -148,6 +160,12 @@ fn run_hook_thread(on_tap: Box<dyn Fn() + Send>, ready: mpsc::Sender<Result<u32,
         if SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) == 0 {
             tracing::debug!("could not raise the keyboard hook's priority");
         }
+        if let Err(e) = super::hook_boost::opt_out_of_ecoqos() {
+            tracing::debug!("could not opt the keyboard hook out of EcoQoS: {e}");
+        }
+        if let Err(e) = super::hook_boost::pin_hook_pages(hook_proc as *const () as usize) {
+            tracing::debug!("could not lock the keyboard hook in memory: {e}");
+        }
         let mut msg: MSG = std::mem::zeroed();
         // Create this thread's message queue now, so a WM_QUIT posted right
         // after startup isn't lost.
@@ -164,6 +182,7 @@ fn run_hook_thread(on_tap: Box<dyn Fn() + Send>, ready: mpsc::Sender<Result<u32,
 
         while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
             if msg.message == WM_TIMER && msg.hwnd.is_null() {
+                forget_lost_release();
                 if detector_idle() {
                     if !hook.is_null() {
                         UnhookWindowsHookEx(hook);
@@ -214,52 +233,125 @@ fn detector_idle() -> bool {
     })
 }
 
+/// Forgets a Windows key the detector thinks is held when its release
+/// never reached us (see `TapDetector::release_lost`).
+fn forget_lost_release() {
+    let last = LAST_WIN_KEY_MS.load(Ordering::Relaxed);
+    let quiet = Duration::from_millis(now_ms().saturating_sub(last));
+    let os_win_down = os_key_down(u32::from(VK_LWIN)) || os_key_down(u32::from(VK_RWIN));
+    let forgot = STATE.with(|s| {
+        let Ok(mut state) = s.try_borrow_mut() else {
+            return false;
+        };
+        let Some(st) = state.as_mut() else {
+            return false;
+        };
+        let lost = st.detector.release_lost(quiet, os_win_down);
+        if lost {
+            st.detector.reset();
+        }
+        lost
+    });
+    if forgot {
+        tracing::warn!("the Windows key hook missed a key release; starting over");
+    }
+}
+
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code == HC_ACTION as i32 {
         // SAFETY: for WH_KEYBOARD_LL with HC_ACTION, lparam points to a KBDLLHOOKSTRUCT.
         let kb = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
-        if kb.dwExtraInfo != INJECTED_TAG {
-            if kb.vkCode == u32::from(VK_LWIN) || kb.vkCode == u32::from(VK_RWIN) {
-                LAST_WIN_KEY_MS.store(now_ms(), Ordering::Relaxed);
-            }
-            if let Some(event) = to_event(kb.vkCode, wparam as u32, modifiers_held) {
-                match detect(event) {
-                    Verdict::Pass => {}
-                    Verdict::Swallow => return 1,
-                    Verdict::Tap => {
-                        notify_tap();
-                        return 1;
-                    }
-                    Verdict::PressWinFirst { left, right } => {
-                        if !press_win(left, right) {
-                            tracing::debug!("could not press the Windows key for a shortcut");
-                        }
-                        // The key itself goes through after the injected Win.
-                    }
-                    Verdict::Lock => {
-                        // SAFETY: no preconditions; it fails harmlessly if
-                        // locking is disabled by policy.
-                        unsafe { LockWorkStation() };
-                        return 1;
-                    }
-                    Verdict::MaskedRelease => {
-                        if replay_masked_release(kb.vkCode, kb.scanCode) {
-                            // The replay above stands in for this key-up.
-                            return 1;
-                        }
-                        tracing::debug!("could not mask the Windows key; Start may open");
-                    }
-                }
-            }
+        if kb.dwExtraInfo != INJECTED_TAG && handle(kb, wparam as u32) {
+            return 1;
         }
     }
     // SAFETY: passing the event on unchanged, as Windows requires.
     unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) }
 }
 
+/// Runs one key event through the detector and carries out the verdict.
+/// Returns true to hide the event from Windows.
+fn handle(kb: &KBDLLHOOKSTRUCT, message: u32) -> bool {
+    let Some(event) = to_event(kb.vkCode, message, modifiers_held, os_key_down) else {
+        return false;
+    };
+    let verdict = detect(event);
+    let hide = carry_out(verdict, kb);
+    match event {
+        KeyEvent::WinDown { side, .. } | KeyEvent::WinUp { side, .. } => {
+            LAST_WIN_KEY_MS.store(now_ms(), Ordering::Relaxed);
+            // Measured after acting, so a slow answer of our own shows too.
+            // SAFETY: no preconditions.
+            let answered_ms = answer_delay_ms(unsafe { GetTickCount() }, kb.time);
+            let release = matches!(event, KeyEvent::WinUp { .. });
+            guard::notify_answered(release, side == Side::Right, answered_ms);
+            match verdict {
+                Verdict::Tap => tapped(answered_ms, false),
+                Verdict::MaskedTap => tapped(answered_ms, true),
+                _ => {}
+            }
+        }
+        // Ctrl+Esc opens Start on purpose; Esc alone closes things anyway.
+        KeyEvent::OtherDown { vk } if vk == u32::from(VK_ESCAPE) => guard::notify_escape(),
+        KeyEvent::OtherDown { .. } => {}
+    }
+    hide
+}
+
+/// Does what the verdict says; true to hide the event from Windows.
+fn carry_out(verdict: Verdict, kb: &KBDLLHOOKSTRUCT) -> bool {
+    match verdict {
+        Verdict::Pass => false,
+        Verdict::Swallow | Verdict::Tap => true,
+        Verdict::PressWinFirst { left, right } => {
+            if !press_win(left, right) {
+                tracing::debug!("could not press the Windows key for a shortcut");
+            }
+            // The key itself goes through after the injected Win.
+            false
+        }
+        Verdict::Lock => {
+            // SAFETY: no preconditions; it fails harmlessly if locking is
+            // disabled by policy.
+            unsafe { LockWorkStation() };
+            true
+        }
+        Verdict::MaskedRelease | Verdict::MaskedTap => {
+            // The replay stands in for this key-up. If it fails, the real
+            // key-up goes through so Windows never thinks Win is stuck down
+            // (Start may then open; after a tap the guard closes it).
+            let replayed = replay_masked_release(kb.vkCode, kb.scanCode);
+            if !replayed {
+                tracing::debug!("could not mask the Windows key; Start may open");
+            }
+            replayed
+        }
+    }
+}
+
+/// A lone tap: the guard thread opens the launcher and watches for Start.
+fn tapped(answered_ms: u32, windows_saw_press: bool) {
+    if guard::notify_tap(answered_ms, windows_saw_press) {
+        return;
+    }
+    STATE.with(|s| {
+        if let Ok(state) = s.try_borrow() {
+            if let Some(st) = state.as_ref() {
+                (st.on_tap)();
+            }
+        }
+    });
+}
+
 /// Maps a raw keyboard message to a detector event. Key-ups of other keys
-/// don't matter to the detector, so they map to `None`.
-fn to_event(vk: u32, message: u32, modifiers_held: fn() -> bool) -> Option<KeyEvent> {
+/// don't matter to the detector, so they map to `None`. `os_key_down` reads
+/// Windows' own state of a key (passed in so this stays testable).
+fn to_event(
+    vk: u32,
+    message: u32,
+    modifiers_held: fn() -> bool,
+    os_key_down: fn(u32) -> bool,
+) -> Option<KeyEvent> {
     let down = matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN);
     let up = matches!(message, WM_KEYUP | WM_SYSKEYUP);
     let side = match u16::try_from(vk).ok()? {
@@ -272,10 +364,22 @@ fn to_event(vk: u32, message: u32, modifiers_held: fn() -> bool) -> Option<KeyEv
             side,
             modifiers_held: modifiers_held(),
         }),
-        (Some(side), _, true) => Some(KeyEvent::WinUp { side }),
+        (Some(side), _, true) => Some(KeyEvent::WinUp {
+            side,
+            os_saw_down: os_key_down(vk),
+        }),
         (None, true, _) => Some(KeyEvent::OtherDown { vk }),
         _ => None,
     }
+}
+
+/// Whether Windows thinks `vk` is down. Inside the hook this is the state
+/// *before* the event being handled, so at a Windows key release it says
+/// whether Windows got the press (it did if our answer came too late).
+fn os_key_down(vk: u32) -> bool {
+    // SAFETY: GetAsyncKeyState has no preconditions. High bit set = down.
+    let state = unsafe { GetAsyncKeyState(vk as i32) };
+    state < 0
 }
 
 fn modifiers_held() -> bool {
@@ -292,16 +396,6 @@ fn detect(event: KeyEvent) -> Verdict {
             .map_or(Verdict::Pass, |st| st.detector.on_event(event)),
         Err(_) => Verdict::Pass,
     })
-}
-
-fn notify_tap() {
-    STATE.with(|s| {
-        if let Ok(state) = s.try_borrow() {
-            if let Some(st) = state.as_ref() {
-                (st.on_tap)();
-            }
-        }
-    });
 }
 
 fn key_input(vk: u16, scan: u16, flags: u32) -> INPUT {
@@ -372,21 +466,32 @@ mod tests {
         true
     }
 
+    fn os_up(_vk: u32) -> bool {
+        false
+    }
+
+    fn os_down(_vk: u32) -> bool {
+        true
+    }
+
     #[test]
     fn maps_windows_keys() {
         assert_eq!(
-            to_event(u32::from(VK_LWIN), WM_KEYDOWN, none),
+            to_event(u32::from(VK_LWIN), WM_KEYDOWN, none, os_up),
             Some(KeyEvent::WinDown {
                 side: Side::Left,
                 modifiers_held: false
             })
         );
         assert_eq!(
-            to_event(u32::from(VK_RWIN), WM_SYSKEYUP, none),
-            Some(KeyEvent::WinUp { side: Side::Right })
+            to_event(u32::from(VK_RWIN), WM_SYSKEYUP, none, os_up),
+            Some(KeyEvent::WinUp {
+                side: Side::Right,
+                os_saw_down: false
+            })
         );
         assert_eq!(
-            to_event(u32::from(VK_LWIN), WM_KEYDOWN, held),
+            to_event(u32::from(VK_LWIN), WM_KEYDOWN, held, os_up),
             Some(KeyEvent::WinDown {
                 side: Side::Left,
                 modifiers_held: true
@@ -395,11 +500,22 @@ mod tests {
     }
 
     #[test]
+    fn a_release_says_whether_windows_got_the_press() {
+        assert_eq!(
+            to_event(u32::from(VK_LWIN), WM_KEYUP, none, os_down),
+            Some(KeyEvent::WinUp {
+                side: Side::Left,
+                os_saw_down: true
+            })
+        );
+    }
+
+    #[test]
     fn maps_other_keys() {
         assert_eq!(
-            to_event(0x45, WM_KEYDOWN, none),
+            to_event(0x45, WM_KEYDOWN, none, os_down),
             Some(KeyEvent::OtherDown { vk: 0x45 })
         );
-        assert_eq!(to_event(0x45, WM_KEYUP, none), None);
+        assert_eq!(to_event(0x45, WM_KEYUP, none, os_down), None);
     }
 }

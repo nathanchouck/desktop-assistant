@@ -84,11 +84,15 @@ windows = { version = "0.62", features = [
   "Win32_UI_Shell_Common",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# `#[implement]` (COM objects we write, e.g. event sinks) names this crate.
+# Already in the tree through `windows`; listed so the macro can find it.
+windows-core = "0.62"
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Networking_WinHttp",
   "Win32_System_LibraryLoader",
   "Win32_System_Shutdown",
+  "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",

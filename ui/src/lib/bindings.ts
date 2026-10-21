@@ -23,6 +23,12 @@ export const commands = {
 	 *  so pressing the old one doesn't hide the launcher.
 	 */
 	shortcutPause: (paused: boolean) => __TAURI_INVOKE<void>("shortcut_pause", { paused }),
+	/**
+	 *  Gives the Windows key hook a full second to answer before Windows uses
+	 *  the key anyway (`longer`), or puts Windows' default back. Applies after
+	 *  signing out.
+	 */
+	winKeySetTimeout: (longer: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("win_key_set_timeout", { longer })),
 	searchQuery: (query: string, seq: number) => typedError<SearchResponse, IpcError>(__TAURI_INVOKE("search_query", { query, seq })),
 	/**  How far along the built-in file index is (for the footer). */
 	fileIndexStatus: () => __TAURI_INVOKE<IndexStatus>("file_index_status"),
@@ -273,6 +279,11 @@ export type HotkeySettings = {
 	toggle: string,
 	/**  Tapping the Windows key on its own opens the launcher. */
 	win_key_override: boolean,
+	/**
+	 *  If Start opens anyway right after a tap (Windows didn't wait for the
+	 *  hook), close it and bring the launcher back.
+	 */
+	close_start: boolean,
 };
 
 /**  How far along the index is, for the UI. */
@@ -472,6 +483,26 @@ export type WinKeyStatus = {
 	running: boolean,
 	/**  Seconds since the hook last saw a Windows key press. */
 	last_seen_secs: number | null,
+	/**
+	 *  Times Start opened anyway after a tap and was closed again, since the
+	 *  launcher started.
+	 */
+	start_closed: number,
+	/**
+	 *  Windows key presses and releases the hook answered late (Windows may
+	 *  have used the key anyway), since the launcher started.
+	 */
+	late_answers: number,
+	/**
+	 *  `LowLevelHooksTimeout` in ms, if set (otherwise Windows' default,
+	 *  about 300 ms).
+	 */
+	hook_timeout_ms: number | null,
+	/**
+	 *  The timeout changed since the launcher started, so it applies after
+	 *  signing out.
+	 */
+	hook_timeout_pending: boolean,
 };
 
 /* Tauri Specta runtime */

@@ -2,6 +2,8 @@
   import { commands } from "../../lib/bindings";
   import { shortcutFromEvent } from "../../lib/keys";
   import type { SettingsStore } from "../../lib/stores/settings.svelte";
+  import { timeoutRow, winKeyStatusText } from "../../lib/winKey";
+  import Button from "./Button.svelte";
   import Row from "./Row.svelte";
   import Section from "./Section.svelte";
   import Toggle from "./Toggle.svelte";
@@ -33,11 +35,10 @@
     }
   }
 
-  function seen(secs: number | null): string {
-    if (secs === null) return "hasn't seen the key yet";
-    if (secs < 60) return `saw it ${secs} s ago`;
-    if (secs < 3600) return `saw it ${Math.round(secs / 60)} min ago`;
-    return `saw it ${Math.round(secs / 3600)} h ago`;
+  async function setHookTimeout(longer: boolean) {
+    const res = await commands.winKeySetTimeout(longer);
+    store.error = res.status === "error" ? res.error.message : null;
+    await store.refreshStatus();
   }
 </script>
 
@@ -60,8 +61,8 @@
     <Row label="Tap the Windows key">
       {#snippet hintContent()}
         Opens the launcher instead of Start.
-        {#if status?.win_key.enabled}
-          {status.win_key.running ? `Working: ${seen(status.win_key.last_seen_secs)}.` : "Not running."}
+        {#if status}
+          {winKeyStatusText(status.win_key)}
         {/if}
       {/snippet}
       <Toggle
@@ -70,6 +71,24 @@
         onchange={(on) => void store.save((n) => (n.hotkeys.win_key_override = on))}
       />
     </Row>
+    {#if s.hotkeys.win_key_override}
+      <Row
+        label="Close Start if it opens anyway"
+        hint="When Windows acts on a tap before the launcher can hide it, close Start and bring the launcher back."
+      >
+        <Toggle
+          on={s.hotkeys.close_start}
+          label="Close Start if it opens anyway"
+          onchange={(on) => void store.save((n) => (n.hotkeys.close_start = on))}
+        />
+      </Row>
+      {#if status?.win_key.running}
+        {@const row = timeoutRow(status.win_key)}
+        <Row label="Give the Windows key more time" hint={row.hint}>
+          <Button onclick={() => void setHookTimeout(row.longer)}>{row.button}</Button>
+        </Row>
+      {/if}
+    {/if}
     <Row label="Start with Windows">
       <Toggle
         on={s.general.launch_at_login}
