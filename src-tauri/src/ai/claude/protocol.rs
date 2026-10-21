@@ -195,6 +195,12 @@ pub fn detail(tool: &str, input: &Value) -> String {
             field("new_string")
         ),
         "Bash" | "PowerShell" => field("command").to_owned(),
+        "mcp__launcher__screenshot" => {
+            "Claude gets a picture of the window you were in (never the launcher).".to_owned()
+        }
+        "mcp__launcher__open" | "mcp__launcher__reveal" => field("target").to_owned(),
+        // Nothing worth showing for a tool without arguments.
+        _ if input.as_object().is_some_and(|o| o.is_empty()) => String::new(),
         _ => serde_json::to_string_pretty(input).unwrap_or_default(),
     };
     truncate(&text, 1200)
@@ -405,6 +411,17 @@ mod tests {
         assert_eq!(stop["request"]["subtype"], "interrupt");
         let err: Value = serde_json::from_str(&error_response("r3", "no")).unwrap();
         assert_eq!(err["response"]["subtype"], "error");
+    }
+
+    #[test]
+    fn explains_the_launcher_tools_on_the_card() {
+        assert!(detail("mcp__launcher__screenshot", &json!({})).contains("picture"));
+        assert_eq!(
+            detail("mcp__launcher__open", &json!({"target": r"C:\x.pdf"})),
+            r"C:\x.pdf"
+        );
+        assert_eq!(detail("mcp__other__thing", &json!({})), "");
+        assert!(detail("mcp__other__thing", &json!({"a": 1})).contains("\"a\""));
     }
 
     #[test]

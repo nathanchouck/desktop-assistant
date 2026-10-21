@@ -184,3 +184,19 @@ Win+L can't be passed on this way (Windows ignores an injected Win for
 locking), so the hook locks the PC itself. Considered: turning off Start
 (no supported switch; the `NoWinKeys` policy also kills every Win shortcut)
 and killing the Start menu process (fragile, and it restarts).
+
+## D-023 The launcher's tools for Claude: MCP over local HTTP
+Claude needs to act on the desktop on demand (search with our index, open
+and reveal files, a fresh look at Explorer's selection, a screenshot). MCP
+is how Claude Code takes extra tools, and serving it from inside the
+launcher means the tools use the live index and desktop state directly.
+Transport: Streamable HTTP on 127.0.0.1 with a random port and a secret
+token per run, written to a config file Claude Code is pointed at with
+`--mcp-config`; plain JSON replies, no event stream. Requests carrying an
+`Origin` (browsers) or another host name (DNS rebinding) are refused, so a
+web page can't drive it. Approvals come from a `--settings` file: reading
+tools are pre-approved, the screenshot always asks (an `ask` rule holds
+even in auto mode; verified with Claude Code), the rest follow the usual
+rules. Considered: a stdio MCP server (a second copy of our exe that would
+need its own channel back to the running launcher) and passing the config
+as a JSON argument (quoting through an npm `.cmd` shim is fragile).

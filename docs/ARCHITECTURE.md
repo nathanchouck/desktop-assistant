@@ -80,6 +80,8 @@ desktop-assistant/
 │       ├── error.rs             # AppError (thiserror) + IpcError for the UI
 │       ├── paths.rs             # config / data / log folders
 │       ├── logging.rs           # tracing to rolling file (+ stderr in debug)
+│       ├── mcp/                 # the launcher's MCP server for Claude: HTTP + token,
+│       │                        #   JSON-RPC (protocol.rs), the tools (tools.rs)
 │       ├── state.rs             # AppState managed by Tauri
 │       ├── actions.rs           # runs what the user picked (rows, tray)
 │       ├── ipc/                 # #[tauri::command]s + specta builder; thin
@@ -372,10 +374,21 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
   an old conversation can't leak in. Esc backs out one step at a time: deny,
   stop, clear the draft, close the chat. A finished chat is put away when the
   launcher reopens after 5 minutes hidden.
-- **Screenshots (planned, D-019):** opt-in only, never sent automatically,
-  and the launcher itself must never be in the picture: capture the window
-  you were using by its handle, and exclude the launcher from capture while
-  a full-screen shot is taken.
+- **Launcher tools (MCP, D-023):** at startup the launcher serves MCP over
+  HTTP on 127.0.0.1 (random port, secret token per run; requests with an
+  `Origin` or another host name are refused) and writes `mcp-config.json`
+  and `claude-settings.json` to its data folder. Each conversation gets
+  `--mcp-config=` and `--settings=` pointing at them; the user's own MCP
+  servers and claude.ai connectors still load. Tools, seen by Claude as
+  `mcp__launcher__*`:
+  - `get_desktop_context`: the desktop context, Explorer re-read fresh
+  - `search`: the launcher's app and file search (waits for slow sources)
+  - `open`, `reveal`: open a path or app id; show a path in Explorer
+  - `screenshot`: the window you were in, by handle with `PrintWindow`, so
+    the launcher is never in it (D-019); scaled to 1568 px, sent as PNG
+  The settings file pre-approves the two reading tools and forces an
+  approval for `screenshot`, even in auto mode; `open` and `reveal` follow
+  the normal rules.
 
 ## Windows key override
 

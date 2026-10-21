@@ -81,8 +81,8 @@ Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
 - [x] Detect `claude` install + login status; fix-it row if missing (install page / sign-in window)
 - [x] Model setting: Sonnet 5.5 by default, Haiku 5.5 as an option (e.g. for quick questions); `--model` per run
 - [x] Desktop context captured when the launcher opens: the window you were in (title, app), and for File Explorer its open folder and selected files (Shell COM: `IShellWindows`) (D-021)
-- [ ] Desktop MCP server hosted by the launcher, so Claude can ask for context and act on demand: active window, Explorer folder/selection, open windows, search files/apps (our index), reveal/open
-- [ ] Opt-in screenshot of the active window for "what am I looking at" questions (vision), never sent automatically; the launcher is never in the shot (D-019)
+- [x] Desktop MCP server hosted by the launcher, so Claude can ask for context and act on demand: active window, Explorer folder/selection, search files/apps (our index), reveal/open (D-023)
+- [x] Opt-in screenshot of the active window for "what am I looking at" questions (vision), never sent automatically (always asks, even in auto mode); the launcher is never in the shot (D-019)
 - [x] Working directory = the open Explorer folder when there is one
 - [x] Routing: no matches + Enter → AI; Tab → AI; `c ` prefix; "Ask Claude" row always last
 - [x] Long-lived stream-json child process (resumes the session after an idle shutdown)
