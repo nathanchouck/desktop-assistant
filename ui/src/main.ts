@@ -1,6 +1,7 @@
 import { mount } from "svelte";
 import App from "./App.svelte";
 import { commands } from "./lib/bindings";
+import "katex/dist/katex.min.css";
 import "./styles/tokens.css";
 import "./styles/base.css";
 

@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
+import { mathExtension } from "./math";
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
@@ -22,13 +23,16 @@ const marked = new Marked({
     },
   },
 });
+marked.use(mathExtension);
 
-/** Claude's Markdown as safe HTML: rendered, then sanitized. Forms are
- *  dropped too, since submitting one would navigate the launcher away. */
+/** An answer's Markdown (with LaTeX math) as safe HTML: rendered, then
+ *  sanitized. Forms are dropped too, since submitting one would navigate
+ *  the launcher away. */
 export function renderMarkdown(text: string): string {
   const html = marked.parse(text, { async: false });
   return DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: ["form", "input", "textarea", "select", "img", "style"],
+    // SVG for KaTeX's drawn parts (square roots, long arrows).
+    USE_PROFILES: { html: true, svg: true },
+    FORBID_TAGS: ["form", "input", "textarea", "select", "img", "style", "image", "use", "foreignObject"],
   });
 }

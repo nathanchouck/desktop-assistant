@@ -32,3 +32,36 @@ describe("renderMarkdown", () => {
     );
   });
 });
+
+describe("math", () => {
+  it("draws inline and block LaTeX", () => {
+    const inline = renderMarkdown("Euler: $e^{i\\pi} + 1 = 0$ and \\(x^2\\)");
+    expect(inline).toContain('class="katex"');
+    expect(inline.match(/class="katex"/g)).toHaveLength(2);
+    const block = renderMarkdown("$$\n\\int_0^1 x\\,dx = \\tfrac12\n$$");
+    expect(block).toContain('class="katex-display"');
+    expect(renderMarkdown("\\[\\sqrt{2}\\]")).toContain("katex-display");
+  });
+
+  it("leaves prices alone", () => {
+    expect(renderMarkdown("It costs $5 and $10.")).toBe("<p>It costs $5 and $10.</p>\n");
+    expect(renderMarkdown("$ 5 $")).not.toContain("katex");
+  });
+
+  it("keeps math inside code as code", () => {
+    const html = renderMarkdown("`$x$` and\n```\n$$y$$\n```");
+    expect(html).not.toContain("katex");
+    expect(html).toContain("$x$");
+  });
+
+  it("shows bad LaTeX as text instead of failing", () => {
+    expect(renderMarkdown("$\\frac{1}{$ ok")).toContain("ok");
+  });
+
+  it("never lets math link or load anything", () => {
+    const html = renderMarkdown("$\\href{javascript:alert(1)}{x}$ $\\includegraphics{https://x/y.png}$");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<a ");
+  });
+});
