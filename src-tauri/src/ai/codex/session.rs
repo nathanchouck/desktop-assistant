@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, Weak};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -91,9 +91,9 @@ impl CodexSession {
             reader.process.exited(tail).await;
         });
 
-        let driver = Arc::clone(&this);
+        let driver = Arc::downgrade(&this);
         let options = options.clone();
-        tokio::spawn(async move { driver.drive(options, key, queued).await });
+        tokio::spawn(Self::drive(driver, options, key, queued));
         Ok(this)
     }
 
@@ -170,24 +170,34 @@ impl CodexSession {
 
     /// Start-up, then each queued turn in order. The thread opens with the
     /// first turn, so an unclaimed spare never leaves an empty one behind.
+    /// Holds the session only while working: once nobody else does, its
+    /// queue closes and this ends.
     async fn drive(
-        self: Arc<Self>,
+        this: Weak<Self>,
         options: Options,
         key: Option<ApiKey>,
         mut queued: mpsc::UnboundedReceiver<String>,
     ) {
-        if let Err(message) = self.handshake(key).await {
-            return self.fail(message).await;
+        {
+            let Some(session) = this.upgrade() else {
+                return;
+            };
+            if let Err(message) = session.handshake(key).await {
+                return session.fail(message).await;
+            }
         }
         let mut open = false;
         while let Some(text) = queued.recv().await {
+            let Some(session) = this.upgrade() else {
+                return;
+            };
             if !open {
-                if let Err(message) = self.open_thread(&options).await {
-                    return self.fail(message).await;
+                if let Err(message) = session.open_thread(&options).await {
+                    return session.fail(message).await;
                 }
                 open = true;
             }
-            self.run_turn(&text).await;
+            session.run_turn(&text).await;
         }
     }
 
@@ -270,6 +280,10 @@ impl CodexSession {
             return;
         }
         let Some(thread) = lock_or_recover(&self.thread).clone() else {
+            self.process.busy.store(false, Ordering::Release);
+            self.process.emit(AiEvent::Error {
+                message: "Codex has no conversation open. Try again.".into(),
+            });
             return;
         };
         let reply = self

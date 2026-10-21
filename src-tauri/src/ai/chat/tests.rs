@@ -477,6 +477,31 @@ async fn codex_resumes_its_thread_after_an_idle_shutdown() {
 }
 
 #[tokio::test]
+async fn a_closed_codex_session_is_freed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let chat = Chat::new(tx);
+    let launch = fake_codex(dir.path(), SIGNED_IN);
+    chat.start("hi", codex_setup(&launch, dir.path()))
+        .await
+        .unwrap();
+    collect_until_done(&mut rx).await;
+    let session = match chat.current.lock().await.as_ref().unwrap().session.as_ref() {
+        Some(Session::Codex(session)) => Arc::downgrade(session),
+        _ => panic!("a Codex session"),
+    };
+    chat.close().await;
+    // Codex exits once stdin closes; then nothing holds the session.
+    for _ in 0..50 {
+        if session.upgrade().is_none() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("the session is still alive");
+}
+
+#[tokio::test]
 async fn codex_starts_fresh_when_the_thread_is_gone() {
     let dir = tempfile::tempdir().unwrap();
     let (tx, mut rx) = mpsc::unbounded_channel();
