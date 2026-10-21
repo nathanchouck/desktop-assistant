@@ -59,9 +59,18 @@ emojis = "0.9"
 arboard = "3.7"
 # Local date and time for snippet placeholders ({date}, {time}).
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Updates from GitHub Releases: checks, downloads, verifies the signature
+# and runs the installer, driven from Rust (no JS API). No TLS here: only
+# the Windows build updates, and it gets Windows' own TLS below.
+tauri-plugin-updater = { version = "2.14.0", default-features = false }
+# Compares release versions the way the updater does (already in the tree).
+semver = "1"
 
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = "0.8"
+# The updater's HTTPS goes through Windows' TLS (SChannel) and proxy
+# settings, like the exchange-rate download (D-028), instead of rustls.
+tauri-plugin-updater = { version = "2.14.0", default-features = false, features = ["native-tls", "system-proxy"] }
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
