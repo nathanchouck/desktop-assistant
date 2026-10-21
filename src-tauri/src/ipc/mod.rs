@@ -17,6 +17,7 @@ use crate::ai::codex::CodexStatus;
 use crate::ai::{self, AiError, AiEvent, ProviderId};
 use crate::desktop::{self, DesktopContext};
 use crate::error::IpcError;
+use crate::features::scripts::library::ScriptsOverview;
 use crate::file_index::IndexStatus;
 use crate::hotkey;
 use crate::search::{self, Action, Activation, Frecency, ResultItem};
@@ -365,6 +366,16 @@ fn open_log_folder(app: AppHandle) -> Result<(), IpcError> {
         .map_err(Into::into)
 }
 
+/// The scripts folder and what's in it, for the settings menu; read again
+/// first when `reload` is set.
+#[tauri::command]
+#[specta::specta]
+async fn scripts_list(reload: bool) -> Result<ScriptsOverview, IpcError> {
+    crate::features::scripts::overview(reload)
+        .await
+        .map_err(|message| IpcError { message })
+}
+
 fn ai_err(e: crate::ai::AiError) -> IpcError {
     crate::error::AppError::from(e).into()
 }
@@ -431,6 +442,7 @@ pub fn builder() -> Builder<Wry> {
             // [system]
             // [color]
             // [scripts]
+            scripts_list,
             // [updater]
             // [integrations]
             // [ai_commands]
