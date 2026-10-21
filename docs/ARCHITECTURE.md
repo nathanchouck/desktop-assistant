@@ -303,9 +303,10 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
 ## AI flow
 
 - **Finding Claude Code:** `ai/claude/` looks for `claude` on PATH, then the
-  native installer's folder (`~/.local/bin`), then npm's
-  (`%APPDATA%\npm`). An npm install is started as `node cli.js` rather than
-  through its `.cmd` shim, so cmd.exe never touches the arguments.
+  native installer's folder (`~/.local/bin`), npm's (`%APPDATA%\npm`) and
+  WinGet's links folder. For an npm `.cmd` shim it reads the shim to find
+  what it runs (a native `claude.exe`, or `cli.js` under node) and starts
+  that directly, so cmd.exe never touches the arguments.
   `ai.claude.path` overrides the search.
 - **Install and sign-in check:** `claude auth status --json` runs in the
   background at startup, when the launcher opens (every 30 min while fine,
@@ -338,6 +339,13 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
   Explorer's folder becomes the new conversation's working folder, and the
   chat shows "Sees: Downloads · 2 selected" under your message.
   `ai.claude.desktop_context = false` turns it off.
+- **Warm start (D-024):** when the query starts to look like a question for
+  Claude (`c ` prefix, three or more words, or only the "Ask" row matching),
+  the UI calls `ai_warm`, which starts a spare process with the options the
+  next question would use (same folder, model, tools). `ai_ask` claims it if
+  they still match; its early output is held until then. Unclaimed, it's
+  closed after 2 minutes. Measured: first words ~1.3 s after asking instead
+  of ~2.5 s. `ai.claude.warm_start = false` turns it off.
 - **Model:** `ai.claude.model`, "sonnet" (Sonnet 5.5) by default, or "haiku"
   (Haiku 5.5) for quick questions. Any alias or full model id works.
 - **Billing mode:** in subscription mode the child env drops

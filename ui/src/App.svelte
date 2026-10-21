@@ -5,7 +5,7 @@
   import ChatPane from "./components/ChatPane.svelte";
   import Footer from "./components/Footer.svelte";
   import { commands, events, type IndexStatus } from "./lib/bindings";
-  import { hasClaudePrefix, modelLabel, stripClaudePrefix } from "./lib/chat";
+  import { hasClaudePrefix, looksLikeAQuestion, modelLabel, stripClaudePrefix } from "./lib/chat";
   import { indexNotice } from "./lib/display";
   import { chatHints, chatIntentFor, intentFor, searchHints } from "./lib/keys";
   import { ChatStore } from "./lib/stores/chat.svelte";
@@ -24,6 +24,17 @@
   let content: HTMLDivElement;
   let hiddenAt = 0;
   let indexStatus = $state<IndexStatus | null>(null);
+  /** Claude Code was started early for the query being typed. */
+  let warmed = false;
+
+  // A question is being typed: start Claude Code now so it answers sooner.
+  $effect(() => {
+    if (!search.query.trim()) warmed = false;
+    else if (!warmed && !chat.active && looksLikeAQuestion(search.query, search.items)) {
+      warmed = true;
+      void commands.aiWarm();
+    }
+  });
 
   const expanded = $derived(chat.active || search.expanded);
   const notice = $derived(

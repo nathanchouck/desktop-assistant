@@ -108,7 +108,7 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 // Don't leave a Claude Code process behind.
                 if let Some(state) = app.try_state::<AppState>() {
-                    tauri::async_runtime::block_on(state.chat.close());
+                    tauri::async_runtime::block_on(state.chat.shut_down());
                 }
             }
         });
@@ -165,6 +165,8 @@ fn start_launcher_tools(app: &AppHandle) {
 
 /// How long an unused conversation keeps its Claude Code process.
 const CHAT_IDLE: Duration = Duration::from_secs(10 * 60);
+/// How long a warm Claude Code process waits for a question.
+const SPARE_LIFETIME: Duration = Duration::from_secs(2 * 60);
 
 /// Forwards chat events to the UI and frees idle Claude Code processes.
 fn start_chat(app: &AppHandle) {
@@ -194,6 +196,7 @@ fn start_chat(app: &AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             chat.shut_down_if_idle(CHAT_IDLE).await;
+            chat.drop_stale_spare(SPARE_LIFETIME).await;
         }
     });
 }

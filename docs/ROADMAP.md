@@ -74,7 +74,7 @@ Check on a real Windows machine:
 - [ ] Ctrl+Enter opens Explorer with the file selected; Ctrl+Shift+C copies the path
 - [ ] Nothing from AppData, `node_modules`, `.git` or Temp shows up
 
-## M4 Claude
+## M4 Claude ✅ (pending on-device check)
 Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
 "sort Downloads by type"), aware of what's on screen.
 
@@ -86,17 +86,24 @@ Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
 - [x] Working directory = the open Explorer folder when there is one
 - [x] Routing: no matches + Enter → AI; Tab → AI; `c ` prefix; "Ask Claude" row always last
 - [x] Long-lived stream-json child process (resumes the session after an idle shutdown)
-- [ ] Warm spare process so the first question skips startup
+- [x] Warm spare process so the first question skips startup: started while a question is being typed, closed after 2 min unused (D-024)
 - [x] Strip `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` in subscription mode
-- [ ] Key mode from Credential Manager (with the M6 settings window; env var for now)
+- [x] ~~Key mode from Credential Manager~~ (moved to M6 with the settings window; `ANTHROPIC_API_KEY` env var for now)
 - [x] Stream parser → `AiEvent` with fixture tests
 - [x] ChatPane: markdown, code blocks with copy, tool-activity lines
 - [x] Follow-ups in the same conversation; Esc closes; new query = new chat
 - [x] Cancel in-flight response (Ctrl+. or Esc)
 - [x] **Spike D-007**: inline Approve / Deny for write/send/run tools (D-018)
 - [x] Moving/renaming/deleting files asks first (Approve / Deny in the popup); `approvals = "auto"` hands routine ones to Claude Code's auto mode
-- [ ] Verify claude.ai connectors (Gmail, Calendar, Drive) work from the launcher
 - [x] Window grows into chat mode; shrinks back on new search
+- [x] Windows key: a lone tap is hidden from Windows entirely, so Start can't open (D-022)
+
+Check on a real Windows machine:
+- [ ] claude.ai connectors (Gmail, Calendar, Drive) work from the launcher: "what's on my calendar today?"
+- [ ] With files selected in Explorer, the chat shows "Sees: <folder> · N selected" and "move these into a new folder called X" works
+- [ ] Quick or repeated Windows key taps never open Start; Win+E, Win+Shift+S, Win+L still work
+- [ ] "Take a screenshot and tell me what you see" asks first, then describes the window you were in
+- [ ] Signed out of Claude Code: the "Sign in to Claude Code" row opens a sign-in window
 
 ## M5 ChatGPT (Codex)
 - [ ] Detect `codex` install + ChatGPT login

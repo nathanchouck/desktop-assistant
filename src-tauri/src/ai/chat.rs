@@ -4,6 +4,10 @@
 //! The process stays up between turns so follow-ups start instantly. After a
 //! while without use it is shut down to free memory; the next follow-up
 //! starts a fresh process that resumes the same session.
+//!
+//! A spare process can be started ahead of a question (`warm`) so the
+//! first answer comes about a second sooner; the next new conversation
+//! with the same options claims it. Unclaimed, it's closed after a while.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -27,8 +31,26 @@ const STDERR_LINES: usize = 20;
 pub struct Chat {
     sink: EventSink,
     current: Mutex<Option<Conversation>>,
+    /// Started ahead of the next question.
+    spare: Mutex<Option<Spare>>,
     next_id: AtomicU32,
     next_request: AtomicU32,
+}
+
+struct Spare {
+    process: Arc<Process>,
+    session: Arc<StdMutex<Option<String>>>,
+    /// A question with other options (folder, model...) can't use it.
+    options: Options,
+    born: Instant,
+}
+
+/// Which conversation a process belongs to. `id` 0: an unclaimed spare,
+/// whose events are held until a conversation claims it.
+#[derive(Default)]
+struct Owner {
+    id: u32,
+    held: Vec<AiEvent>,
 }
 
 /// A conversation, possibly without a live process (after an idle shutdown).
@@ -44,7 +66,7 @@ struct Conversation {
 }
 
 struct Process {
-    conversation: u32,
+    owner: StdMutex<Owner>,
     stdin: Mutex<ChildStdin>,
     child: Mutex<Child>,
     /// Open permission requests: request id → tool input to echo on allow.
@@ -57,6 +79,33 @@ struct Process {
 }
 
 impl Process {
+    /// Sends `event` to its conversation, or holds it while unclaimed.
+    fn emit(&self, sink: &EventSink, event: AiEvent) {
+        let Ok(mut owner) = self.owner.lock() else {
+            return;
+        };
+        if owner.id == 0 {
+            owner.held.push(event);
+        } else {
+            let _ = sink.send((owner.id, event));
+        }
+    }
+
+    /// Hands a spare to conversation `id`, with what it said so far.
+    fn adopt(&self, id: u32, sink: &EventSink) {
+        if let Ok(mut owner) = self.owner.lock() {
+            owner.id = id;
+            for event in owner.held.drain(..) {
+                let _ = sink.send((id, event));
+            }
+        }
+    }
+
+    async fn kill(&self) {
+        self.alive.store(false, Ordering::Release);
+        let _ = self.child.lock().await.kill().await;
+    }
+
     /// Marks a new turn as running and sends its message.
     async fn send_turn(&self, text: &str) -> Result<(), AiError> {
         self.stopping.store(false, Ordering::Release);
@@ -84,6 +133,7 @@ impl Chat {
         Self {
             sink,
             current: Mutex::new(None),
+            spare: Mutex::new(None),
             next_id: AtomicU32::new(1),
             next_request: AtomicU32::new(1),
         }
@@ -98,8 +148,18 @@ impl Chat {
     ) -> Result<u32, AiError> {
         self.close().await;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let session = Arc::new(StdMutex::new(None));
-        let process = self.spawn(id, launch, &options, Arc::clone(&session))?;
+        let (process, session) = match self.take_spare(&options).await {
+            Some(spare) => {
+                tracing::info!("conversation {id} uses the warm Claude Code process");
+                spare.process.adopt(id, &self.sink);
+                (spare.process, spare.session)
+            }
+            None => {
+                let session = Arc::new(StdMutex::new(None));
+                let process = self.spawn(id, launch, &options, Arc::clone(&session))?;
+                (process, session)
+            }
+        };
         process.send_turn(text).await?;
         *self.current.lock().await = Some(Conversation {
             id,
@@ -218,6 +278,60 @@ impl Chat {
         }
     }
 
+    /// Starts a spare process for the next question, unless a matching one
+    /// is already waiting.
+    pub async fn warm(&self, launch: &Launch, options: Options) -> Result<(), AiError> {
+        let mut spare = self.spare.lock().await;
+        if let Some(existing) = spare.as_ref() {
+            if existing.options == options && existing.process.alive.load(Ordering::Acquire) {
+                return Ok(());
+            }
+        }
+        if let Some(old) = spare.take() {
+            old.process.kill().await;
+        }
+        let session = Arc::new(StdMutex::new(None));
+        let process = self.spawn(0, launch, &options, Arc::clone(&session))?;
+        *spare = Some(Spare {
+            process,
+            session,
+            options,
+            born: Instant::now(),
+        });
+        Ok(())
+    }
+
+    /// The spare, if it's alive and was started with `options`. A spare
+    /// that doesn't match is closed: the user's setup has moved on.
+    async fn take_spare(&self, options: &Options) -> Option<Spare> {
+        let spare = self.spare.lock().await.take()?;
+        if spare.options == *options && spare.process.alive.load(Ordering::Acquire) {
+            return Some(spare);
+        }
+        spare.process.kill().await;
+        None
+    }
+
+    /// Closes a spare nobody claimed within `max_age`.
+    pub async fn drop_stale_spare(&self, max_age: Duration) {
+        let mut spare = self.spare.lock().await;
+        if spare.as_ref().is_some_and(|s| s.born.elapsed() > max_age) {
+            if let Some(old) = spare.take() {
+                tracing::info!("closing the unused warm Claude Code process");
+                old.process.kill().await;
+            }
+        }
+    }
+
+    /// Ends everything: the conversation and any spare (app exit).
+    pub async fn shut_down(&self) {
+        self.close().await;
+        if let Some(spare) = self.spare.lock().await.take() {
+            spare.process.kill().await;
+        }
+    }
+
+    /// `conversation` 0 starts an unclaimed spare.
     fn spawn(
         &self,
         conversation: u32,
@@ -233,10 +347,17 @@ impl Chat {
         else {
             return Err(AiError::Spawn("missing stdio pipes".into()));
         };
-        tracing::info!("started Claude Code for conversation {conversation}");
+        if conversation == 0 {
+            tracing::info!("started a warm Claude Code process");
+        } else {
+            tracing::info!("started Claude Code for conversation {conversation}");
+        }
 
         let process = Arc::new(Process {
-            conversation,
+            owner: StdMutex::new(Owner {
+                id: conversation,
+                held: Vec::new(),
+            }),
             stdin: Mutex::new(stdin),
             child: Mutex::new(child),
             pending: StdMutex::new(HashMap::new()),
@@ -282,7 +403,7 @@ impl Chat {
                 } else {
                     format!("Claude Code exited unexpectedly: {}", detail.trim())
                 };
-                let _ = sink.send((reader.conversation, AiEvent::Error { message }));
+                reader.emit(&sink, AiEvent::Error { message });
             }
         });
         Ok(process)
@@ -295,7 +416,6 @@ async fn handle(
     session: &StdMutex<Option<String>>,
     incoming: Incoming,
 ) {
-    let id = process.conversation;
     match incoming {
         Incoming::Event(event) => {
             let event = match event {
@@ -311,7 +431,7 @@ async fn handle(
                 }
                 other => other,
             };
-            let _ = sink.send((id, event));
+            process.emit(sink, event);
         }
         Incoming::Session { id: session_id } => {
             if let Ok(mut s) = session.lock() {
@@ -326,7 +446,7 @@ async fn handle(
             if let Ok(mut pending) = process.pending.lock() {
                 pending.insert(request_id, input);
             }
-            let _ = sink.send((id, event));
+            process.emit(sink, event);
         }
         Incoming::PermissionWithdrawn { request_id } => {
             let was_pending = process
@@ -334,13 +454,13 @@ async fn handle(
                 .lock()
                 .is_ok_and(|mut p| p.remove(&request_id).is_some());
             if was_pending {
-                let _ = sink.send((
-                    id,
+                process.emit(
+                    sink,
                     AiEvent::ApprovalResolved {
                         id: request_id,
                         allowed: false,
                     },
-                ));
+                );
             }
         }
         Incoming::Unsupported { request_id } => {
@@ -522,5 +642,81 @@ mod tests {
         chat.stop().await;
         let events = collect_until_done(&mut rx).await;
         assert_eq!(events.last(), Some(&AiEvent::Stopped));
+    }
+
+    /// A stand-in `claude` that notes each start in `starts.log`.
+    fn counting_claude(dir: &Path) -> Launch {
+        let fixture = format!(
+            "{}/tests/fixtures/claude/text_reply.jsonl",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let log = dir.join("starts.log");
+        let script = dir.join("claude");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\necho started >> '{}'\ncat '{fixture}'\ncat > /dev/null\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Launch::Exe(script)
+    }
+
+    fn starts(dir: &Path) -> usize {
+        std::fs::read_to_string(dir.join("starts.log"))
+            .map(|s| s.lines().count())
+            .unwrap_or(0)
+    }
+
+    #[tokio::test]
+    async fn a_question_uses_the_warm_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let chat = Chat::new(tx);
+        let launch = counting_claude(dir.path());
+        chat.warm(&launch, options(dir.path())).await.unwrap();
+        // Warming again with the same options keeps the one spare.
+        chat.warm(&launch, options(dir.path())).await.unwrap();
+        // Let the spare print before it's claimed: that output is held.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "nothing sent before a conversation claims it"
+        );
+
+        let id = chat
+            .start("hi", &launch, options(dir.path()))
+            .await
+            .unwrap();
+        let (conversation, first) = rx.recv().await.unwrap();
+        assert_eq!(conversation, id);
+        assert!(matches!(first, AiEvent::Started { .. }), "{first:?}");
+        let events = collect_until_done(&mut rx).await;
+        assert!(matches!(events.last(), Some(AiEvent::Done)));
+        assert_eq!(starts(dir.path()), 1, "no second process");
+    }
+
+    #[tokio::test]
+    async fn a_spare_for_another_folder_is_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let chat = Chat::new(tx);
+        let launch = counting_claude(dir.path());
+        chat.warm(&launch, options(elsewhere.path())).await.unwrap();
+        // Let the spare start before it's passed over.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        chat.start("hi", &launch, options(dir.path()))
+            .await
+            .unwrap();
+        collect_until_done(&mut rx).await;
+        assert_eq!(starts(dir.path()), 2);
+        assert!(chat.spare.lock().await.is_none());
+
+        chat.warm(&launch, options(dir.path())).await.unwrap();
+        chat.drop_stale_spare(Duration::ZERO).await;
+        assert!(chat.spare.lock().await.is_none(), "an old spare is closed");
     }
 }

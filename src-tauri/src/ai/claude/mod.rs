@@ -117,21 +117,51 @@ fn from_file(path: PathBuf, path_dirs: &[PathBuf]) -> Option<Launch> {
             find_node(path.parent(), path_dirs).map(|node| Launch::Node { node, cli: path })
         }
         "cmd" | "bat" => {
-            // npm puts the package next to its shim.
+            // An npm shim: run what it runs (a native exe or `cli.js`)
+            // directly, so arguments never go through cmd.exe.
             let dir = path.parent()?;
-            let cli = dir
-                .join("node_modules")
-                .join("@anthropic-ai")
-                .join("claude-code")
-                .join("cli.js");
-            match (cli.is_file(), find_node(Some(dir), path_dirs)) {
-                (true, Some(node)) => Some(Launch::Node { node, cli }),
+            let target = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|shim| shim_target(&shim, dir))
+                .filter(|t| t.is_file());
+            match target {
+                Some(t) if has_extension(&t, &["js", "mjs", "cjs"]) => {
+                    find_node(Some(dir), path_dirs)
+                        .map(|node| Launch::Node { node, cli: t })
+                        .or(Some(Launch::Exe(path)))
+                }
+                Some(t) => Some(Launch::Exe(t)),
                 // Last resort: run the shim itself.
-                _ => Some(Launch::Exe(path)),
+                None => Some(Launch::Exe(path)),
             }
         }
         _ => Some(Launch::Exe(path)),
     }
+}
+
+fn has_extension(path: &Path, extensions: &[&str]) -> bool {
+    path.extension()
+        .is_some_and(|e| extensions.iter().any(|x| e.eq_ignore_ascii_case(x)))
+}
+
+/// The program an npm `.cmd` shim runs: the last quoted path relative to
+/// the shim's folder (`%dp0%\...` or `%~dp0\...`) that's an exe or a script.
+fn shim_target(shim: &str, dir: &Path) -> Option<PathBuf> {
+    shim.split('"')
+        .skip(1)
+        .step_by(2)
+        .filter_map(|quoted| {
+            let rest = quoted
+                .strip_prefix("%dp0%")
+                .or_else(|| quoted.strip_prefix("%~dp0"))?;
+            let relative = rest.trim_start_matches(['\\', '/']);
+            let path = relative
+                .split(['\\', '/'])
+                .filter(|part| !part.is_empty())
+                .fold(dir.to_path_buf(), |path, part| path.join(part));
+            has_extension(&path, &["exe", "js", "mjs", "cjs"]).then_some(path)
+        })
+        .last()
 }
 
 fn find_node(near: Option<&Path>, path_dirs: &[PathBuf]) -> Option<PathBuf> {
@@ -500,6 +530,38 @@ mod tests {
         assert_eq!(locate_in("", &[], None, None), None);
     }
 
+    /// What npm's cmd-shim writes for a native binary package.
+    const NATIVE_SHIM: &str = "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe\"   %*\r\n";
+
+    #[test]
+    fn reads_the_program_out_of_an_npm_shim() {
+        let dir = Path::new("/npm");
+        assert_eq!(
+            shim_target(NATIVE_SHIM, dir),
+            Some(dir.join("node_modules/@anthropic-ai/claude-code/bin/claude.exe"))
+        );
+        let js_shim = "\"%_prog%\"  \"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js\" %*";
+        assert_eq!(
+            shim_target(js_shim, dir),
+            Some(dir.join("node_modules/@anthropic-ai/claude-code/cli.js"))
+        );
+        assert_eq!(shim_target("@echo hi", dir), None);
+    }
+
+    #[test]
+    fn runs_a_native_npm_install_directly() {
+        let dir = tempfile::tempdir().unwrap();
+        let npm = dir.path().join("npm");
+        let bin = npm.join("node_modules/@anthropic-ai/claude-code/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("claude.exe"), b"").unwrap();
+        fs::write(npm.join("claude.cmd"), NATIVE_SHIM).unwrap();
+        assert_eq!(
+            from_file(npm.join("claude.cmd"), &[]),
+            Some(Launch::Exe(bin.join("claude.exe")))
+        );
+    }
+
     #[test]
     fn runs_npm_installs_through_node() {
         let dir = tempfile::tempdir().unwrap();
@@ -509,7 +571,11 @@ mod tests {
             .join("@anthropic-ai")
             .join("claude-code");
         fs::create_dir_all(&cli_dir).unwrap();
-        fs::write(npm.join("claude.cmd"), b"").unwrap();
+        fs::write(
+            npm.join("claude.cmd"),
+            "\"%_prog%\" \"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js\" %*",
+        )
+        .unwrap();
         fs::write(cli_dir.join("cli.js"), b"").unwrap();
         let node_dir = dir.path().join("nodejs");
         fs::create_dir_all(&node_dir).unwrap();

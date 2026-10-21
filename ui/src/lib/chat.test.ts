@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, approvalSummary, hasClaudePrefix, isThinking, modelLabel, pendingApproval, stripClaudePrefix, type Transcript } from "./chat";
+import { applyEvent, approvalSummary, hasClaudePrefix, looksLikeAQuestion, isThinking, modelLabel, pendingApproval, stripClaudePrefix, type Transcript } from "./chat";
 
 const fresh = (): Transcript => ({ entries: [{ kind: "user", text: "hi" }], running: true, model: "" });
 
@@ -102,5 +102,20 @@ describe("approvalSummary", () => {
     expect(approvalSummary({ summary: "notes.txt", detail: "/home/me/notes.txt\n\nhello" })).toBe("");
     expect(approvalSummary({ summary: "inbox", detail: '{"label": "x"}' })).toBe("inbox");
     expect(approvalSummary({ summary: "", detail: "{}" })).toBe("");
+  });
+});
+
+describe("looksLikeAQuestion", () => {
+  const ask = { kind: "ask_ai" };
+  const app = { kind: "app" };
+  it("spots questions early", () => {
+    expect(looksLikeAQuestion("c what", [])).toBe(true);
+    expect(looksLikeAQuestion("sort my downloads", [app, ask])).toBe(true);
+    expect(looksLikeAQuestion("weather", [ask])).toBe(true);
+  });
+  it("leaves app and file searches alone", () => {
+    expect(looksLikeAQuestion("chro", [app, ask])).toBe(false);
+    expect(looksLikeAQuestion("vs code", [app, ask])).toBe(false);
+    expect(looksLikeAQuestion("ab", [ask])).toBe(false);
   });
 });

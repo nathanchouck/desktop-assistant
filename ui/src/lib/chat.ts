@@ -119,3 +119,16 @@ export function modelLabel(id: string): string {
   const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);
   return m[3] ? `${family} ${m[2]}.${m[3]}` : `${family} ${m[2]}`;
 }
+
+/**
+ * Whether the query reads like a question for Claude, so it's worth
+ * starting Claude Code early: the `c ` prefix, three or more words, or
+ * nothing but the "Ask" row matching.
+ */
+export function looksLikeAQuestion(query: string, items: { kind: string }[]): boolean {
+  const text = query.trim();
+  if (hasClaudePrefix(text)) return true;
+  if (text.split(/\s+/).length >= 3) return true;
+  const onlyAsk = items.length > 0 && items.every((item) => item.kind === "ask_ai");
+  return onlyAsk && text.length >= 4;
+}

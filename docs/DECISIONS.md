@@ -200,3 +200,14 @@ even in auto mode; verified with Claude Code), the rest follow the usual
 rules. Considered: a stdio MCP server (a second copy of our exe that would
 need its own channel back to the running launcher) and passing the config
 as a JSON argument (quoting through an npm `.cmd` shim is fragile).
+
+## D-024 Warm start only while a question is being typed
+A Claude Code process that's already running answers about a second sooner
+(measured: first words at ~1.3 s instead of ~2.5 s; more with connectors to
+load). Keeping one running all the time costs memory, and starting one on
+every launcher open costs a process start for each app or file search. So
+the UI asks for a spare only once the query looks like a question for
+Claude, and an unclaimed spare is closed after 2 minutes. The spare is
+started with the options the question would use; if those changed in the
+meantime (another Explorer folder, another model), it's replaced rather
+than used with stale settings.

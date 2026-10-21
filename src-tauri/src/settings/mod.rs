@@ -97,6 +97,9 @@ pub struct ClaudeSettings {
     /// and for File Explorer the folder and selected files. Explorer's
     /// folder also becomes Claude's working folder.
     pub desktop_context: bool,
+    /// Start Claude Code while you're typing a question, so the answer
+    /// starts about a second sooner. Closed again if unused.
+    pub warm_start: bool,
 }
 
 impl Default for ClaudeSettings {
@@ -107,6 +110,7 @@ impl Default for ClaudeSettings {
             approvals: Approvals::Ask,
             path: String::new(),
             desktop_context: true,
+            warm_start: true,
         }
     }
 }

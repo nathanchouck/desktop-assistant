@@ -18,6 +18,12 @@ export const commands = {
 	/**  The UI reports its content height so the window can fit it. */
 	launcherSetHeight: (height: number) => __TAURI_INVOKE<void>("launcher_set_height", { height }),
 	/**
+	 *  Starts Claude Code ahead of a question you seem to be typing, so the
+	 *  answer starts sooner. Does nothing if it's off, Claude Code can't
+	 *  answer, or a matching one is already waiting.
+	 */
+	aiWarm: () => typedError<null, IpcError>(__TAURI_INVOKE("ai_warm")),
+	/**
 	 *  Asks Claude, starting a new conversation in the folder File Explorer
 	 *  showed (else your home folder).
 	 */
@@ -134,6 +140,11 @@ export type ClaudeSettings = {
 	 *  folder also becomes Claude's working folder.
 	 */
 	desktop_context: boolean,
+	/**
+	 *  Start Claude Code while you're typing a question, so the answer
+	 *  starts about a second sooner. Closed again if unused.
+	 */
+	warm_start: boolean,
 };
 
 /**

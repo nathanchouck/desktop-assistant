@@ -153,19 +153,55 @@ fn add_launcher_tools(state: &AppState, options: &mut claude::Options) {
     }
 }
 
+/// How a new conversation starts: the settings, the launcher's tools, and
+/// Explorer's folder (from `context`) as the working folder.
+fn new_conversation(
+    state: &AppState,
+    context: Option<&DesktopContext>,
+) -> Result<(claude::Launch, claude::Options), IpcError> {
+    let (launch, mut options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    add_launcher_tools(state, &mut options);
+    if let Some(folder) = context.and_then(DesktopContext::folder) {
+        if Path::new(folder).is_dir() {
+            options.cwd = PathBuf::from(folder);
+        }
+    }
+    Ok((launch, options))
+}
+
+/// Starts Claude Code ahead of a question you seem to be typing, so the
+/// answer starts sooner. Does nothing if it's off, Claude Code can't
+/// answer, or a matching one is already waiting.
+#[tauri::command]
+#[specta::specta]
+async fn ai_warm(state: State<'_, AppState>) -> Result<(), IpcError> {
+    let settings = state.settings().ai.claude;
+    let ready = matches!(
+        state.claude_status.get(),
+        ClaudeStatus::Ready | ClaudeStatus::Unknown
+    );
+    if !settings.warm_start || !ready {
+        return Ok(());
+    }
+    let context = if settings.desktop_context {
+        Some(state.desktop.current(CONTEXT_WAIT).await)
+    } else {
+        None
+    };
+    let (launch, options) = new_conversation(&state, context.as_ref())?;
+    if let Err(e) = state.chat.warm(&launch, options).await {
+        tracing::debug!("could not warm up Claude Code: {e}");
+    }
+    Ok(())
+}
+
 /// Asks Claude, starting a new conversation in the folder File Explorer
 /// showed (else your home folder).
 #[tauri::command]
 #[specta::specta]
 async fn ai_ask(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
-    let (launch, mut options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
-    add_launcher_tools(&state, &mut options);
     let context = context_to_send(&state, true).await;
-    if let Some(folder) = context.as_ref().and_then(DesktopContext::folder) {
-        if Path::new(folder).is_dir() {
-            options.cwd = PathBuf::from(folder);
-        }
-    }
+    let (launch, options) = new_conversation(&state, context.as_ref())?;
     let message = desktop::with_context(&text, context.as_ref());
     let conversation = state
         .chat
@@ -278,6 +314,7 @@ pub fn builder() -> Builder<Wry> {
             item_activate,
             launcher_hide,
             launcher_set_height,
+            ai_warm,
             ai_ask,
             ai_follow_up,
             ai_approve,

@@ -17,12 +17,16 @@ files with its own index (or every drive through Everything, if it's
 running), with icons, fuzzy matching and ranking by what you use. It lives
 in the tray.
 
-M4 in progress: press Tab (or type `c ` before a question) to ask Claude.
-The answer streams into the launcher, follow-ups continue the conversation,
-and Claude can act on your files, asking Approve / Deny before it changes
-anything. Needs [Claude Code](https://code.claude.com) installed and signed
-in. Next: desktop context (the folder open in Explorer, your selection).
-See the roadmap.
+M4 done: press Tab (or type `c ` before a question) to ask Claude. The
+answer streams into the launcher, follow-ups continue the conversation, and
+Claude can act on your files, asking Approve / Deny before it changes
+anything. It knows which window you came from, and for File Explorer the
+folder and the selected files, so "move these into a folder called Taxes"
+just works. It can also search with the launcher's index, open or reveal
+files, and (each time you approve) look at a screenshot of your window.
+Needs [Claude Code](https://code.claude.com) installed and signed in; the
+launcher offers to fix either if not. Next: ChatGPT through Codex (M5). See
+the roadmap.
 
 ## Getting the app
 
