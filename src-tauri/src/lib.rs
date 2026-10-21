@@ -5,6 +5,7 @@ pub mod actions;
 pub mod ai;
 pub mod desktop;
 pub mod error;
+pub mod features;
 pub mod file_index;
 pub mod fuzzy;
 pub mod hotkey;
@@ -18,6 +19,7 @@ pub mod search;
 pub mod settings;
 pub mod state;
 pub mod store;
+pub mod toast;
 pub mod window;
 
 use std::sync::Arc;
@@ -64,13 +66,16 @@ pub fn run() {
         ))
         .invoke_handler(builder.invoke_handler())
         // App icons for the UI: <img src={convertFileSrc(key, "icon")}>.
+        // `thumb/<name>` keys are PNGs from the thumbnails folder instead.
         .register_asynchronous_uri_scheme_protocol("icon", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let key = request.uri().path().trim_start_matches('/').to_owned();
             tauri::async_runtime::spawn(async move {
-                let icons = app.try_state::<AppState>().map(|s| Arc::clone(&s.icons));
-                let png = match icons {
-                    Some(icons) => icons.png(&key).await,
+                let png = match app.try_state::<AppState>() {
+                    Some(state) => match key.strip_prefix("thumb/") {
+                        Some(name) => icons::thumbnail(&state.paths.thumbnails_dir(), name).await,
+                        None => state.icons.png(&key).await,
+                    },
                     None => None,
                 };
                 responder.respond(icons::protocol_response(png));
@@ -94,6 +99,7 @@ pub fn run() {
             start_chat(handle);
             start_launcher_tools(handle);
             check_claude_status(handle, true);
+            features::start(handle);
 
             // Handy while developing; release builds start hidden in the tray.
             if cfg!(debug_assertions) {

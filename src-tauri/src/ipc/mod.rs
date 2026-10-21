@@ -17,7 +17,7 @@ use crate::desktop::{self, DesktopContext};
 use crate::error::IpcError;
 use crate::file_index::IndexStatus;
 use crate::hotkey;
-use crate::search::{Action, AskRow, Frecency, ResultItem};
+use crate::search::{Action, Activation, AskRow, Frecency, ResultItem};
 use crate::settings::Settings;
 use crate::state::AppState;
 use crate::window;
@@ -194,10 +194,11 @@ fn file_index_status(state: State<'_, AppState>) -> IndexStatus {
     state.files.status()
 }
 
-/// Runs an action on a result (open an app, run a command, ...).
+/// Runs an action on a result (open an app, run a command, ...). The reply
+/// says what the UI should do next, if anything.
 #[tauri::command]
 #[specta::specta]
-async fn item_activate(app: AppHandle, id: String, action: Action) -> Result<(), IpcError> {
+async fn item_activate(app: AppHandle, id: String, action: Action) -> Result<Activation, IpcError> {
     actions::activate(&app, &id, action)
         .await
         .map_err(Into::into)
@@ -360,17 +361,15 @@ async fn ai_close(state: State<'_, AppState>) -> Result<(), IpcError> {
 #[tauri::command]
 #[specta::specta]
 fn open_external(app: AppHandle, url: String) -> Result<(), IpcError> {
-    use tauri_plugin_opener::OpenerExt;
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(IpcError {
-            message: "only web links can be opened".into(),
-        });
-    }
-    app.opener()
-        .open_url(&url, None::<&str>)
-        .map_err(|e| IpcError {
-            message: e.to_string(),
-        })
+    actions::open_url(&app, &url).map_err(Into::into)
+}
+
+/// Opens the folder with the log files (from an error toast).
+#[tauri::command]
+#[specta::specta]
+fn open_log_folder(app: AppHandle) -> Result<(), IpcError> {
+    actions::run_builtin(&app, crate::search::commands::BuiltinCommand::OpenLogFolder)
+        .map_err(Into::into)
 }
 
 fn ai_err(e: crate::ai::AiError) -> IpcError {
@@ -427,14 +426,32 @@ pub fn builder() -> Builder<Wry> {
             ai_approve,
             ai_stop,
             ai_close,
-            open_external
+            open_external,
+            open_log_folder,
+            // Features add their commands below their own line, so
+            // parallel work doesn't collide.
+            // [ai]
+            // [history]
+            // [clipboard]
+            // [snippets]
+            // [system]
+            // [color]
+            // [scripts]
+            // [updater]
+            // [integrations]
         ])
         .events(collect_events![
             LauncherShown,
             AiStream,
             FileIndexChanged,
             SearchUpdated,
-            ShowSettings
+            ShowSettings,
+            crate::toast::Toast,
+            // [ai]
+            // [history]
+            // [clipboard]
+            // [color]
+            // [updater]
         ])
 }
 

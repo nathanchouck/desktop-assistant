@@ -9,27 +9,39 @@ vi.mock("../bindings", () => ({ commands }));
 
 const { SearchStore } = await import("./search.svelte");
 
-const row = (id: string, kind: ResultItem["kind"] = "file"): ResultItem => ({
+const row = (id: string, kind: ResultItem["kind"] = "file", extra: Partial<ResultItem> = {}): ResultItem => ({
   id,
   kind,
   title: id,
   subtitle: "",
   icon: null,
   actions: kind === "ask_ai" ? ["ask_ai"] : kind === "command" ? ["run"] : ["open"],
+  accessory: null,
+  confirm: null,
+  ...extra,
 });
 
 /** A store that has answered one search with `items`. */
-async function storeWith(items: ResultItem[], onAsk = vi.fn()) {
+async function storeWith(items: ResultItem[], onAsk = vi.fn(), onSettings = vi.fn()) {
   commands.searchQuery.mockResolvedValueOnce({ status: "ok", data: { seq: 1, items } });
-  const store = new SearchStore(onAsk);
+  const store = new SearchStore({ onAsk, onSettings });
   await store.setQuery("query");
   return store;
 }
 
+const reply = (data: unknown) => commands.itemActivate.mockResolvedValueOnce({ status: "ok", data });
+
+/** The next search answers with `items` (echoing its sequence number). */
+const answer = (items: ResultItem[]) =>
+  commands.searchQuery.mockImplementationOnce(async (_query: string, seq: number) => ({
+    status: "ok",
+    data: { seq, items },
+  }));
+
 describe("SearchStore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    commands.itemActivate.mockResolvedValue({ status: "ok", data: null });
+    commands.itemActivate.mockResolvedValue({ status: "ok", data: { type: "hide" } });
   });
 
   it("asks Claude with the query", async () => {
@@ -66,5 +78,70 @@ describe("SearchStore", () => {
     store.clear();
     store.onUpdate({ seq: 1, items: [row("file")] });
     expect(store.items).toEqual([]);
+  });
+
+  it("runs the first of a key's actions that the row offers", async () => {
+    const store = await storeWith([row("clip:1", "clip", { actions: ["paste", "copy", "delete"] })]);
+    reply({ type: "notice", message: "Copied" });
+    await store.activate(0, ["copy_path", "copy"]);
+    expect(commands.itemActivate).toHaveBeenCalledWith("clip:1", "copy");
+    await store.activate(0, ["run_as_admin"]);
+    expect(store.notice).toBe("That doesn't apply to clip:1.");
+  });
+
+  it("asks before a risky command and runs it on the second Enter", async () => {
+    const store = await storeWith([row("sys:restart", "command", { confirm: "Restart your PC?" })]);
+    await store.activate();
+    expect(commands.itemActivate).not.toHaveBeenCalled();
+    expect(store.notice).toBe("Restart your PC? Press Enter again to confirm.");
+    await store.activate();
+    expect(commands.itemActivate).toHaveBeenCalledWith("sys:restart", "run");
+  });
+
+  it("forgets a confirmation when the highlight moves", async () => {
+    const store = await storeWith([row("sys:restart", "command", { confirm: "Restart?" }), row("b")]);
+    await store.activate();
+    store.move(1);
+    store.move(-1);
+    expect(store.notice).toBeNull();
+    await store.activate();
+    expect(commands.itemActivate).not.toHaveBeenCalled();
+  });
+
+  it("follows what Rust says to do next", async () => {
+    const onAsk = vi.fn();
+    const onSettings = vi.fn();
+    const store = await storeWith([row("a")], onAsk, onSettings);
+
+    reply({ type: "notice", message: "Pinned" });
+    await store.activate();
+    expect(store.notice).toBe("Pinned");
+
+    reply({ type: "ask", prompt: "explain this", provider: null });
+    await store.activate();
+    expect(onAsk).toHaveBeenCalledWith("explain this", null);
+    expect(store.query).toBe("");
+
+    answer([row("a")]);
+    await store.setQuery("query");
+    answer([row("kill 1")]);
+    reply({ type: "set_query", query: "kill " });
+    await store.activate();
+    expect(store.query).toBe("kill ");
+    await vi.waitFor(() => expect(store.current?.id).toBe("kill 1"));
+
+    reply({ type: "open_settings" });
+    await store.activate();
+    expect(onSettings).toHaveBeenCalled();
+  });
+
+  it("refreshes in place, keeping the highlighted row", async () => {
+    const store = await storeWith([row("a"), row("clip:2", "clip", { actions: ["paste", "pin"] })]);
+    store.move(1);
+    answer([row("clip:2", "clip", { accessory: "Pinned" }), row("a")]);
+    reply({ type: "refresh" });
+    await store.activate(1, ["pin"]);
+    await vi.waitFor(() => expect(store.items[0]?.accessory).toBe("Pinned"));
+    expect(store.current?.id).toBe("clip:2");
   });
 });

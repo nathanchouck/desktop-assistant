@@ -12,6 +12,7 @@
   import { ChatStore } from "./lib/stores/chat.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
   import { SettingsStore } from "./lib/stores/settings.svelte";
+  import { ToastStore } from "./lib/stores/toast.svelte";
   import { tick } from "svelte";
 
   /** A finished chat is put away if the launcher stayed hidden this long. */
@@ -19,13 +20,15 @@
 
   const chat = new ChatStore();
   const settings = new SettingsStore();
-  const search = new SearchStore(
-    (text) => {
+  const search = new SearchStore({
+    // The provider choice arrives with M5 (ChatGPT); Claude answers for now.
+    onAsk: (text) => {
       search.clear();
       void chat.ask(text);
     },
-    () => void openSettings(),
-  );
+    onSettings: () => void openSettings(),
+  });
+  const toasts = new ToastStore();
   let bar: SearchBar | undefined = $state();
   let pane: ChatPane | undefined = $state();
   let settingsPane: SettingsPane | undefined = $state();
@@ -46,7 +49,7 @@
     }
   });
 
-  const expanded = $derived(settingsOpen || chat.active || search.expanded);
+  const expanded = $derived(settingsOpen || chat.active || search.expanded || toasts.current !== null);
   const notice = $derived(
     settingsOpen
       ? "Changes are saved as you make them"
@@ -85,10 +88,10 @@
         break;
       case "activate":
         // "c <question>" + Enter skips the results and asks Claude.
-        if (intent.index === undefined && !intent.action && hasClaudePrefix(search.query)) {
+        if (intent.index === undefined && !intent.actions && hasClaudePrefix(search.query)) {
           search.ask(stripClaudePrefix(search.query));
         } else {
-          void search.activate(intent.index, intent.action);
+          void search.activate(intent.index, intent.actions);
         }
         break;
       case "ask":
@@ -161,6 +164,7 @@
       events.fileIndexChanged.listen((e) => (indexStatus = e.payload.status)),
       events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
       events.showSettings.listen(() => void openSettings()),
+      events.toast.listen((e) => toasts.show(e.payload)),
     ];
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
 
@@ -209,7 +213,7 @@
           onactivate={(i) => search.activate(i)}
         />
       {/if}
-      <Footer {notice} {hints} />
+      <Footer {notice} {hints} toast={toasts.current} ondismiss={() => toasts.dismiss()} />
     {/if}
   </div>
 </main>

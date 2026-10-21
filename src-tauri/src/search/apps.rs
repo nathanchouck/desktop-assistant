@@ -215,6 +215,8 @@ fn match_apps(apps: &[AppEntry], query: &str, limit: usize) -> Vec<ResultItem> {
                 icon: Some(app.icon.clone()),
                 score,
                 actions,
+                accessory: None,
+                confirm: None,
             })
         })
         .collect();

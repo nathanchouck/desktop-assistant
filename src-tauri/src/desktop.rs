@@ -203,6 +203,12 @@ impl DesktopTracker {
     }
 
     /// The latest capture, waiting up to `wait` for Explorer's details.
+    /// The window you were in when the launcher last opened (the one to
+    /// paste into or act on). Instant.
+    pub fn window(&self) -> Option<ForegroundWindow> {
+        self.latest.borrow().window.clone()
+    }
+
     pub async fn current(&self, wait: Duration) -> DesktopContext {
         let mut rx = self.latest.subscribe();
         let ready = tokio::time::timeout(wait, async {

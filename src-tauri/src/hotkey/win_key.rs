@@ -58,7 +58,7 @@ use super::HotkeyError;
 const MASK_VK: u16 = 0xE8;
 
 /// Marks events we inject so the hook can recognize and skip them.
-const INJECTED_TAG: usize = 0x4441_5354;
+use crate::platform::INJECTED_TAG;
 /// How often the hook is re-installed (while no Windows key is held).
 const REINSTALL_MS: u32 = 5_000;
 

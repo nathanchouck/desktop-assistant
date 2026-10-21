@@ -26,8 +26,11 @@ export const commands = {
 	searchQuery: (query: string, seq: number) => typedError<SearchResponse, IpcError>(__TAURI_INVOKE("search_query", { query, seq })),
 	/**  How far along the built-in file index is (for the footer). */
 	fileIndexStatus: () => __TAURI_INVOKE<IndexStatus>("file_index_status"),
-	/**  Runs an action on a result (open an app, run a command, ...). */
-	itemActivate: (id: string, action: Action) => typedError<null, IpcError>(__TAURI_INVOKE("item_activate", { id, action })),
+	/**
+	 *  Runs an action on a result (open an app, run a command, ...). The reply
+	 *  says what the UI should do next, if anything.
+	 */
+	itemActivate: (id: string, action: Action) => typedError<Activation, IpcError>(__TAURI_INVOKE("item_activate", { id, action })),
 	launcherHide: () => __TAURI_INVOKE<void>("launcher_hide"),
 	/**  The UI reports its content height so the window can fit it. */
 	launcherSetHeight: (height: number) => __TAURI_INVOKE<void>("launcher_set_height", { height }),
@@ -55,6 +58,8 @@ export const commands = {
 	aiClose: () => typedError<null, IpcError>(__TAURI_INVOKE("ai_close")),
 	/**  Opens a web link from an answer in the default browser. */
 	openExternal: (url: string) => typedError<null, IpcError>(__TAURI_INVOKE("open_external", { url })),
+	/**  Opens the folder with the log files (from an error toast). */
+	openLogFolder: () => typedError<null, IpcError>(__TAURI_INVOKE("open_log_folder")),
 };
 
 /** Events */
@@ -64,14 +69,56 @@ export const events = {
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
 	showSettings: makeEvent<ShowSettings>("show-settings"),
+	toast: makeEvent<Toast>("toast"),
 };
 
 /* Types */
 /**
  *  Something the user can do with a result. The first action is the default
- *  (Enter); the rest appear in the action menu.
+ *  (Enter); the others have their own keys (see `ui/src/lib/keys.ts`).
  */
-export type Action = "open" | "run_as_admin" | "reveal_in_explorer" | "copy_path" | "ask_ai" | "run";
+export type Action = "open" | "run_as_admin" | "reveal_in_explorer" | "copy_path" | "ask_ai" | "run" | 
+/**  Copy the result's text (a calculation, a clip, an emoji). */
+"copy" | 
+/**  Paste the result's text into the window you were in. */
+"paste" | 
+/**  Remove the result (a clip, a conversation). */
+"delete" | 
+/**  Pin or unpin the result. */
+"pin" | 
+/**  Ask the AI about this result (a file, a clip). */
+"ask_about";
+
+/**
+ *  What happens after a result is activated, besides what its provider
+ *  did itself. `actions::activate` carries out the first four; the UI
+ *  handles the rest.
+ */
+export type Activation = 
+/**  Done: hide the launcher. */
+{ type: "hide" } | 
+/**  Copy this text to the clipboard, then hide. */
+{ type: "copy"; text: string } | 
+/**
+ *  Hide, then paste into the window you were in: this text, or
+ *  whatever is on the clipboard already when `None`.
+ */
+{ type: "paste"; text: string | null } | 
+/**  Open a web link (http or https only) in the browser, then hide. */
+{ type: "open_url"; url: string } | 
+/**  Replace the search text and search again; the launcher stays open. */
+{ type: "set_query"; query: string } | 
+/**  Ask the AI this, in a new chat (the default provider when `None`). */
+{ type: "ask"; prompt: string; provider: ProviderId | null } | 
+/**  Stay open and show this in the footer. */
+{ type: "notice"; message: string } | 
+/**
+ *  Stay open and run the same search again (the result changed, e.g.
+ *  it was pinned or deleted).
+ */
+{ type: "refresh" } | 
+/**  Show the settings menu. */
+{ type: "open_settings" };
 
 /**  What the UI hears about a conversation, in order. */
 export type AiEvent = 
@@ -147,6 +194,10 @@ export type BillingMode =
 /**  Use the API key from the environment (`ANTHROPIC_API_KEY`). */
 "api_key";
 
+export type CalcSettings = {
+	enabled: boolean,
+};
+
 export type ClaudeSettings = {
 	billing: BillingMode,
 	/**  Passed to `claude --model`: an alias ("sonnet", "haiku") or a full id. */
@@ -178,6 +229,18 @@ export type ClaudeStatus = "ready" | "not_installed" | "signed_out" |
  *  and let a real error say otherwise.
  */
 "unknown";
+
+export type ClipboardSettings = {
+	enabled: boolean,
+};
+
+export type ColorSettings = {
+	enabled: boolean,
+};
+
+export type EmojiSettings = {
+	enabled: boolean,
+};
 
 /**
  *  The file index's progress changed (sent a few times a second while it
@@ -219,7 +282,18 @@ export type IpcError = {
 	message: string,
 };
 
-export type ItemKind = "app" | "file" | "folder" | "command" | "ask_ai";
+/**  What a result is. The UI picks a fallback glyph and a label from it. */
+export type ItemKind = "app" | "file" | "folder" | "command" | "ask_ai" | 
+/**  A calculation or conversion; always ranked first. */
+"answer" | 
+/**  A clipboard history entry. */
+"clip" | "snippet" | "emoji" | 
+/**  A web link or web search. */
+"link" | "process" | "window" | 
+/**  A past AI conversation. */
+"conversation" | 
+/**  A user script. */
+"script";
 
 /**  Sent each time the launcher appears, so the UI can focus the search box. */
 export type LauncherShown = null;
@@ -228,6 +302,10 @@ export type ProviderId = "claude" | "chatgpt";
 
 export type ProviderSettings = {
 	billing: BillingMode,
+};
+
+export type QuicklinkSettings = {
+	enabled: boolean,
 };
 
 /**  One row in the results list. */
@@ -241,11 +319,25 @@ export type ResultItem = {
 	title: string,
 	subtitle: string,
 	/**
-	 *  Key for the `icon` protocol, if this result has a real icon. Rows
+	 *  What the row shows as its icon: a key for the `icon` protocol (app
+	 *  and file icons, `thumb/<name>` images), or `glyph:<name>` (a
+	 *  built-in symbol, see `ui/src/lib/glyphs.ts`), `text:<chars>` (an
+	 *  emoji or symbol drawn as text), `color:#rrggbb` (a swatch). Rows
 	 *  without one show a glyph for their kind.
 	 */
 	icon: string | null,
 	actions: Action[],
+	/**  Short text at the right of the row ("Pinned", "2 min ago"). */
+	accessory: string | null,
+	/**
+	 *  Asks before the default action runs: this question shows in the
+	 *  footer and Enter again confirms ("Restart your PC?").
+	 */
+	confirm: string | null,
+};
+
+export type ScriptSettings = {
+	enabled: boolean,
 };
 
 export type SearchResponse = {
@@ -283,6 +375,15 @@ export type Settings = {
 	ai: AiSettings,
 	search: SearchSettings,
 	general: GeneralSettings,
+	calculator: CalcSettings,
+	quicklinks: QuicklinkSettings,
+	emoji: EmojiSettings,
+	clipboard: ClipboardSettings,
+	snippets: SnippetSettings,
+	scripts: ScriptSettings,
+	updates: UpdateSettings,
+	system: SystemSettings,
+	color_picker: ColorSettings,
 };
 
 /**  The result of saving settings. */
@@ -296,6 +397,26 @@ export type SettingsSaved = {
 
 /**  Open the settings menu (from the tray). */
 export type ShowSettings = null;
+
+export type SnippetSettings = {
+	enabled: boolean,
+};
+
+export type SystemSettings = {
+	enabled: boolean,
+};
+
+/**  Shown in the footer for a few seconds. */
+export type Toast = {
+	level: ToastLevel,
+	message: string,
+};
+
+export type ToastLevel = "info" | "error";
+
+export type UpdateSettings = {
+	enabled: boolean,
+};
 
 /**  The Windows key override, for the settings menu. */
 export type WinKeyStatus = {

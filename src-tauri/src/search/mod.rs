@@ -12,12 +12,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use serde::Serialize;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::ai::ProviderId;
 use commands::BuiltinCommand;
-pub use item::{Action, ItemKind, ResultItem};
+pub use item::{color_icon, glyph, text_icon, thumb_icon, Action, ItemKind, ResultItem};
 
 /// What the last row offers: asking the AI, or fixing what stops it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,11 +46,64 @@ pub enum SearchError {
     },
 }
 
+/// What happens after a result is activated, besides what its provider
+/// did itself. `actions::activate` carries out the first four; the UI
+/// handles the rest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Activation {
+    /// Done: hide the launcher.
+    Hide,
+    /// Copy this text to the clipboard, then hide.
+    Copy { text: String },
+    /// Hide, then paste into the window you were in: this text, or
+    /// whatever is on the clipboard already when `None`.
+    Paste { text: Option<String> },
+    /// Open a web link (http or https only) in the browser, then hide.
+    OpenUrl { url: String },
+    /// Replace the search text and search again; the launcher stays open.
+    SetQuery { query: String },
+    /// Ask the AI this, in a new chat (the default provider when `None`).
+    Ask {
+        prompt: String,
+        provider: Option<ProviderId>,
+    },
+    /// Stay open and show this in the footer.
+    Notice { message: String },
+    /// Stay open and run the same search again (the result changed, e.g.
+    /// it was pinned or deleted).
+    Refresh,
+    /// Show the settings menu.
+    OpenSettings,
+}
+
 #[async_trait]
 pub trait SearchProvider: Send + Sync {
     fn name(&self) -> &'static str;
     /// `query` is already trimmed and non-empty.
     async fn query(&self, query: &str, limit: usize) -> Result<Vec<ResultItem>, SearchError>;
+
+    /// True when this query is meant for this provider alone, e.g. a prefix
+    /// like `kill ` or `clip`. If any provider claims a query, only the
+    /// providers claiming it run.
+    fn claims(&self, _query: &str) -> bool {
+        false
+    }
+
+    /// Whether `id` is one of this provider's results, so its activation
+    /// comes here. Use an id prefix only this provider makes ("calc:").
+    fn owns(&self, _id: &str) -> bool {
+        false
+    }
+
+    /// Carries out `action` on one of this provider's results.
+    async fn activate(&self, id: &str, action: Action) -> Result<Activation, SearchError> {
+        let _ = action;
+        Err(SearchError::Provider {
+            provider: self.name(),
+            message: format!("{id} can't be opened"),
+        })
+    }
 }
 
 /// How often each result id has been opened (see `store`).
@@ -79,6 +133,11 @@ impl Aggregator {
         }
     }
 
+    /// The provider whose result `id` is, if one claims it.
+    pub fn owner(&self, id: &str) -> Option<Arc<dyn SearchProvider>> {
+        self.providers.iter().find(|p| p.owns(id)).cloned()
+    }
+
     #[cfg(test)]
     fn with_budget(mut self, budget: Duration) -> Self {
         self.budget = budget;
@@ -105,9 +164,16 @@ impl Aggregator {
         }
 
         let pool = limit.saturating_mul(CANDIDATE_FACTOR);
-        let runs: Vec<(&'static str, JoinHandle<Vec<ResultItem>>)> = self
-            .providers
-            .iter()
+        // A prefix meant for one provider ("kill ", "clip") goes to it alone.
+        let claimed: Vec<&Arc<dyn SearchProvider>> =
+            self.providers.iter().filter(|p| p.claims(&query)).collect();
+        let providers = if claimed.is_empty() {
+            self.providers.iter().collect()
+        } else {
+            claimed
+        };
+        let runs: Vec<(&'static str, JoinHandle<Vec<ResultItem>>)> = providers
+            .into_iter()
             .map(|p| {
                 let name = p.name();
                 let p = Arc::clone(p);
@@ -190,6 +256,8 @@ fn ask_ai_item(query: &str, ai: AskRow) -> ResultItem {
         icon: None,
         score: 0.0,
         actions: vec![Action::Run],
+        accessory: None,
+        confirm: None,
     };
     let name = match ai {
         AskRow::Ask(ProviderId::Claude) => "Claude",
@@ -217,6 +285,8 @@ fn ask_ai_item(query: &str, ai: AskRow) -> ResultItem {
         icon: None,
         score: 0.0,
         actions: vec![Action::AskAi],
+        accessory: None,
+        confirm: None,
     }
 }
 
@@ -245,6 +315,8 @@ mod tests {
                     icon: None,
                     score,
                     actions: vec![Action::Run],
+                    accessory: None,
+                    confirm: None,
                 })
                 .collect())
         }
@@ -382,5 +454,81 @@ mod tests {
             .await
             .items;
         assert_eq!(ids(&items), ["cmd:claude-install"]);
+    }
+
+    /// Answers only queries starting with `kill `, and owns `kill:` ids.
+    struct Prefixed;
+
+    #[async_trait]
+    impl SearchProvider for Prefixed {
+        fn name(&self) -> &'static str {
+            "prefixed"
+        }
+        async fn query(&self, q: &str, _: usize) -> Result<Vec<ResultItem>, SearchError> {
+            Ok(vec![ResultItem::new(
+                format!("kill:{q}"),
+                ItemKind::Process,
+                q,
+            )
+            .with_score(0.5)
+            .with_actions([Action::Run])])
+        }
+        fn claims(&self, query: &str) -> bool {
+            query.starts_with("kill ")
+        }
+        fn owns(&self, id: &str) -> bool {
+            id.starts_with("kill:")
+        }
+        async fn activate(&self, id: &str, _: Action) -> Result<Activation, SearchError> {
+            Ok(Activation::Notice {
+                message: format!("ran {id}"),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_claimed_query_goes_to_that_provider_alone() {
+        let a = agg(vec![
+            Arc::new(Fixed("a", vec![0.9], Duration::ZERO)),
+            Arc::new(Prefixed),
+        ]);
+        let items = a
+            .search(
+                "kill chrome",
+                8,
+                AskRow::Ask(ProviderId::Claude),
+                no_history(),
+            )
+            .await
+            .items;
+        assert_eq!(ids(&items), ["kill:kill chrome", "ask-ai"]);
+        // Unclaimed queries reach everyone.
+        let items = a
+            .search("chrome", 8, AskRow::Ask(ProviderId::Claude), no_history())
+            .await
+            .items;
+        // (The provider's row titled "chrome" is an exact match, so first.)
+        assert_eq!(ids(&items), ["kill:chrome", "a:0", "ask-ai"]);
+    }
+
+    #[tokio::test]
+    async fn activation_goes_to_the_owner() {
+        let a = agg(vec![
+            Arc::new(Fixed("a", vec![0.9], Duration::ZERO)),
+            Arc::new(Prefixed),
+        ]);
+        assert!(a.owner("a:0").is_none());
+        let owner = a.owner("kill:42").expect("owned");
+        assert_eq!(
+            owner.activate("kill:42", Action::Run).await.unwrap(),
+            Activation::Notice {
+                message: "ran kill:42".into()
+            }
+        );
+        // Providers that don't override `activate` refuse politely.
+        assert!(Fixed("a", vec![], Duration::ZERO)
+            .activate("a:0", Action::Run)
+            .await
+            .is_err());
     }
 }

@@ -3,8 +3,11 @@ import type { Action } from "./bindings";
 /** What a key press in the search box means. Pure, so it's easy to test. */
 export type Intent =
   | { type: "move"; delta: number }
-  /** Run a result. `action` unset means its default (first) action. */
-  | { type: "activate"; index?: number; action?: Action }
+  /**
+   * Run a result. `actions` lists what the key can mean, best first; the
+   * first one the result offers runs. Unset means its default action.
+   */
+  | { type: "activate"; index?: number; actions?: Action[] }
   /** Send the query to the AI, whatever the results. */
   | { type: "ask" }
   /** Open the settings menu (Ctrl+,). */
@@ -29,8 +32,8 @@ export function intentFor(e: KeyLike): Intent | null {
       return { type: "move", delta: -1 };
     case "Enter":
       // Ctrl+Shift+Enter is the Windows convention for "run as administrator".
-      if (ctrlShift) return { type: "activate", action: "run_as_admin" };
-      if (ctrlOnly) return { type: "activate", action: "reveal_in_explorer" };
+      if (ctrlShift) return { type: "activate", actions: ["run_as_admin"] };
+      if (ctrlOnly) return { type: "activate", actions: ["reveal_in_explorer", "paste"] };
       return { type: "activate" };
     case "Tab":
       return e.shiftKey || e.ctrlKey || e.altKey || e.metaKey ? null : { type: "ask" };
@@ -38,9 +41,17 @@ export function intentFor(e: KeyLike): Intent | null {
       return { type: "escape" };
   }
   if (ctrlOnly && e.key === ",") return { type: "settings" };
-  if (ctrlShift && e.key.toLowerCase() === "c") {
-    return { type: "activate", action: "copy_path" };
+  if (ctrlShift) {
+    switch (e.key.toLowerCase()) {
+      case "c":
+        return { type: "activate", actions: ["copy_path", "copy"] };
+      case "p":
+        return { type: "activate", actions: ["pin"] };
+      case "a":
+        return { type: "activate", actions: ["ask_about"] };
+    }
   }
+  if (ctrlOnly && e.key.toLowerCase() === "d") return { type: "activate", actions: ["delete"] };
   // Ctrl+1..9 opens that row directly.
   if (ctrlOnly && /^[1-9]$/.test(e.key)) {
     return { type: "activate", index: Number(e.key) - 1 };
@@ -54,18 +65,45 @@ export type Hint = [string, string];
 /** Hints for a result's extra actions, in display order. */
 const actionHints: [Action, Hint][] = [
   ["reveal_in_explorer", ["Ctrl ↵", "Show in folder"]],
+  ["paste", ["Ctrl ↵", "Paste"]],
   ["copy_path", ["Ctrl ⇧ C", "Copy path"]],
+  ["copy", ["Ctrl ⇧ C", "Copy"]],
   ["run_as_admin", ["Ctrl ⇧ ↵", "Admin"]],
+  ["ask_about", ["Ctrl ⇧ A", "Ask"]],
+  ["pin", ["Ctrl ⇧ P", "Pin"]],
+  ["delete", ["Ctrl D", "Delete"]],
 ];
+
+/** What Enter does, by a result's default action. */
+const enterLabels: Record<Action, string> = {
+  open: "Open",
+  run: "Run",
+  run_as_admin: "Admin",
+  reveal_in_explorer: "Show",
+  copy_path: "Copy path",
+  copy: "Copy",
+  paste: "Paste",
+  delete: "Delete",
+  pin: "Pin",
+  ask_ai: "Ask",
+  ask_about: "Ask",
+};
+
+/** At most this many extra-action hints, so the footer fits. */
+const MAX_ACTION_HINTS = 3;
 
 /** Footer hints while searching, for the selected result's actions. */
 export function searchHints(actions: Action[]): Hint[] {
-  if (actions.includes("ask_ai")) return [["↵", "Ask"], ["Esc", "Clear"]];
-  return [
-    ["↵", "Open"],
-    ...actionHints.filter(([action]) => actions.includes(action)).map(([, hint]) => hint),
-    ["Esc", "Clear"],
-  ];
+  const [first, ...rest] = actions;
+  if (first === "ask_ai") return [["↵", "Ask"], ["Esc", "Clear"]];
+  const shownKeys = new Set<string>();
+  const extra = actionHints
+    .filter(([action]) => rest.includes(action))
+    .map(([, hint]) => hint)
+    // Two actions sharing a key (Ctrl ↵): the first one is what it does.
+    .filter(([key]) => !shownKeys.has(key) && shownKeys.add(key))
+    .slice(0, MAX_ACTION_HINTS);
+  return [["↵", first ? enterLabels[first] : "Open"], ...extra, ["Esc", "Clear"]];
 }
 
 /** Footer hints while chatting. */

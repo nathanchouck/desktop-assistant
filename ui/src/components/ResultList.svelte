@@ -18,6 +18,15 @@
     folder: "Folder",
     command: "Command",
     ask_ai: "Tab",
+    answer: "Answer",
+    clip: "Clipboard",
+    snippet: "Snippet",
+    emoji: "Emoji",
+    link: "Link",
+    process: "Process",
+    window: "Window",
+    conversation: "Chat",
+    script: "Script",
   };
 
   // Keep the highlighted row visible when there are more rows than fit.
@@ -46,6 +55,9 @@
           <span class="detail">{detail}</span>
         {/if}
       </span>
+      {#if item.accessory}
+        <span class="accessory">{item.accessory}</span>
+      {/if}
       <span class="hint">
         {#if i === selected || i >= 9}
           {kindLabel[item.kind]}
@@ -104,6 +116,15 @@
     white-space: nowrap;
     font-size: var(--font-size-sub);
     color: var(--text-faint);
+  }
+  .accessory {
+    flex: none;
+    max-width: 30%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sub);
+    color: var(--text-muted);
   }
   .hint {
     flex: none;

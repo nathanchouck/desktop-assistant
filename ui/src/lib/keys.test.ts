@@ -18,15 +18,21 @@ describe("intentFor", () => {
   it("maps Enter variants to actions", () => {
     expect(intentFor(key("Enter"))).toEqual({ type: "activate" });
     expect(intentFor(key("Enter", { shift: true }))).toEqual({ type: "activate" });
-    expect(intentFor(key("Enter", { ctrl: true }))).toEqual({ type: "activate", action: "reveal_in_explorer" });
+    expect(intentFor(key("Enter", { ctrl: true }))).toEqual({
+      type: "activate",
+      actions: ["reveal_in_explorer", "paste"],
+    });
     expect(intentFor(key("Enter", { ctrl: true, shift: true }))).toEqual({
       type: "activate",
-      action: "run_as_admin",
+      actions: ["run_as_admin"],
     });
   });
 
   it("copies the path with Ctrl+Shift+C", () => {
-    expect(intentFor(key("C", { ctrl: true, shift: true }))).toEqual({ type: "activate", action: "copy_path" });
+    expect(intentFor(key("C", { ctrl: true, shift: true }))).toEqual({
+      type: "activate",
+      actions: ["copy_path", "copy"],
+    });
     expect(intentFor(key("c", { ctrl: true }))).toBeNull();
   });
 
@@ -83,6 +89,18 @@ describe("chatIntentFor", () => {
   });
 });
 
+describe("action keys", () => {
+  it("map to the actions they can mean", () => {
+    expect(intentFor(key("P", { ctrl: true, shift: true }))).toEqual({ type: "activate", actions: ["pin"] });
+    expect(intentFor(key("a", { ctrl: true, shift: true }))).toEqual({
+      type: "activate",
+      actions: ["ask_about"],
+    });
+    expect(intentFor(key("d", { ctrl: true }))).toEqual({ type: "activate", actions: ["delete"] });
+    expect(intentFor(key("d"))).toBeNull();
+  });
+});
+
 describe("hints", () => {
   it("lists a result's extra actions", () => {
     expect(searchHints(["open", "reveal_in_explorer", "copy_path"]).map(([k]) => k)).toEqual([
@@ -92,6 +110,14 @@ describe("hints", () => {
       "Esc",
     ]);
     expect(searchHints(["ask_ai"])[0]).toEqual(["↵", "Ask"]);
+  });
+
+  it("names Enter after the default action and skips repeats of a key", () => {
+    const hints = searchHints(["paste", "copy", "pin", "delete"]);
+    expect(hints[0]).toEqual(["↵", "Paste"]);
+    expect(hints.map(([k]) => k)).toEqual(["↵", "Ctrl ⇧ C", "Ctrl ⇧ P", "Ctrl D", "Esc"]);
+    // Copy is the default: Ctrl+Enter pastes instead.
+    expect(searchHints(["copy", "paste"]).map(([, l]) => l)).toEqual(["Copy", "Paste", "Clear"]);
   });
 
   it("puts approvals first while chatting", () => {

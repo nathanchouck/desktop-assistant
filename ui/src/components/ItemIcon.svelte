@@ -1,10 +1,11 @@
 <script lang="ts">
   import { convertFileSrc } from "@tauri-apps/api/core";
   import type { ItemKind } from "../lib/bindings";
+  import { fallback, iconSpec } from "../lib/glyphs";
 
   interface Props {
     kind: ItemKind;
-    /** Key for the `icon` protocol; falls back to a glyph if missing or broken. */
+    /** See `ResultItem::icon`: an icon key, `glyph:`, `text:` or `color:`. */
     icon: string | null;
   }
   let { kind, icon }: Props = $props();
@@ -15,30 +16,20 @@
     void icon;
     broken = false;
   });
+
+  const spec = $derived(broken ? fallback(kind) : iconSpec(kind, icon));
 </script>
 
 <span class="icon" aria-hidden="true">
-  {#if icon && !broken}
-    <img src={convertFileSrc(icon, "icon")} alt="" draggable="false" onerror={() => (broken = true)} />
+  {#if spec.type === "image"}
+    <img src={convertFileSrc(spec.key, "icon")} alt="" draggable="false" onerror={() => (broken = true)} />
+  {:else if spec.type === "text"}
+    <span class="text">{spec.text}</span>
+  {:else if spec.type === "color"}
+    <span class="swatch" style:background={spec.color}></span>
   {:else}
-    <svg viewBox="0 0 24 24" class:ai={kind === "ask_ai"}>
-      {#if kind === "ask_ai"}
-        <path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.4l-1.8-4.9L5 9.7l5.2-1.8z" />
-        <path d="M18.5 15l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
-      {:else if kind === "command"}
-        <rect x="3.5" y="4.5" width="17" height="15" rx="3" />
-        <path d="M7.5 10l3 2.5-3 2.5M12.5 15.5h4" />
-      {:else if kind === "folder"}
-        <path d="M3.5 7.5a2 2 0 012-2h4l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2h-13a2 2 0 01-2-2z" />
-      {:else if kind === "file"}
-        <path d="M6.5 3.5h7l4 4v13h-11z M13.5 3.5v4h4" />
-      {:else}
-        <rect x="4" y="4" width="7" height="7" rx="2" />
-        <rect x="13" y="4" width="7" height="7" rx="2" />
-        <rect x="4" y="13" width="7" height="7" rx="2" />
-        <rect x="13" y="13" width="7" height="7" rx="2" />
-      {/if}
-    </svg>
+    <!-- Static markup from glyphs.ts, never result text. -->
+    <svg viewBox="0 0 24 24" class:ai={spec.accent}>{@html spec.markup}</svg>
   {/if}
 </span>
 
@@ -55,6 +46,17 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+    border-radius: var(--radius-icon);
+  }
+  .text {
+    font-size: calc(var(--icon-size) * 0.75);
+    line-height: 1;
+  }
+  .swatch {
+    width: 80%;
+    height: 80%;
+    border: 1px solid var(--keycap-border);
+    border-radius: var(--radius-icon);
   }
   svg {
     width: 80%;

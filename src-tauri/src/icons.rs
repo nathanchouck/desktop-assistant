@@ -131,6 +131,23 @@ impl IconCache {
 }
 
 /// The HTTP response for an `icon` protocol request: the PNG, or 404.
+/// A PNG from the thumbnails folder, by name (letters, digits, `-`, `_`;
+/// anything else is refused, so no path can escape the folder).
+pub async fn thumbnail(dir: &std::path::Path, name: &str) -> Option<Png> {
+    let safe = !name.is_empty()
+        && name.len() <= 128
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !safe {
+        return None;
+    }
+    let bytes = tokio::fs::read(dir.join(format!("{name}.png")))
+        .await
+        .ok()?;
+    Some(Arc::new(bytes))
+}
+
 pub fn protocol_response(png: Option<Png>) -> tauri::http::Response<Vec<u8>> {
     let builder = tauri::http::Response::builder();
     let response = match png {

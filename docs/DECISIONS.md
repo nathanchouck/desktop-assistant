@@ -230,3 +230,21 @@ works with the keyboard and the same look. Changes save immediately (no
 Save button) and apply live where they can; the two that shape the file
 index offer a restart instead of half-applying. The TOML file stays the
 source of truth and is still one command away.
+
+## D-027 Features plug in through their own folder and an activation result
+M5–M8 add a dozen features that each bring results, actions, settings and
+Windows code. Putting each in `features/<name>/` with a `provider`, a
+`start` and its own settings struct keeps them from editing the same
+files, so they can be built (and reviewed) in parallel. Picking a result
+goes to the provider that `owns` its id, which returns an `Activation`
+describing what follows (hide, copy, paste, open a link, a new query, ask
+the AI, a notice, refresh). The common endings are carried out in one
+place (`actions::carry_out`), so pasting into the window you came from and
+the UI's follow-up behave the same for every feature. A provider can
+`claim` a prefix (`kill `) to be the only one answering it. Risky commands
+ask in the footer ("Press Enter again") rather than with a dialog, which
+keeps everything on the keyboard. Considered: one big `match` on id
+prefixes in `actions.rs` (every feature editing the same function) and
+separate IPC commands per feature (more bindings, the same follow-up logic
+copied around).
+

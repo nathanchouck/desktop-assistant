@@ -240,7 +240,9 @@ fn format_results(items: &[ResultItem]) -> String {
                 path_from_id(&item.id).map(|path| format!("{kind}: {path}"))
             }
             ItemKind::App => Some(format!("app: {} (id: {})", item.title, item.id)),
-            ItemKind::Command | ItemKind::AskAi => None,
+            // Claude has its own ways to calculate, and the rest only make
+            // sense in the launcher.
+            _ => None,
         })
         .collect();
     if lines.is_empty() {
@@ -264,6 +266,8 @@ mod tests {
             icon: None,
             score: 0.0,
             actions: vec![Action::Open],
+            accessory: None,
+            confirm: None,
         }
     }
 

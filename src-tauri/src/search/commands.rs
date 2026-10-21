@@ -106,6 +106,8 @@ impl SearchProvider for CommandProvider {
                     icon: None,
                     score,
                     actions: vec![Action::Run],
+                    accessory: None,
+                    confirm: None,
                 })
             })
             .collect();

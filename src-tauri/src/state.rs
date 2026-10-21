@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::features::{self, ProviderContext};
+
 use tokio::sync::mpsc;
 
 use crate::ai::chat::Chat;
@@ -13,8 +15,8 @@ use crate::paths::{self, AppPaths};
 use crate::platform::Shell;
 use crate::search::apps::{AppIndex, AppProvider};
 use crate::search::files::FileProvider;
-use crate::search::{commands::CommandProvider, Aggregator};
-use crate::settings::Settings;
+use crate::search::{commands::CommandProvider, Aggregator, SearchProvider};
+use crate::settings::{self, Settings, SharedSettings};
 use crate::store::Store;
 use crate::window::LauncherState;
 
@@ -30,7 +32,7 @@ pub struct ToolFiles {
 /// Shared app state, managed by Tauri and available to every command.
 pub struct AppState {
     pub paths: AppPaths,
-    pub settings: RwLock<Settings>,
+    pub settings: SharedSettings,
     /// The search settings the running file index was built with; others
     /// apply after a restart.
     pub startup_search: crate::settings::SearchSettings,
@@ -77,30 +79,44 @@ impl AppState {
             &settings.search.exclusions,
             paths.file_index_file(),
         ));
-        let search = Aggregator::new(vec![
+        let store = Arc::new(store);
+        let desktop = Arc::new(DesktopTracker::new());
+        let startup_search = settings.search.clone();
+        let shared: SharedSettings = Arc::new(RwLock::new(settings));
+        let context = ProviderContext {
+            shell: Arc::clone(&shell),
+            icons: Arc::clone(&icons),
+            store: Arc::clone(&store),
+            settings: Arc::clone(&shared),
+            desktop: Arc::clone(&desktop),
+            paths: paths.clone(),
+        };
+        let mut providers: Vec<Arc<dyn SearchProvider>> = vec![
             Arc::new(CommandProvider),
             Arc::new(AppProvider::new(Arc::clone(&apps))),
             Arc::new(FileProvider::new(
                 Arc::clone(&shell),
                 Arc::clone(&icons),
                 Arc::clone(&files),
-                settings.search.exclusions.clone(),
+                startup_search.exclusions.clone(),
             )),
-        ]);
+        ];
+        providers.extend(features::providers(&context));
+        let search = Aggregator::new(providers);
         let (chat_tx, chat_rx) = mpsc::unbounded_channel();
         Self {
             chat: Arc::new(Chat::new(chat_tx)),
             claude_status: Arc::new(StatusCache::new()),
             tool_files: std::sync::OnceLock::new(),
             chat_events: Mutex::new(Some(chat_rx)),
-            desktop: Arc::new(DesktopTracker::new()),
+            desktop,
             sent_context: Mutex::new(None),
             paths,
-            startup_search: settings.search.clone(),
-            settings: RwLock::new(settings),
+            startup_search,
+            settings: shared,
             search,
             launcher: LauncherState::default(),
-            store: Arc::new(store),
+            store,
             shell,
             icons,
             apps,
@@ -112,9 +128,6 @@ impl AppState {
     /// Snapshot of the current settings. A poisoned lock (a panic while
     /// writing) falls back to the last value rather than failing the call.
     pub fn settings(&self) -> Settings {
-        match self.settings.read() {
-            Ok(s) => s.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        }
+        settings::current(&self.settings)
     }
 }

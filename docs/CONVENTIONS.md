@@ -68,14 +68,30 @@ Debugging tips:
 - Settings structs don't use `#[serde(default)]`; defaults come from
   `Settings::default()` via layering, which keeps generated types non-optional.
 
-## Procedure: add a search provider
+## Procedure: add a feature (D-027)
 
-1. Create `search/<name>.rs` with a struct implementing `SearchProvider`.
-2. Return raw fuzzy scores; don't apply frecency (the ranker does).
-3. Use stable `ResultItem.id`s (`"<kind>:<unique key>"`) so frecency works.
-4. Register it in `search/mod.rs` and add an enable toggle in `Settings`.
-5. Add unit tests for matching and id stability.
-6. Check it stays inside the 40 ms per-provider budget on a real machine.
+1. Work in `src-tauri/src/features/<name>/` (the folder and its line in
+   `features/mod.rs` already exist for planned features). `provider(ctx)`
+   returns your `SearchProvider`; `start(app)` starts background work.
+2. Results: build them with `ResultItem::new(..).with_…`. Use an id prefix
+   only you make (`"calc:"`) and return true from `owns` for it, so
+   activations come to your `activate`. Return raw scores; the ranker
+   applies frecency. Return true from `claims` only for a prefix meant for
+   you alone (`kill `, `clip`).
+3. Icons: `glyph("name")` (add new ones to `ui/src/lib/glyphs.ts`),
+   `text_icon("🔥")`, `color_icon("#ff8800")`, or `thumb_icon(name)` for a
+   PNG you wrote to `AppPaths::thumbnails_dir()`.
+4. `activate` does the work and returns what follows (`Activation`). Use
+   `Copy`/`Paste`/`OpenUrl` rather than doing those yourself. Risky
+   commands set `with_confirm("Restart your PC?")`.
+5. Settings: grow your section's struct in your folder (every field needs
+   a default). UI: fill in `components/settings/<Name>Section.svelte`.
+6. Windows-only code: `#[cfg(windows)] mod win;` in your folder, with a
+   stub path so `cargo test` passes on Linux.
+7. Commands/events the UI needs go in `ipc/mod.rs` under your `// [name]`
+   marker; then `npm run bindings`.
+8. Unit-test parsing, matching and id stability. Keep `query` inside the
+   40 ms budget (do slow work in `start` and cache it).
 
 ## Procedure: add an AI provider
 

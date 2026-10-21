@@ -45,6 +45,12 @@ impl AppPaths {
     pub fn file_index_file(&self) -> PathBuf {
         self.data_dir.join("file-index.txt")
     }
+
+    /// PNGs the UI shows as result icons via `thumb/<name>` keys (clipboard
+    /// images and the like).
+    pub fn thumbnails_dir(&self) -> PathBuf {
+        self.data_dir.join("thumbnails")
+    }
 }
 
 /// Turns the `index_folders` setting into real folders: `~` becomes the

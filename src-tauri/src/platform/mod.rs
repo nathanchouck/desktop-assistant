@@ -9,6 +9,25 @@ mod win;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+/// Marks key presses the launcher injects, so its own keyboard hook (the
+/// Windows key override) lets them through untouched.
+pub const INJECTED_TAG: usize = 0x4441_5354;
+
+/// Windows virtual-key codes, for `Shell::press_keys`.
+pub mod vk {
+    pub const BACK: u16 = 0x08;
+    pub const RETURN: u16 = 0x0D;
+    pub const SHIFT: u16 = 0x10;
+    pub const CONTROL: u16 = 0x11;
+    pub const MENU: u16 = 0x12;
+    pub const ESCAPE: u16 = 0x1B;
+    pub const LWIN: u16 = 0x5B;
+    pub const RWIN: u16 = 0x5C;
+    pub const C: u16 = 0x43;
+    pub const H: u16 = 0x48;
+    pub const V: u16 = 0x56;
+}
+
 /// An app as the OS reports it, before filtering.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawApp {
@@ -262,6 +281,38 @@ impl Shell {
         #[cfg(not(windows))]
         {
             let _ = handle;
+            Err(PlatformError::Unsupported)
+        }
+    }
+
+    /// Brings a window to the front (restoring it if minimized).
+    pub async fn focus_window(&self, handle: isize) -> Result<(), PlatformError> {
+        #[cfg(windows)]
+        {
+            tokio::task::spawn_blocking(move || win::input::focus_window(handle).map_err(os))
+                .await
+                .map_err(|_| PlatformError::WorkerGone)?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = handle;
+            Err(PlatformError::Unsupported)
+        }
+    }
+
+    /// Presses `keys` (see `vk`) as one shortcut, into whatever window is in
+    /// front: down in order, up in reverse. Waits briefly for you to let go
+    /// of Shift, Ctrl, Alt and Win first, so they don't mix in.
+    pub async fn press_keys(&self, keys: Vec<u16>) -> Result<(), PlatformError> {
+        #[cfg(windows)]
+        {
+            tokio::task::spawn_blocking(move || win::input::press_keys(&keys).map_err(os))
+                .await
+                .map_err(|_| PlatformError::WorkerGone)?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = keys;
             Err(PlatformError::Unsupported)
         }
     }

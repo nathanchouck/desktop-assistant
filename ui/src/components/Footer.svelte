@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { commands, type Toast } from "../lib/bindings";
   import type { Hint } from "../lib/keys";
 
   interface Props {
@@ -6,12 +7,23 @@
     notice: string | null;
     /** Right side: key hints. */
     hints: Hint[];
+    /** A message from the backend; shown instead of the notice for a while. */
+    toast?: Toast | null;
+    ondismiss?: () => void;
   }
-  let { notice, hints }: Props = $props();
+  let { notice, hints, toast = null, ondismiss }: Props = $props();
 </script>
 
 <footer>
-  {#if notice}
+  {#if toast}
+    <span class="toast" class:error={toast.level === "error"} role="alert">
+      <span class="message">{toast.message}</span>
+      {#if toast.level === "error"}
+        <button type="button" onclick={() => void commands.openLogFolder()}>Open log</button>
+      {/if}
+      <button type="button" class="close" aria-label="Dismiss" onclick={() => ondismiss?.()}>×</button>
+    </span>
+  {:else if notice}
     <span class="notice" role="status">{notice}</span>
   {:else}
     <span></span>
@@ -35,12 +47,35 @@
     font-size: var(--font-size-sub);
     color: var(--text-faint);
   }
-  .notice {
+  .notice,
+  .message {
     min-width: 0;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .toast.error .message {
+    color: var(--danger);
+  }
+  .toast button {
+    flex: none;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--keycap-border);
+    border-radius: var(--radius-keycap);
+    background: var(--keycap);
+    color: var(--text-muted);
+    font: inherit;
+  }
+  .toast .close {
+    border: none;
+    background: none;
   }
   .hints {
     display: flex;

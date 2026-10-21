@@ -8,10 +8,12 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{Approvals, BillingMode, ProviderId};
+use crate::features;
 
 pub const CURRENT_VERSION: u32 = 1;
 
@@ -27,6 +29,19 @@ pub enum SettingsError {
     Shape(String),
 }
 
+/// Settings shared between the app and anything that reads them later
+/// (search providers): always the current ones.
+pub type SharedSettings = Arc<RwLock<Settings>>;
+
+/// A copy of the current settings. A poisoned lock (a panic while writing)
+/// falls back to the last value rather than failing.
+pub fn current(shared: &SharedSettings) -> Settings {
+    match shared.read() {
+        Ok(s) => s.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct Settings {
     pub version: u32,
@@ -34,6 +49,16 @@ pub struct Settings {
     pub ai: AiSettings,
     pub search: SearchSettings,
     pub general: GeneralSettings,
+    // One section per feature (see `features/`).
+    pub calculator: features::calc::CalcSettings,
+    pub quicklinks: features::quicklinks::QuicklinkSettings,
+    pub emoji: features::emoji::EmojiSettings,
+    pub clipboard: features::clipboard::ClipboardSettings,
+    pub snippets: features::snippets::SnippetSettings,
+    pub scripts: features::scripts::ScriptSettings,
+    pub updates: features::updater::UpdateSettings,
+    pub system: features::system::SystemSettings,
+    pub color_picker: features::color::ColorSettings,
 }
 
 impl Default for Settings {
@@ -44,6 +69,15 @@ impl Default for Settings {
             ai: AiSettings::default(),
             search: SearchSettings::default(),
             general: GeneralSettings::default(),
+            calculator: Default::default(),
+            quicklinks: Default::default(),
+            emoji: Default::default(),
+            clipboard: Default::default(),
+            snippets: Default::default(),
+            scripts: Default::default(),
+            updates: Default::default(),
+            system: Default::default(),
+            color_picker: Default::default(),
         }
     }
 }

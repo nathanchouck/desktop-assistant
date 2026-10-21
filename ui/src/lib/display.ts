@@ -23,10 +23,20 @@ export function shortenPath(path: string, max = 56): string {
 
 /** Muted text shown after a result's title, if any. */
 export function detailFor(item: ResultItem): string | null {
-  if (item.kind === "file" || item.kind === "folder") return shortenPath(item.subtitle);
-  // Setup rows (e.g. "Start Everything") explain themselves.
-  if (item.kind === "command" && !item.id.startsWith("cmd:")) return item.subtitle;
-  return null;
+  switch (item.kind) {
+    case "file":
+    case "folder":
+      return shortenPath(item.subtitle);
+    case "app":
+    case "ask_ai":
+      return null;
+    case "command":
+      // Built-in commands just say "Command"; others (system, window,
+      // media commands) explain themselves.
+      return item.id.startsWith("cmd:") ? null : item.subtitle || null;
+    default:
+      return item.subtitle || null;
+  }
 }
 
 /** Footer text while the file index isn't complete yet; null once it is. */

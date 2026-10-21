@@ -105,10 +105,10 @@ pub fn show(app: &AppHandle, started: Instant) {
         .as_ref()
         .map_or(DEFAULT_HEIGHT, |s| s.launcher.height());
     if let Some(state) = &state {
-        // Before the launcher takes focus, while your window is still in front.
-        if state.settings().ai.claude.desktop_context {
-            state.desktop.capture(&state.shell);
-        }
+        // Before the launcher takes focus, while your window is still in
+        // front. Always captured (pasting and window commands need it); the
+        // setting decides whether Claude is told about it.
+        state.desktop.capture(&state.shell);
         state.apps.refresh_if_stale(APPS_MAX_AGE);
         crate::check_claude_status(app, false);
     }

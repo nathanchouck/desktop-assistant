@@ -212,6 +212,8 @@ impl FileProvider {
                     icon: Some(icon_key),
                     score,
                     actions: vec![Action::Open, Action::RevealInExplorer, Action::CopyPath],
+                    accessory: None,
+                    confirm: None,
                 }
             })
             .collect();

@@ -3,10 +3,12 @@
 //!
 //! Providers return raw fuzzy scores; all tuning lives here.
 
-use super::ResultItem;
+use super::{ItemKind, ResultItem};
 
-/// Typing a result's whole name always puts it first.
+/// Typing a result's whole name always puts it first...
 const EXACT_TIER: u8 = 1;
+/// ...after a calculation's answer, which is what you typed it for.
+const ANSWER_TIER: u8 = 2;
 /// Bonus when the name starts with the query ("cal" → Calculator).
 const PREFIX_BONUS: f32 = 0.3;
 /// Smaller bonus when any word starts with the query ("code" → VS Code).
@@ -22,7 +24,11 @@ pub fn rank(items: &mut [ResultItem], query: &str, frecency: &dyn Fn(&str) -> f6
         .enumerate()
         .map(|(i, item)| {
             let title = item.title.to_lowercase();
-            let tier = u8::from(title == query) * EXACT_TIER;
+            let tier = if item.kind == ItemKind::Answer {
+                ANSWER_TIER
+            } else {
+                u8::from(title == query) * EXACT_TIER
+            };
             let blended =
                 (item.score + name_bonus(&title, &query)) * (1.0 + boost(frecency(&item.id)));
             (tier, blended, i)
@@ -59,7 +65,7 @@ fn boost(frecency: f64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::{Action, ItemKind};
+    use crate::search::Action;
     use std::collections::HashMap;
 
     fn item(id: &str, title: &str, score: f32) -> ResultItem {
@@ -71,6 +77,8 @@ mod tests {
             icon: None,
             score,
             actions: vec![Action::Open],
+            accessory: None,
+            confirm: None,
         }
     }
 
@@ -95,6 +103,16 @@ mod tests {
         let heavy = |id: &str| if id == "a" { 100.0 } else { 0.0 };
         rank(&mut items, "code", &heavy);
         assert_eq!(titles(&items), ["Code", "Code Writer"]);
+    }
+
+    #[test]
+    fn answers_come_before_even_an_exact_name() {
+        let mut items = vec![
+            item("a", "1+1", 1.0),
+            ResultItem::new("calc:1+1", ItemKind::Answer, "2").with_score(0.1),
+        ];
+        rank(&mut items, "1+1", &none);
+        assert_eq!(titles(&items), ["2", "1+1"]);
     }
 
     #[test]

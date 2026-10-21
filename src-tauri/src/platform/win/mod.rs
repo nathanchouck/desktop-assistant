@@ -5,6 +5,7 @@ mod capture;
 pub mod desktop;
 pub mod everything;
 mod icon;
+pub mod input;
 mod launch;
 pub mod sta;
 
