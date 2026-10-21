@@ -174,6 +174,21 @@ pub fn age(now_ms: i64, then_ms: i64) -> String {
     }
 }
 
+/// A program's name from its path: `C:\...\chrome.exe` → `chrome`.
+pub fn program_name(path: &str) -> String {
+    let file = path.rsplit(['\\', '/']).next().unwrap_or(path);
+    match file.len().checked_sub(4) {
+        Some(cut)
+            if file
+                .get(cut..)
+                .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe")) =>
+        {
+            file[..cut].to_owned()
+        }
+        _ => file.to_owned(),
+    }
+}
+
 /// Whether copies made in `app` (a program name such as "KeePassXC" or
 /// "keepassxc.exe") are ignored by the `ignore` list.
 pub fn is_ignored(app: &str, ignore: &[String]) -> bool {
@@ -292,6 +307,14 @@ mod tests {
         assert!(is_ignored("KEEPASSXC.EXE", &ignore));
         assert!(!is_ignored("KeePass.exe", &ignore));
         assert!(!is_ignored("", &ignore));
+    }
+
+    #[test]
+    fn program_names() {
+        assert_eq!(program_name(r"C:\Program Files\Google\chrome.exe"), "chrome");
+        assert_eq!(program_name(r"C:\Windows\EXPLORER.EXE"), "EXPLORER");
+        assert_eq!(program_name("Code"), "Code");
+        assert_eq!(program_name(".exe"), "");
     }
 
     #[test]
