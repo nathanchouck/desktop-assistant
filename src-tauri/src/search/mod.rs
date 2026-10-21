@@ -16,7 +16,16 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::ai::ProviderId;
+use commands::BuiltinCommand;
 pub use item::{Action, ItemKind, ResultItem};
+
+/// What the last row offers: asking the AI, or fixing what stops it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AskRow {
+    Ask(ProviderId),
+    InstallClaude,
+    SignInToClaude,
+}
 
 /// Time the providers get per keystroke before results are shown. A slower
 /// provider keeps going, and its results follow (see `Outcome::complete`).
@@ -86,13 +95,7 @@ impl Aggregator {
     /// `rank.rs`), and always appends an "Ask <provider>" row so unmatched
     /// text can go to the AI. Providers that miss the budget aren't dropped:
     /// their results come in `Outcome::complete`.
-    pub async fn search(
-        &self,
-        raw: &str,
-        limit: usize,
-        ai: ProviderId,
-        frecency: Frecency,
-    ) -> Outcome {
+    pub async fn search(&self, raw: &str, limit: usize, ai: AskRow, frecency: Frecency) -> Outcome {
         let query = raw.trim().to_owned();
         if query.is_empty() {
             return Outcome {
@@ -169,7 +172,7 @@ fn finish(
     mut items: Vec<ResultItem>,
     query: &str,
     limit: usize,
-    ai: ProviderId,
+    ai: AskRow,
     frecency: &(dyn Fn(&str) -> f64 + Send + Sync),
 ) -> Vec<ResultItem> {
     rank::rank(&mut items, query, frecency);
@@ -178,10 +181,33 @@ fn finish(
     items
 }
 
-fn ask_ai_item(query: &str, ai: ProviderId) -> ResultItem {
+fn ask_ai_item(query: &str, ai: AskRow) -> ResultItem {
+    let fix = |cmd: BuiltinCommand, title: String, subtitle: &str| ResultItem {
+        id: cmd.id().into(),
+        kind: ItemKind::Command,
+        title,
+        subtitle: subtitle.into(),
+        icon: None,
+        score: 0.0,
+        actions: vec![Action::Run],
+    };
     let name = match ai {
-        ProviderId::Claude => "Claude",
-        ProviderId::Chatgpt => "ChatGPT",
+        AskRow::Ask(ProviderId::Claude) => "Claude",
+        AskRow::Ask(ProviderId::Chatgpt) => "ChatGPT",
+        AskRow::InstallClaude => {
+            return fix(
+                BuiltinCommand::InstallClaude,
+                format!("Install Claude Code to ask: {query}"),
+                "Opens the install page",
+            )
+        }
+        AskRow::SignInToClaude => {
+            return fix(
+                BuiltinCommand::SignInToClaude,
+                format!("Sign in to Claude Code to ask: {query}"),
+                "Opens a sign-in window",
+            )
+        }
     };
     ResultItem {
         id: "ask-ai".into(),
@@ -254,7 +280,9 @@ mod tests {
     #[tokio::test]
     async fn empty_query_returns_nothing() {
         let a = agg(vec![Arc::new(Fixed("a", vec![1.0], Duration::ZERO))]);
-        let outcome = a.search("   ", 8, ProviderId::Claude, no_history()).await;
+        let outcome = a
+            .search("   ", 8, AskRow::Ask(ProviderId::Claude), no_history())
+            .await;
         assert!(outcome.items.is_empty() && outcome.complete.is_none());
     }
 
@@ -265,7 +293,7 @@ mod tests {
             Arc::new(Fixed("b", vec![0.5], Duration::ZERO)),
         ]);
         let items = a
-            .search("x", 8, ProviderId::Claude, no_history())
+            .search("x", 8, AskRow::Ask(ProviderId::Claude), no_history())
             .await
             .items;
         assert_eq!(ids(&items), ["a:1", "b:0", "a:0", "ask-ai"]);
@@ -280,7 +308,7 @@ mod tests {
             Duration::ZERO,
         ))]);
         let items = a
-            .search("x", 2, ProviderId::Chatgpt, no_history())
+            .search("x", 2, AskRow::Ask(ProviderId::Chatgpt), no_history())
             .await
             .items;
         assert_eq!(ids(&items), ["a:2", "a:1", "ask-ai"]);
@@ -291,7 +319,10 @@ mod tests {
     async fn history_reorders_results() {
         let a = agg(vec![Arc::new(Fixed("a", vec![0.9, 0.8], Duration::ZERO))]);
         let used: Frecency = Arc::new(|id: &str| if id == "a:1" { 20.0 } else { 0.0 });
-        let items = a.search("x", 8, ProviderId::Claude, used).await.items;
+        let items = a
+            .search("x", 8, AskRow::Ask(ProviderId::Claude), used)
+            .await
+            .items;
         assert_eq!(ids(&items), ["a:1", "a:0", "ask-ai"]);
     }
 
@@ -302,7 +333,9 @@ mod tests {
             Arc::new(Fixed("slow", vec![1.0], Duration::from_millis(200))),
             Arc::new(Failing),
         ]);
-        let outcome = a.search("x", 8, ProviderId::Claude, no_history()).await;
+        let outcome = a
+            .search("x", 8, AskRow::Ask(ProviderId::Claude), no_history())
+            .await;
         assert_eq!(ids(&outcome.items), ["fast:0", "ask-ai"]);
         let complete = outcome.complete.expect("slow provider still running").await;
         assert_eq!(ids(&complete), ["slow:0", "fast:0", "ask-ai"]);
@@ -312,7 +345,7 @@ mod tests {
     async fn no_update_when_everyone_is_on_time() {
         let a = agg(vec![Arc::new(Fixed("fast", vec![0.5], Duration::ZERO))]);
         assert!(a
-            .search("x", 8, ProviderId::Claude, no_history())
+            .search("x", 8, AskRow::Ask(ProviderId::Claude), no_history())
             .await
             .complete
             .is_none());
@@ -325,8 +358,29 @@ mod tests {
             Arc::new(Fixed("stuck", vec![1.0], Duration::from_secs(3600))),
         ])
         .with_late_limit(Duration::from_millis(100));
-        let outcome = a.search("x", 8, ProviderId::Claude, no_history()).await;
+        let outcome = a
+            .search("x", 8, AskRow::Ask(ProviderId::Claude), no_history())
+            .await;
         let complete = outcome.complete.expect("stuck provider pending").await;
         assert_eq!(ids(&complete), ["fast:0", "ask-ai"]);
+    }
+
+    #[tokio::test]
+    async fn offers_a_fix_when_claude_cant_answer() {
+        let a = agg(vec![]);
+        let items = a
+            .search("sort my files", 8, AskRow::SignInToClaude, no_history())
+            .await
+            .items;
+        assert_eq!(ids(&items), ["cmd:claude-sign-in"]);
+        assert_eq!(
+            items[0].title,
+            "Sign in to Claude Code to ask: sort my files"
+        );
+        let items = a
+            .search("x", 8, AskRow::InstallClaude, no_history())
+            .await
+            .items;
+        assert_eq!(ids(&items), ["cmd:claude-install"]);
     }
 }

@@ -5,6 +5,10 @@ pub mod protocol;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use serde::Serialize;
 
 use super::{AiError, Approvals, BillingMode};
 use crate::settings::ClaudeSettings;
@@ -85,6 +89,17 @@ fn locate_in(
     }
     if let Some(appdata) = appdata {
         candidates.push(appdata.join("npm").join("claude.cmd"));
+    }
+    // WinGet's links folder: on PATH, but only for programs started after
+    // the install, which the launcher (started at login) may not be.
+    if let Some(local) = home.map(|h| h.join("AppData").join("Local")) {
+        candidates.push(
+            local
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Links")
+                .join(NAMES[0]),
+        );
     }
     candidates
         .into_iter()
@@ -173,17 +188,18 @@ pub fn args(options: &Options) -> Vec<String> {
     args
 }
 
-/// The ready-to-spawn process: pipes, working folder, no console window, and
-/// API key variables removed in subscription mode so the plan pays.
-pub fn command(launch: &Launch, options: &Options) -> Result<tokio::process::Command, AiError> {
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
+/// `claude` with API key variables removed in subscription mode, so the
+/// plan pays. `window_flags` are Windows process creation flags.
+fn base_command(
+    launch: &Launch,
+    billing: BillingMode,
+    window_flags: u32,
+) -> Result<tokio::process::Command, AiError> {
     let mut cmd = launch.command();
-    cmd.args(args(options))
-        .current_dir(&options.cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    match options.billing {
+    match billing {
         BillingMode::Subscription => {
             cmd.env_remove("ANTHROPIC_API_KEY")
                 .env_remove("ANTHROPIC_AUTH_TOKEN");
@@ -195,11 +211,152 @@ pub fn command(launch: &Launch, options: &Options) -> Result<tokio::process::Com
         }
     }
     #[cfg(windows)]
-    {
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
+    cmd.creation_flags(window_flags);
+    #[cfg(not(windows))]
+    let _ = window_flags;
     Ok(cmd)
+}
+
+/// The ready-to-spawn conversation process: pipes, working folder, no
+/// console window.
+pub fn command(launch: &Launch, options: &Options) -> Result<tokio::process::Command, AiError> {
+    let mut cmd = base_command(launch, options.billing, CREATE_NO_WINDOW)?;
+    cmd.args(args(options))
+        .current_dir(&options.cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    Ok(cmd)
+}
+
+/// Whether Claude Code can answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeStatus {
+    Ready,
+    NotInstalled,
+    SignedOut,
+    /// The check didn't work (timed out, odd output): assume it can answer
+    /// and let a real error say otherwise.
+    Unknown,
+}
+
+/// Reads `claude auth status --json`.
+pub fn parse_status(stdout: &str) -> ClaudeStatus {
+    let parsed: Option<serde_json::Value> = serde_json::from_str(stdout.trim()).ok();
+    match parsed.as_ref().and_then(|v| v["loggedIn"].as_bool()) {
+        Some(true) => ClaudeStatus::Ready,
+        Some(false) => ClaudeStatus::SignedOut,
+        None => ClaudeStatus::Unknown,
+    }
+}
+
+/// Checks that Claude Code is installed and signed in. Takes about a
+/// second (it starts Claude Code), so run it in the background.
+pub async fn check_status(settings: &ClaudeSettings) -> ClaudeStatus {
+    let Some(launch) = locate(&settings.path) else {
+        return ClaudeStatus::NotInstalled;
+    };
+    if settings.billing == BillingMode::ApiKey {
+        // An API key needs no sign-in; a missing key is reported on asking.
+        return ClaudeStatus::Ready;
+    }
+    let Ok(mut cmd) = base_command(&launch, settings.billing, CREATE_NO_WINDOW) else {
+        return ClaudeStatus::Unknown;
+    };
+    cmd.args(["auth", "status", "--json"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    match tokio::time::timeout(Duration::from_secs(20), cmd.output()).await {
+        Ok(Ok(output)) => parse_status(&String::from_utf8_lossy(&output.stdout)),
+        Ok(Err(e)) => {
+            tracing::warn!("could not check Claude Code's sign-in: {e}");
+            ClaudeStatus::Unknown
+        }
+        Err(_) => {
+            tracing::warn!("Claude Code's sign-in check timed out");
+            ClaudeStatus::Unknown
+        }
+    }
+}
+
+/// Starts `claude auth login` in its own console window, where it opens the
+/// browser to sign in. Returns the running process.
+pub fn sign_in(settings: &ClaudeSettings) -> Result<tokio::process::Child, AiError> {
+    let launch = locate(&settings.path).ok_or(AiError::NotInstalled)?;
+    let mut cmd = base_command(&launch, BillingMode::Subscription, CREATE_NEW_CONSOLE)?;
+    cmd.args(["auth", "login", "--claudeai"]);
+    cmd.spawn().map_err(|e| AiError::Spawn(e.to_string()))
+}
+
+/// The last status check, so searching never waits for one.
+pub struct StatusCache {
+    last: Mutex<Option<(ClaudeStatus, Instant)>>,
+    checking: std::sync::atomic::AtomicBool,
+}
+
+/// Re-check this often when everything was fine...
+const RECHECK_READY: Duration = Duration::from_secs(30 * 60);
+/// ...and this often while something needs fixing, so a fix shows up soon.
+const RECHECK_BROKEN: Duration = Duration::from_secs(15);
+
+impl Default for StatusCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StatusCache {
+    pub fn new() -> Self {
+        Self {
+            last: Mutex::new(None),
+            checking: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// Claims the right to run a check; `false` if one is already running.
+    pub fn begin_check(&self) -> bool {
+        !self
+            .checking
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+    }
+
+    /// Stores a check's result and releases the claim.
+    pub fn finish_check(&self, status: ClaudeStatus) {
+        self.set(status);
+        self.checking
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+
+    /// The last result; `Unknown` before the first check finishes.
+    pub fn get(&self) -> ClaudeStatus {
+        self.last
+            .lock()
+            .ok()
+            .and_then(|last| last.map(|(status, _)| status))
+            .unwrap_or(ClaudeStatus::Unknown)
+    }
+
+    pub fn set(&self, status: ClaudeStatus) {
+        if let Ok(mut last) = self.last.lock() {
+            *last = Some((status, Instant::now()));
+        }
+    }
+
+    /// Whether it's time to check again.
+    pub fn is_stale(&self) -> bool {
+        let Ok(last) = self.last.lock() else {
+            return true;
+        };
+        match *last {
+            None => true,
+            Some((ClaudeStatus::Ready, at)) => at.elapsed() > RECHECK_READY,
+            Some((_, at)) => at.elapsed() > RECHECK_BROKEN,
+        }
+    }
 }
 
 /// Where Claude Code is and how to start it, from the settings.
@@ -336,6 +493,54 @@ mod tests {
                 cli: cli_dir.join("cli.js")
             })
         );
+    }
+
+    #[test]
+    fn reads_the_sign_in_status() {
+        assert_eq!(
+            parse_status(r#"{"loggedIn": true, "authMethod": "oauth_token"}"#),
+            ClaudeStatus::Ready
+        );
+        assert_eq!(
+            parse_status("{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\"\n}\n"),
+            ClaudeStatus::SignedOut
+        );
+        assert_eq!(parse_status("Usage: claude ..."), ClaudeStatus::Unknown);
+    }
+
+    #[test]
+    fn rechecks_sooner_while_broken() {
+        let cache = StatusCache::new();
+        assert!(cache.is_stale());
+        assert_eq!(cache.get(), ClaudeStatus::Unknown);
+        cache.set(ClaudeStatus::SignedOut);
+        assert_eq!(cache.get(), ClaudeStatus::SignedOut);
+        assert!(!cache.is_stale());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn checks_status_with_the_real_command_line() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("claude");
+        // Answers like `claude auth status --json` only for those arguments.
+        fs::write(
+            &script,
+            "#!/bin/sh\n[ \"$*\" = \"auth status --json\" ] && echo '{\"loggedIn\": false}' && exit 1\nexit 2\n",
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let settings = ClaudeSettings {
+            path: script.display().to_string(),
+            ..ClaudeSettings::default()
+        };
+        assert_eq!(check_status(&settings).await, ClaudeStatus::SignedOut);
+        let missing = ClaudeSettings {
+            path: "/nope/claude".into(),
+            ..ClaudeSettings::default()
+        };
+        assert_eq!(check_status(&missing).await, ClaudeStatus::NotInstalled);
     }
 
     #[test]

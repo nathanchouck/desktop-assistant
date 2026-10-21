@@ -15,6 +15,8 @@ use crate::search::Action;
 use crate::state::AppState;
 use crate::window;
 
+const CLAUDE_INSTALL_PAGE: &str = "https://code.claude.com/docs/en/setup";
+
 /// Runs `action` on the result with `id`, records the open for ranking, and
 /// hides the launcher.
 pub async fn activate(app: &AppHandle, id: &str, action: Action) -> AppResult<()> {
@@ -71,6 +73,23 @@ pub fn run_builtin(app: &AppHandle, cmd: BuiltinCommand) -> AppResult<()> {
         BuiltinCommand::ReindexApps => {
             state.icons.clear();
             state.apps.refresh_in_background();
+        }
+        BuiltinCommand::SignInToClaude => {
+            let mut login = crate::ai::claude::sign_in(&state.settings().ai.claude)
+                .map_err(|e| AppError::Launch(e.to_string()))?;
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = login.wait().await;
+                crate::check_claude_status(&app, true);
+            });
+        }
+        BuiltinCommand::InstallClaude => {
+            app.opener()
+                .open_url(CLAUDE_INSTALL_PAGE, None::<&str>)
+                .map_err(|e| AppError::Open {
+                    path: CLAUDE_INSTALL_PAGE.into(),
+                    reason: e.to_string(),
+                })?;
         }
         BuiltinCommand::Quit => app.exit(0),
     }

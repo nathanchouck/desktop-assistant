@@ -11,11 +11,12 @@ use tauri::{AppHandle, State, Wry};
 use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 use crate::actions;
-use crate::ai::{claude, AiEvent};
+use crate::ai::claude::ClaudeStatus;
+use crate::ai::{claude, AiEvent, ProviderId};
 use crate::desktop::{self, DesktopContext};
 use crate::error::IpcError;
 use crate::file_index::IndexStatus;
-use crate::search::{Action, Frecency, ResultItem};
+use crate::search::{Action, AskRow, Frecency, ResultItem};
 use crate::settings::Settings;
 use crate::state::AppState;
 use crate::window;
@@ -65,10 +66,12 @@ async fn search_query(
     let limit = settings.search.max_results as usize;
     let store = Arc::clone(&state.store);
     let frecency: Frecency = Arc::new(move |id| store.frecency(id));
-    let outcome = state
-        .search
-        .search(&query, limit, settings.ai.default_provider, frecency)
-        .await;
+    let ask = match (settings.ai.default_provider, state.claude_status.get()) {
+        (ProviderId::Claude, ClaudeStatus::NotInstalled) => AskRow::InstallClaude,
+        (ProviderId::Claude, ClaudeStatus::SignedOut) => AskRow::SignInToClaude,
+        (provider, _) => AskRow::Ask(provider),
+    };
+    let outcome = state.search.search(&query, limit, ask, frecency).await;
     // A slow provider (big file index, busy disk) sends its results later
     // instead of dropping them.
     if let Some(complete) = outcome.complete {

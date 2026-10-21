@@ -91,6 +91,7 @@ pub fn run() {
             start_app_index(handle);
             start_file_index_unless_everything(handle);
             start_chat(handle);
+            check_claude_status(handle, true);
 
             // Handy while developing; release builds start hidden in the tray.
             if cfg!(debug_assertions) {
@@ -111,6 +112,23 @@ pub fn run() {
         });
 }
 
+/// Checks in the background whether Claude Code is installed and signed in,
+/// if the last check is stale (or `force`). Search shows a fix-it row
+/// instead of "Ask Claude" while it isn't.
+pub(crate) fn check_claude_status(app: &AppHandle, force: bool) {
+    let state = app.state::<AppState>();
+    let cache = Arc::clone(&state.claude_status);
+    if !(force || cache.is_stale()) || !cache.begin_check() {
+        return;
+    }
+    let settings = state.settings().ai.claude;
+    tauri::async_runtime::spawn(async move {
+        let status = ai::claude::check_status(&settings).await;
+        tracing::info!("Claude Code status: {status:?}");
+        cache.finish_check(status);
+    });
+}
+
 /// How long an unused conversation keeps its Claude Code process.
 const CHAT_IDLE: Duration = Duration::from_secs(10 * 60);
 
@@ -122,6 +140,10 @@ fn start_chat(app: &AppHandle) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             while let Some((conversation, event)) = events.recv().await {
+                // An error may mean Claude Code was signed out or removed.
+                if matches!(event, ai::AiEvent::Error { .. }) {
+                    check_claude_status(&app, true);
+                }
                 if let Err(e) = (ipc::AiStream {
                     conversation,
                     event,

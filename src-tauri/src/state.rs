@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::mpsc;
 
 use crate::ai::chat::Chat;
+use crate::ai::claude::StatusCache;
 use crate::ai::AiEvent;
 use crate::desktop::{DesktopContext, DesktopTracker};
 use crate::file_index::FileIndex;
@@ -31,6 +32,9 @@ pub struct AppState {
     /// Keeps the Start Menu watcher alive.
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
     pub chat: Arc<Chat>,
+    /// Whether Claude Code is installed and signed in, checked in the
+    /// background so searching never waits.
+    pub claude_status: Arc<StatusCache>,
     /// What was on screen when the launcher last opened.
     pub desktop: Arc<DesktopTracker>,
     /// The desktop context last sent in the current conversation, so a
@@ -71,6 +75,7 @@ impl AppState {
         let (chat_tx, chat_rx) = mpsc::unbounded_channel();
         Self {
             chat: Arc::new(Chat::new(chat_tx)),
+            claude_status: Arc::new(StatusCache::new()),
             chat_events: Mutex::new(Some(chat_rx)),
             desktop: Arc::new(DesktopTracker::new()),
             sent_context: Mutex::new(None),

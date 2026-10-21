@@ -145,7 +145,7 @@ fn explain_error(text: &str) -> String {
     }
     let lower = text.to_lowercase();
     if lower.contains("login") || lower.contains("api key") || lower.contains("authenticat") {
-        format!("{text} (Open a terminal, run `claude`, and sign in, then try again.)")
+        format!("{text} (To sign in, close this chat and pick \"Sign In to Claude Code\" in the launcher.)")
     } else {
         text.to_owned()
     }

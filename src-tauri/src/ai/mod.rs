@@ -82,8 +82,8 @@ pub enum AiEvent {
 #[derive(Debug, thiserror::Error)]
 pub enum AiError {
     #[error(
-        "Claude Code isn't installed (or isn't on PATH). Install it from \
-         https://code.claude.com, run `claude` once to sign in, then try again."
+        "Claude Code isn't installed. Close this chat and pick \"Install Claude Code\" \
+         in the launcher, then sign in."
     )]
     NotInstalled,
     #[error("API key mode is on but ANTHROPIC_API_KEY isn't set")]

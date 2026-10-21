@@ -13,14 +13,18 @@ pub enum BuiltinCommand {
     OpenSettings,
     OpenLogFolder,
     ReindexApps,
+    SignInToClaude,
+    InstallClaude,
     Quit,
 }
 
 impl BuiltinCommand {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 6] = [
         Self::OpenSettings,
         Self::OpenLogFolder,
         Self::ReindexApps,
+        Self::SignInToClaude,
+        Self::InstallClaude,
         Self::Quit,
     ];
 
@@ -29,6 +33,8 @@ impl BuiltinCommand {
             Self::OpenSettings => "cmd:settings",
             Self::OpenLogFolder => "cmd:logs",
             Self::ReindexApps => "cmd:reindex",
+            Self::SignInToClaude => "cmd:claude-sign-in",
+            Self::InstallClaude => "cmd:claude-install",
             Self::Quit => "cmd:quit",
         }
     }
@@ -42,6 +48,8 @@ impl BuiltinCommand {
             Self::OpenSettings => "Open Settings",
             Self::OpenLogFolder => "Open Log Folder",
             Self::ReindexApps => "Reindex Apps",
+            Self::SignInToClaude => "Sign In to Claude Code",
+            Self::InstallClaude => "Install Claude Code",
             Self::Quit => "Quit Desktop Assistant",
         }
     }
@@ -52,6 +60,8 @@ impl BuiltinCommand {
             Self::OpenSettings => &["preferences", "config", "options"],
             Self::OpenLogFolder => &["debug", "logs"],
             Self::ReindexApps => &["refresh", "rescan", "rebuild"],
+            Self::SignInToClaude => &["login", "log in", "claude account"],
+            Self::InstallClaude => &["setup", "download claude"],
             Self::Quit => &["exit", "close"],
         }
     }

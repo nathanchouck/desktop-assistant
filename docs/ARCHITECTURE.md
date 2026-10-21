@@ -305,6 +305,15 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
   (`%APPDATA%\npm`). An npm install is started as `node cli.js` rather than
   through its `.cmd` shim, so cmd.exe never touches the arguments.
   `ai.claude.path` overrides the search.
+- **Install and sign-in check:** `claude auth status --json` runs in the
+  background at startup, when the launcher opens (every 30 min while fine,
+  every 15 s while broken) and after a chat error. While Claude Code is
+  missing or signed out, the "Ask Claude" row becomes "Install Claude Code
+  to ask: …" (opens the setup page) or "Sign in to Claude Code to ask: …"
+  (runs `claude auth login` in a console window, then checks again). Tab
+  runs the fix too. Both are also commands you can search for. WinGet's
+  links folder is checked as well, since the launcher's PATH predates an
+  install made after login.
 - **One process per conversation:**
   `claude -p --input-format stream-json --output-format stream-json --verbose
   --include-partial-messages --permission-prompt-tool stdio --model <model>`,

@@ -1,6 +1,9 @@
 import { commands, type Action, type ResultItem, type SearchUpdated } from "../bindings";
 import { LatestOnly } from "../latest";
 
+/** Rows that stand in for "Ask Claude" when it can't answer yet. */
+const FIX_ROWS = ["cmd:claude-install", "cmd:claude-sign-in"];
+
 /** State for the search box and results list. */
 export class SearchStore {
   query = $state("");
@@ -66,7 +69,15 @@ export class SearchStore {
   /** Sends the query to the AI, whatever the results. */
   ask(text = this.query): void {
     const question = text.trim();
-    if (question) this.#onAsk(question);
+    if (!question) return;
+    // When Claude can't answer yet, the last row offers the fix instead
+    // (install or sign in): run that.
+    const last = this.items.length - 1;
+    if (FIX_ROWS.includes(this.items[last]?.id ?? "")) {
+      void this.activate(last);
+      return;
+    }
+    this.#onAsk(question);
   }
 
   /** Runs `action` (default: the item's first action) on row `index`. */

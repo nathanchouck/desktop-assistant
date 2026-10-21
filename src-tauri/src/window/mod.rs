@@ -110,6 +110,7 @@ pub fn show(app: &AppHandle, started: Instant) {
             state.desktop.capture(&state.shell);
         }
         state.apps.refresh_if_stale(APPS_MAX_AGE);
+        crate::check_claude_status(app, false);
     }
     if let Err(e) = place_on_cursor_monitor(app, &window, height) {
         tracing::debug!("could not position launcher: {e}");

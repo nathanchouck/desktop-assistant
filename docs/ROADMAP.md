@@ -78,7 +78,7 @@ Check on a real Windows machine:
 Goal: Claude handles the tedious stuff ("move this file into my Astro folder",
 "sort Downloads by type"), aware of what's on screen.
 
-- [ ] Detect `claude` install + login status; fix-it row if missing
+- [x] Detect `claude` install + login status; fix-it row if missing (install page / sign-in window)
 - [x] Model setting: Sonnet 5.5 by default, Haiku 5.5 as an option (e.g. for quick questions); `--model` per run
 - [x] Desktop context captured when the launcher opens: the window you were in (title, app), and for File Explorer its open folder and selected files (Shell COM: `IShellWindows`) (D-021)
 - [ ] Desktop MCP server hosted by the launcher, so Claude can ask for context and act on demand: active window, Explorer folder/selection, open windows, search files/apps (our index), reveal/open
