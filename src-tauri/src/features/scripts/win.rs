@@ -29,7 +29,11 @@ pub fn oem_to_string(bytes: &[u8]) -> Option<String> {
 /// programs would otherwise live on).
 pub async fn kill_tree(pid: u32) {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut taskkill = tokio::process::Command::new("taskkill.exe");
+    // Windows' own copy, not whatever a script folder on PATH might hold.
+    let program = std::env::var_os("SystemRoot")
+        .map(|root| std::path::Path::new(&root).join(r"System32\taskkill.exe"))
+        .unwrap_or_else(|| "taskkill.exe".into());
+    let mut taskkill = tokio::process::Command::new(program);
     taskkill
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .stdin(std::process::Stdio::null())
