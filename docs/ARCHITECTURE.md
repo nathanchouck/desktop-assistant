@@ -379,27 +379,36 @@ Tune in `rank.rs` only; providers return raw fuzzy scores.
 
 ## Windows key override
 
-`hotkey/win_key.rs` installs a `WH_KEYBOARD_LL` hook on a dedicated thread with
-its own message loop. The decision logic lives in `hotkey/tap.rs` as a pure
-state machine with unit tests; the hook just feeds it events.
+`hotkey/win_key.rs` installs a `WH_KEYBOARD_LL` hook on a dedicated
+time-critical thread with its own message loop. The decision logic lives in
+`hotkey/tap.rs` as a pure state machine with unit tests; the hook just feeds
+it events and carries out its verdicts. (D-022)
 
-- Win down: let it through and remember it. With Shift/Ctrl/Alt already held,
-  it's a combo from the start.
-- Any other key down while Win is held: a combo (Win+E, Win+V...), so no tap.
-- Win up, for a Win down we saw (tap or combo alike): swallow the real key-up
-  and inject, in one `SendInput`, mask down, mask up, Win up. Windows sees
-  Win+mask, a combo, so Start never opens. The mask is `0xE8`, an unassigned
-  virtual key (AutoHotkey's trick). Masking every release, not just taps,
-  means a misjudged press can't let Start through either. (D-015)
-- Win up after a lone tap also posts "toggle launcher" to the main thread.
-- If `SendInput` doesn't insert all three events, the real key-up goes
-  through instead, so Windows can never think Win is stuck down.
+- Win down: hidden from Windows. With Shift/Ctrl/Alt already held (or the
+  other Win key down), it's a shortcut from the start and goes through.
+- Another key down while a hidden Win is held: a shortcut (Win+E,
+  Win+Shift+S...). Win is injected for Windows first, then the key goes
+  through; keys injected inside a hook are handled before the hooked key, so
+  the order is right. From then on Win behaves normally.
+- Win+L with Win hidden: the hook calls `LockWorkStation` itself (Windows
+  ignores an injected Win for locking) and hides the L.
+- Win up after a hidden press: hidden too, so Windows never saw the key and
+  Start can't open. If nothing came in between, it was a lone tap: "toggle
+  launcher" is posted to the main thread.
+- Win up that Windows saw go down (a shortcut, or a press the hook missed
+  because Windows skipped it): the real key-up is swallowed and replayed as
+  mask down, mask up, Win up in one `SendInput`. Windows sees Win+mask, a
+  shortcut, so Start stays closed. The mask is `0xE8`, an unassigned virtual
+  key (AutoHotkey's trick). If `SendInput` fails, the real key-up goes
+  through, so Windows can never think Win is stuck down. (D-015)
 - Injected events carry a tag in `dwExtraInfo` so the hook skips its own.
-- The hook callback only updates state, injects and posts. Windows silently
-  removes hooks that take too long (`LowLevelHooksTimeout`).
+- The hook callback only updates state, injects and posts, and its thread
+  runs at time-critical priority: Windows skips a hook that answers late
+  (`LowLevelHooksTimeout`), which is how a tap used to reach Start while the
+  app was busy. Parallel file search leaves a core free for the same reason.
 - Limits: it can't see keys while an elevated (admin) window has focus unless
-  this app also runs elevated. Ctrl+Esc still opens Start.
-  `hotkeys.win_key_override = false` turns it off (applied at startup).
+  this app also runs elevated. Ctrl+Esc and the Start button still open
+  Start. `hotkeys.win_key_override = false` turns it off (applied at startup).
 
 ## Storage & paths
 

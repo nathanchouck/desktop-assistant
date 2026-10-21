@@ -1,17 +1,19 @@
 //! Windows only: a low-level keyboard hook that turns a lone tap of the
-//! Windows key into "toggle the launcher", while Win+<key> combos still work.
+//! Windows key into "toggle the launcher", while Win+<key> shortcuts still
+//! work. `tap.rs` decides; this file carries it out (D-022):
 //!
-//! How Start stays closed: when a Windows key is released, the hook swallows
-//! the real key-up and replays it as mask-down, mask-up, Win-up in a single
-//! `SendInput`. The mask is an unassigned key, so Windows sees "Win+mask", a
-//! combo, and doesn't open Start. Doing it as one batch keeps the order exact
-//! no matter when Windows processes keys injected from inside a hook (it
-//! handles them *before* the key being hooked; see D-015).
+//! - A Windows key press is hidden until another key shows it's a shortcut;
+//!   then Win is injected just before that key. Keys injected from inside a
+//!   hook are handled *before* the key being hooked (D-015), so the order is
+//!   right. A lone tap is hidden entirely, so Start never sees it.
+//! - A release Windows did see is replayed as mask-down, mask-up, Win-up in
+//!   one `SendInput`; the mask is an unassigned key, so Windows sees
+//!   "Win+mask", a shortcut, and doesn't open Start.
 //!
-//! The hook lives on its own thread with a message loop, because Windows calls
-//! a low-level hook on the thread that installed it. The callback must return
-//! quickly or Windows silently removes the hook (`LowLevelHooksTimeout`), so it
-//! only updates the tap detector, injects keys, and hands the toggle off.
+//! The hook lives on its own high-priority thread with a message loop,
+//! because Windows calls a low-level hook on the thread that installed it,
+//! and skips it if it's slow to answer (`LowLevelHooksTimeout`). So the
+//! callback only updates the detector, injects keys, and hands work off.
 
 use std::cell::RefCell;
 use std::ptr::null_mut;
@@ -20,7 +22,10 @@ use std::thread::JoinHandle;
 
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+use windows_sys::Win32::System::Shutdown::LockWorkStation;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
+};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
     KEYEVENTF_KEYUP, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
@@ -32,6 +37,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::tap::{KeyEvent, Side, TapDetector, Verdict};
+
+/// Scan codes for the Windows keys (both "extended").
+const SCAN_LWIN: u16 = 0x5B;
+const SCAN_RWIN: u16 = 0x5C;
 use super::HotkeyError;
 
 /// An unassigned virtual-key code. Pressing it while Win is held makes
@@ -104,6 +113,11 @@ fn run_hook_thread(on_tap: Box<dyn Fn() + Send>, ready: mpsc::Sender<Result<u32,
     // SAFETY: standard Win32 hook + message loop, all on this thread. The hook
     // procedure only runs while this thread is inside GetMessageW.
     unsafe {
+        // Answer key events promptly even when the app is busy (indexing,
+        // searching): a late answer makes Windows skip the hook.
+        if SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) == 0 {
+            tracing::debug!("could not raise the keyboard hook's priority");
+        }
         let mut msg: MSG = std::mem::zeroed();
         // Create this thread's message queue now, so a WM_QUIT posted right
         // after startup isn't lost.
@@ -137,16 +151,32 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         let kb = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
         if kb.dwExtraInfo != INJECTED_TAG {
             if let Some(event) = to_event(kb.vkCode, wparam as u32, modifiers_held) {
-                if let Verdict::MaskedRelease { tap } = detect(event) {
-                    let replayed = replay_masked_release(kb.vkCode, kb.scanCode);
-                    if tap {
+                match detect(event) {
+                    Verdict::Pass => {}
+                    Verdict::Swallow => return 1,
+                    Verdict::Tap => {
                         notify_tap();
-                    }
-                    if replayed {
-                        // The replay above stands in for this key-up.
                         return 1;
                     }
-                    tracing::debug!("could not mask the Windows key; Start may open");
+                    Verdict::PressWinFirst { left, right } => {
+                        if !press_win(left, right) {
+                            tracing::debug!("could not press the Windows key for a shortcut");
+                        }
+                        // The key itself goes through after the injected Win.
+                    }
+                    Verdict::Lock => {
+                        // SAFETY: no preconditions; it fails harmlessly if
+                        // locking is disabled by policy.
+                        unsafe { LockWorkStation() };
+                        return 1;
+                    }
+                    Verdict::MaskedRelease => {
+                        if replay_masked_release(kb.vkCode, kb.scanCode) {
+                            // The replay above stands in for this key-up.
+                            return 1;
+                        }
+                        tracing::debug!("could not mask the Windows key; Start may open");
+                    }
                 }
             }
         }
@@ -171,7 +201,7 @@ fn to_event(vk: u32, message: u32, modifiers_held: fn() -> bool) -> Option<KeyEv
             modifiers_held: modifiers_held(),
         }),
         (Some(side), _, true) => Some(KeyEvent::WinUp { side }),
-        (None, true, _) => Some(KeyEvent::OtherDown),
+        (None, true, _) => Some(KeyEvent::OtherDown { vk }),
         _ => None,
     }
 }
@@ -202,14 +232,8 @@ fn notify_tap() {
     });
 }
 
-/// Injects mask-down, mask-up, Win-up as one batch. Returns true only if all
-/// three went in; otherwise the caller lets the real key-up through, so
-/// Windows can never be left thinking Win is still held.
-fn replay_masked_release(win_vk: u32, scan: u32) -> bool {
-    let (Ok(win_vk), Ok(scan)) = (u16::try_from(win_vk), u16::try_from(scan)) else {
-        return false;
-    };
-    let key = |vk: u16, scan: u16, flags: u32| INPUT {
+fn key_input(vk: u16, scan: u16, flags: u32) -> INPUT {
+    INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
@@ -220,13 +244,11 @@ fn replay_masked_release(win_vk: u32, scan: u32) -> bool {
                 dwExtraInfo: INJECTED_TAG,
             },
         },
-    };
-    let inputs = [
-        key(MASK_VK, 0, 0),
-        key(MASK_VK, 0, KEYEVENTF_KEYUP),
-        key(win_vk, scan, KEYEVENTF_KEYUP | KEYEVENTF_EXTENDEDKEY),
-    ];
-    // SAFETY: `inputs` is a valid array of INPUT for the duration of the call.
+    }
+}
+
+fn send(inputs: &[INPUT]) -> bool {
+    // SAFETY: `inputs` is a valid slice of INPUT for the duration of the call.
     let sent = unsafe {
         SendInput(
             inputs.len() as u32,
@@ -235,6 +257,35 @@ fn replay_masked_release(win_vk: u32, scan: u32) -> bool {
         )
     };
     sent == inputs.len() as u32
+}
+
+/// Presses the hidden Windows key(s) for Windows, ahead of the key being
+/// hooked, so the shortcut works.
+fn press_win(left: bool, right: bool) -> bool {
+    let mut inputs = Vec::with_capacity(2);
+    if left {
+        inputs.push(key_input(VK_LWIN, SCAN_LWIN, KEYEVENTF_EXTENDEDKEY));
+    }
+    if right {
+        inputs.push(key_input(VK_RWIN, SCAN_RWIN, KEYEVENTF_EXTENDEDKEY));
+    }
+    inputs.is_empty() || send(&inputs)
+}
+
+/// Injects mask-down, mask-up, Win-up as one batch. Returns true only if all
+/// three went in; otherwise the caller lets the real key-up through, so
+/// Windows can never be left thinking Win is still held.
+fn replay_masked_release(win_vk: u32, scan: u32) -> bool {
+    let (Ok(win_vk), Ok(scan)) = (u16::try_from(win_vk), u16::try_from(scan)) else {
+        return false;
+    };
+    let key = key_input;
+    let inputs = [
+        key(MASK_VK, 0, 0),
+        key(MASK_VK, 0, KEYEVENTF_KEYUP),
+        key(win_vk, scan, KEYEVENTF_KEYUP | KEYEVENTF_EXTENDEDKEY),
+    ];
+    send(&inputs)
 }
 
 #[cfg(test)]
@@ -273,7 +324,10 @@ mod tests {
 
     #[test]
     fn maps_other_keys() {
-        assert_eq!(to_event(0x45, WM_KEYDOWN, none), Some(KeyEvent::OtherDown));
+        assert_eq!(
+            to_event(0x45, WM_KEYDOWN, none),
+            Some(KeyEvent::OtherDown { vk: 0x45 })
+        );
         assert_eq!(to_event(0x45, WM_KEYUP, none), None);
     }
 }

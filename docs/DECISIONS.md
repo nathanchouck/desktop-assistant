@@ -169,3 +169,18 @@ feature, shown under each message ("Sees: …") so it's never hidden, and can
 be turned off in settings. Considered: an MCP tool Claude calls to fetch the
 context (still planned, for a fresh read), but on its own Claude would often
 not think to call it.
+
+## D-022 Windows key: hide a lone tap from Windows entirely (updates D-015)
+Quick taps still opened Start now and then. With D-015 Windows saw every Win
+press and only the release was masked, so anything that let one release
+through unmasked opened Start: chiefly Windows skipping our hook when it
+answered late (the app busy indexing or searching), since a press the hook
+never saw was passed through on release. Now a Win press is hidden until
+another key shows it's a shortcut, at which point Win is injected just
+before that key. A lone tap is never seen by Windows at all, so there is
+nothing for Start to react to; the D-015 masked release remains for presses
+Windows did see. The hook thread also runs at time-critical priority. Cost:
+Win+L can't be passed on this way (Windows ignores an injected Win for
+locking), so the hook locks the PC itself. Considered: turning off Start
+(no supported switch; the `NoWinKeys` policy also kills every Win shortcut)
+and killing the Start menu process (fragile, and it restarts).

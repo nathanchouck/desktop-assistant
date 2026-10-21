@@ -173,9 +173,11 @@ impl FileIndex {
         let threads = if total < PARALLEL_FROM {
             1
         } else {
+            // Leave a core for the UI and the keyboard hook.
             std::thread::available_parallelism()
                 .map_or(1, std::num::NonZeroUsize::get)
-                .min(MAX_THREADS)
+                .saturating_sub(1)
+                .clamp(1, MAX_THREADS)
         };
 
         let mut ranked: Vec<Ranked<'_>> = if threads == 1 {
