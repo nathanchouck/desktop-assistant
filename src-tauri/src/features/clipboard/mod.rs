@@ -97,7 +97,8 @@ pub fn provider(ctx: &ProviderContext) -> Option<Arc<dyn SearchProvider>> {
     )))
 }
 
-/// Starts listening for copies (Windows).
+/// Tidies the history, then listens for copies (Windows), off the main
+/// thread.
 pub fn start(app: &AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
@@ -105,13 +106,32 @@ pub fn start(app: &AppHandle) {
     let Some(history) = history(&state.paths) else {
         return;
     };
-    // The cap may have been lowered by hand in the settings file.
-    let max_items = state.settings().clipboard.max_items;
+    let settings = Arc::clone(&state.settings);
+    let started = std::thread::Builder::new()
+        .name("clipboard-start".into())
+        .spawn(move || {
+            tidy(
+                &history,
+                crate::settings::current(&settings).clipboard.max_items,
+            );
+            #[cfg(windows)]
+            win::start(history, settings);
+        });
+    if let Err(e) = started {
+        tracing::warn!("clipboard history is off: {e}");
+    }
+}
+
+/// Applies a cap lowered by hand in the settings file, and removes image
+/// files left behind. Before recording starts, so nothing is mid-save.
+fn tidy(history: &History, max_items: u32) {
     if let Err(e) = history.trim(max_items) {
         tracing::warn!("could not trim clipboard history: {e}");
     }
-    #[cfg(windows)]
-    win::start(history, Arc::clone(&state.settings));
+    let swept = history.sweep();
+    if swept > 0 {
+        tracing::info!("removed {swept} unused clipboard image files");
+    }
 }
 
 #[cfg(test)]

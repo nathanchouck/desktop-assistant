@@ -8,6 +8,7 @@
 
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 
 use super::content::Captured;
 use super::image;
@@ -25,10 +26,42 @@ pub enum Content {
 /// none), so the history doesn't record our own writes: pasting an entry
 /// moves it up by itself.
 static OWN_WRITE: AtomicU32 = AtomicU32::new(0);
+/// Writes in progress. The listener hears of a write as soon as the
+/// clipboard closes, which can be before `OWN_WRITE` is set.
+static WRITING: AtomicU32 = AtomicU32::new(0);
+/// The longest the listener waits for one of our writes to finish.
+const WRITE_WAIT: Duration = Duration::from_secs(2);
 
 /// Whether the clipboard change numbered `sequence` was ours.
 pub fn is_own_write(sequence: u32) -> bool {
     sequence != 0 && OWN_WRITE.load(Ordering::SeqCst) == sequence
+}
+
+/// Whether the clipboard's current change was ours, once any write of
+/// ours still in progress has finished. `sequence` reads the current
+/// change's number.
+pub fn is_own_change(sequence: impl Fn() -> u32) -> bool {
+    let started = Instant::now();
+    while WRITING.load(Ordering::SeqCst) > 0 && started.elapsed() < WRITE_WAIT {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    is_own_write(sequence())
+}
+
+/// Counts a write as in progress until dropped.
+struct Writing;
+
+impl Writing {
+    fn begin() -> Self {
+        WRITING.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for Writing {
+    fn drop(&mut self) {
+        WRITING.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Windows numbers every clipboard change; 0 elsewhere.
@@ -49,6 +82,7 @@ pub fn sequence() -> u32 {
 /// pasted. Blocks briefly (it may encode an image): call off the async
 /// runtime.
 pub fn write(content: &Content, private: bool) -> Result<u32, String> {
+    let _writing = Writing::begin();
     let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     let set = clipboard.set();
     #[cfg(windows)]
@@ -116,6 +150,8 @@ mod tests {
         OWN_WRITE.store(42, Ordering::SeqCst);
         assert!(is_own_write(42));
         assert!(!is_own_write(43));
+        assert!(is_own_change(|| 42));
+        assert!(!is_own_change(|| 7));
     }
 
     #[test]

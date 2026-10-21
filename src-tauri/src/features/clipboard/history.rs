@@ -6,6 +6,7 @@
 //! that's already in the list moves it up instead of adding it again.
 //! Only unpinned entries count towards the cap.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
@@ -263,6 +264,32 @@ impl History {
         Ok(doomed.len())
     }
 
+    /// Deletes image files no entry refers to (left behind if the app
+    /// stopped between saving a picture and listing it). Call before
+    /// recording starts. Returns how many went.
+    pub fn sweep(&self) -> usize {
+        let known: HashSet<String> = self.with_entries(|entries| {
+            entries
+                .iter()
+                .filter(|e| e.kind == ClipKind::Image)
+                .map(|e| e.hash.clone())
+                .collect()
+        });
+        // The thumbnails folder is shared: only `clip-` files are ours.
+        let images = png_stems(&self.images_dir);
+        let thumbs = png_stems(&self.thumbs_dir)
+            .into_iter()
+            .filter_map(|stem| Some(stem.strip_prefix("clip-")?.to_owned()));
+        let mut removed = 0;
+        for hash in images.into_iter().filter(|h| !known.contains(h)) {
+            removed += usize::from(fs::remove_file(self.image_path(&hash)).is_ok());
+        }
+        for hash in thumbs.filter(|h| !known.contains(h)) {
+            removed += usize::from(fs::remove_file(self.thumb_path(&hash)).is_ok());
+        }
+        removed
+    }
+
     /// Deletes rows, then their image files. The caller reloads the list.
     fn remove(&self, doomed: &[(i64, ClipKind, String)]) -> Result<(), HistoryError> {
         if doomed.is_empty() {
@@ -300,6 +327,23 @@ impl History {
         // A panic while holding the lock leaves the connection usable.
         Ok(self.conn.lock().unwrap_or_else(|p| p.into_inner()))
     }
+}
+
+/// Names (without `.png`) of the PNG files in `dir`.
+fn png_stems(dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension()? != "png" {
+                return None;
+            }
+            Some(path.file_stem()?.to_str()?.to_owned())
+        })
+        .collect()
 }
 
 /// The thumbnail's name for `thumb_icon`: `clip-<hash>`.
@@ -510,5 +554,38 @@ mod tests {
         h.add(&text("newer"), 2, 1).unwrap();
         assert!(!h.image_path(hash).exists());
         assert!(!h.thumb_path(hash).exists());
+    }
+
+    #[test]
+    fn sweep_removes_only_unlisted_clipboard_files() {
+        let (dir, h) = history();
+        let images = dir.path().join("images");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&images).unwrap();
+        fs::create_dir_all(&thumbs).unwrap();
+        let listed = "1111111111111111";
+        h.add(
+            &NewClip {
+                kind: ClipKind::Image,
+                content: String::new(),
+                hash: listed.into(),
+                width: 1,
+                height: 1,
+                source: String::new(),
+            },
+            1,
+            10,
+        )
+        .unwrap();
+        for name in [listed, "2222222222222222"] {
+            fs::write(images.join(format!("{name}.png")), b"png").unwrap();
+            fs::write(thumbs.join(format!("clip-{name}.png")), b"png").unwrap();
+        }
+        // Another feature's thumbnail stays.
+        fs::write(thumbs.join("window-1.png"), b"png").unwrap();
+        assert_eq!(h.sweep(), 2);
+        assert!(h.image_path(listed).exists() && h.thumb_path(listed).exists());
+        assert!(!images.join("2222222222222222.png").exists());
+        assert!(thumbs.join("window-1.png").exists());
     }
 }

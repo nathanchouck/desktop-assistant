@@ -199,7 +199,7 @@ unsafe extern "system" fn window_proc(
 
 impl Listener {
     fn on_change(&self, hwnd: HWND) {
-        if system::is_own_write(sequence_number()) {
+        if system::is_own_change(sequence_number) {
             return;
         }
         let options = settings::current(&self.settings).clipboard;
