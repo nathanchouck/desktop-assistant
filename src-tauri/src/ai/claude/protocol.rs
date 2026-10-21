@@ -173,6 +173,10 @@ pub fn summarize(tool: &str, input: &Value) -> String {
         "WebSearch" => field("query").to_owned(),
         "Task" | "Agent" => field("description").to_owned(),
         "TodoWrite" => "updating the plan".to_owned(),
+        "mcp__launcher__search" => field("query").to_owned(),
+        "mcp__launcher__open" | "mcp__launcher__reveal" => file_name(field("target")),
+        "mcp__launcher__screenshot" => "the window you were in".to_owned(),
+        "mcp__launcher__get_desktop_context" => "what's on screen".to_owned(),
         _ => String::new(),
     };
     truncate(&text, 80)

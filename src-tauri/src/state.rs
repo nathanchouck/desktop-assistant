@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::mpsc;
@@ -17,6 +18,15 @@ use crate::settings::Settings;
 use crate::store::Store;
 use crate::window::LauncherState;
 
+/// Where the launcher's MCP server is described for Claude Code.
+#[derive(Debug, Clone)]
+pub struct ToolFiles {
+    /// For `--mcp-config`.
+    pub mcp_config: PathBuf,
+    /// For `--settings`: which of the launcher's tools need approval.
+    pub settings: PathBuf,
+}
+
 /// Shared app state, managed by Tauri and available to every command.
 pub struct AppState {
     pub paths: AppPaths,
@@ -32,6 +42,8 @@ pub struct AppState {
     /// Keeps the Start Menu watcher alive.
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
     pub chat: Arc<Chat>,
+    /// Set once the launcher's MCP server is up: Claude Code gets these.
+    pub tool_files: std::sync::OnceLock<ToolFiles>,
     /// Whether Claude Code is installed and signed in, checked in the
     /// background so searching never waits.
     pub claude_status: Arc<StatusCache>,
@@ -76,6 +88,7 @@ impl AppState {
         Self {
             chat: Arc::new(Chat::new(chat_tx)),
             claude_status: Arc::new(StatusCache::new()),
+            tool_files: std::sync::OnceLock::new(),
             chat_events: Mutex::new(Some(chat_rx)),
             desktop: Arc::new(DesktopTracker::new()),
             sent_context: Mutex::new(None),

@@ -1,6 +1,7 @@
 //! Windows shell integration via COM (the `windows` crate), plus Everything.
 
 mod apps;
+mod capture;
 pub mod desktop;
 pub mod everything;
 mod icon;
@@ -8,6 +9,7 @@ mod launch;
 pub mod sta;
 
 pub use apps::list_apps;
+pub use capture::capture_window;
 pub use launch::{launch_app, open_path, reveal};
 
 use windows::core::HSTRING;

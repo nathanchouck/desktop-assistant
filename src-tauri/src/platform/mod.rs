@@ -250,6 +250,22 @@ impl Shell {
         }
     }
 
+    /// A screenshot of one window, by handle. It can't include the launcher
+    /// even where it overlaps (D-019).
+    pub async fn capture_window(&self, handle: isize) -> Result<Image, PlatformError> {
+        #[cfg(windows)]
+        {
+            tokio::task::spawn_blocking(move || win::capture_window(handle).map_err(os))
+                .await
+                .map_err(|_| PlatformError::WorkerGone)?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = handle;
+            Err(PlatformError::Unsupported)
+        }
+    }
+
     /// Opens the containing folder in Explorer with the item selected.
     pub async fn reveal_path(&self, path: String) -> Result<(), PlatformError> {
         #[cfg(windows)]

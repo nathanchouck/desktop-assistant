@@ -11,6 +11,7 @@ pub mod hotkey;
 pub mod icons;
 pub mod ipc;
 pub mod logging;
+pub mod mcp;
 pub mod paths;
 pub mod platform;
 pub mod search;
@@ -91,6 +92,7 @@ pub fn run() {
             start_app_index(handle);
             start_file_index_unless_everything(handle);
             start_chat(handle);
+            start_launcher_tools(handle);
             check_claude_status(handle, true);
 
             // Handy while developing; release builds start hidden in the tray.
@@ -126,6 +128,38 @@ pub(crate) fn check_claude_status(app: &AppHandle, force: bool) {
         let status = ai::claude::check_status(&settings).await;
         tracing::info!("Claude Code status: {status:?}");
         cache.finish_check(status);
+    });
+}
+
+/// Starts the MCP server that gives Claude the launcher's tools, and writes
+/// the files that point Claude Code at it.
+fn start_launcher_tools(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let host = Arc::new(mcp::tools::LauncherTools::new(app.clone()));
+        let endpoint = match mcp::start(host).await {
+            Ok(endpoint) => endpoint,
+            Err(e) => {
+                tracing::warn!("launcher tools for Claude are off: {e}");
+                return;
+            }
+        };
+        let state = app.state::<AppState>();
+        let dir = state.paths.data_dir.clone();
+        let written = endpoint.write_config(&dir).and_then(|mcp_config| {
+            let settings = dir.join("claude-settings.json");
+            std::fs::write(&settings, mcp::tools::claude_settings().to_string())?;
+            Ok(state::ToolFiles {
+                mcp_config,
+                settings,
+            })
+        });
+        match written {
+            Ok(files) => {
+                let _ = state.tool_files.set(files);
+            }
+            Err(e) => tracing::warn!("could not write the launcher tools config: {e}"),
+        }
     });
 }
 

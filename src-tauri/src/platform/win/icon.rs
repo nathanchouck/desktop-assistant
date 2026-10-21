@@ -14,7 +14,7 @@ use windows::Win32::UI::Shell::{
     IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
 };
 
-use crate::icons::bgra_premultiplied_to_rgba;
+use crate::icons::{bgra_premultiplied_to_rgba, bgra_to_opaque_rgba};
 use crate::platform::Image;
 
 /// Must run on an STA thread. `parsing_name` is a path or shell path;
@@ -29,14 +29,15 @@ pub fn icon(parsing_name: &HSTRING, size: u32) -> windows::core::Result<Image> {
             SIZE { cx: side, cy: side },
             SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
         )?;
-        let image = read_bitmap(bitmap);
+        let image = read_bitmap(bitmap, false);
         let _ = DeleteObject(bitmap.into());
         image
     }
 }
 
-/// Copies a 32-bit bitmap out as top-down BGRA, then converts to RGBA.
-unsafe fn read_bitmap(bitmap: HBITMAP) -> windows::core::Result<Image> {
+/// Copies a 32-bit bitmap out as top-down BGRA, then converts to RGBA:
+/// premultiplied alpha for icons, `opaque` for window captures.
+pub(super) unsafe fn read_bitmap(bitmap: HBITMAP, opaque: bool) -> windows::core::Result<Image> {
     // SAFETY: plain GDI calls with buffers sized from the bitmap's own header.
     unsafe {
         let mut info = BITMAP::default();
@@ -81,7 +82,11 @@ unsafe fn read_bitmap(bitmap: HBITMAP) -> windows::core::Result<Image> {
         Ok(Image {
             width: width as u32,
             height: height as u32,
-            rgba: bgra_premultiplied_to_rgba(&bgra),
+            rgba: if opaque {
+                bgra_to_opaque_rgba(&bgra)
+            } else {
+                bgra_premultiplied_to_rgba(&bgra)
+            },
         })
     }
 }

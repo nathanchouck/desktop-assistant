@@ -151,6 +151,10 @@ pub struct Options {
     /// Continue an earlier session (after the idle process was shut down).
     pub resume: Option<String>,
     pub system_prompt: String,
+    /// The launcher's own MCP server (`--mcp-config`), added to the user's.
+    pub mcp_config: Option<PathBuf>,
+    /// Extra settings (`--settings`): approvals for the launcher's tools.
+    pub settings: Option<PathBuf>,
 }
 
 /// Command-line arguments for `claude` (after any `node cli.js`).
@@ -183,6 +187,13 @@ pub fn args(options: &Options) -> Vec<String> {
             "--append-system-prompt".into(),
             options.system_prompt.clone(),
         ]);
+    }
+    // `=` form: these options take several values and would swallow the next.
+    if let Some(config) = &options.mcp_config {
+        args.push(format!("--mcp-config={}", config.display()));
+    }
+    if let Some(settings) = &options.settings {
+        args.push(format!("--settings={}", settings.display()));
     }
     // Never `--bare`: it ignores the subscription login.
     args
@@ -370,6 +381,8 @@ pub fn prepare(settings: &ClaudeSettings) -> Result<(Launch, Options), AiError> 
         system_prompt: system_prompt(&home),
         cwd: home,
         resume: None,
+        mcp_config: None,
+        settings: None,
     };
     Ok((launch, options))
 }
@@ -404,6 +417,8 @@ mod tests {
             cwd: PathBuf::from("."),
             resume: None,
             system_prompt: String::new(),
+            mcp_config: None,
+            settings: None,
         }
     }
 
@@ -421,6 +436,21 @@ mod tests {
         assert!(a.contains(&"--include-partial-messages".to_string()));
         assert!(!a.contains(&"--permission-mode".to_string()));
         assert!(!a.contains(&"--bare".to_string()));
+    }
+
+    #[test]
+    fn adds_the_launcher_tools() {
+        let a = args(&Options {
+            mcp_config: Some(PathBuf::from("/data/mcp-config.json")),
+            settings: Some(PathBuf::from("/data/claude-settings.json")),
+            ..options()
+        });
+        assert!(a.contains(&"--mcp-config=/data/mcp-config.json".to_string()));
+        assert!(a.contains(&"--settings=/data/claude-settings.json".to_string()));
+        assert!(
+            !a.contains(&"--strict-mcp-config".to_string()),
+            "keep the user's servers"
+        );
     }
 
     #[test]

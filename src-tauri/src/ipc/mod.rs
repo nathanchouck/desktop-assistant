@@ -145,12 +145,21 @@ async fn context_to_send(state: &AppState, fresh: bool) -> Option<DesktopContext
     Some(context)
 }
 
+/// Points Claude Code at the launcher's MCP server once it's running.
+fn add_launcher_tools(state: &AppState, options: &mut claude::Options) {
+    if let Some(files) = state.tool_files.get() {
+        options.mcp_config = Some(files.mcp_config.clone());
+        options.settings = Some(files.settings.clone());
+    }
+}
+
 /// Asks Claude, starting a new conversation in the folder File Explorer
 /// showed (else your home folder).
 #[tauri::command]
 #[specta::specta]
 async fn ai_ask(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
     let (launch, mut options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    add_launcher_tools(&state, &mut options);
     let context = context_to_send(&state, true).await;
     if let Some(folder) = context.as_ref().and_then(DesktopContext::folder) {
         if Path::new(folder).is_dir() {
@@ -174,7 +183,8 @@ async fn ai_ask(state: State<'_, AppState>, text: String) -> Result<AskReply, Ip
 #[tauri::command]
 #[specta::specta]
 async fn ai_follow_up(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
-    let (launch, options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    let (launch, mut options) = claude::prepare(&state.settings().ai.claude).map_err(ai_err)?;
+    add_launcher_tools(&state, &mut options);
     let context = context_to_send(&state, false).await;
     let message = desktop::with_context(&text, context.as_ref());
     let conversation = state

@@ -386,6 +386,8 @@ mod tests {
             cwd: dir.to_path_buf(),
             resume: None,
             system_prompt: String::new(),
+            mcp_config: None,
+            settings: None,
         }
     }
 

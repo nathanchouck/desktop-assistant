@@ -179,6 +179,29 @@ impl DesktopTracker {
         });
     }
 
+    /// Reads Explorer's folder and selection again for the window captured
+    /// last (you may have changed the selection since), and returns it.
+    pub async fn refreshed(&self, shell: &Shell) -> DesktopContext {
+        let context = self.latest.borrow().clone();
+        let Some(window) = context.window.clone() else {
+            return context;
+        };
+        if !crate::platform::is_shell_view(&window.class) {
+            return context;
+        }
+        let generation = self.generation.load(Ordering::Acquire);
+        match shell.explorer_view(window).await {
+            Ok(view) => {
+                self.finish(generation, view);
+                self.latest.borrow().clone()
+            }
+            Err(e) => {
+                tracing::debug!("could not re-read File Explorer: {e}");
+                context
+            }
+        }
+    }
+
     /// The latest capture, waiting up to `wait` for Explorer's details.
     pub async fn current(&self, wait: Duration) -> DesktopContext {
         let mut rx = self.latest.subscribe();

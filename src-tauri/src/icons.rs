@@ -164,6 +164,51 @@ pub fn bgra_premultiplied_to_rgba(bgra: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Window captures: BGRA whose alpha means nothing, as opaque RGBA.
+pub fn bgra_to_opaque_rgba(bgra: &[u8]) -> Vec<u8> {
+    bgra.chunks_exact(4)
+        .flat_map(|p| [p[2], p[1], p[0], 255])
+        .collect()
+}
+
+/// Shrinks `image` so neither side exceeds `max_side`, averaging the
+/// pixels each new pixel covers. Smaller images come back unchanged.
+pub fn fit_within(image: Image, max_side: u32) -> Image {
+    let longest = image.width.max(image.height);
+    if longest <= max_side || max_side == 0 {
+        return image;
+    }
+    let scale = f64::from(max_side) / f64::from(longest);
+    let width = ((f64::from(image.width) * scale).round() as u32).max(1);
+    let height = ((f64::from(image.height) * scale).round() as u32).max(1);
+    let (src_w, src_h) = (image.width as usize, image.height as usize);
+    let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+    for y in 0..height as usize {
+        let y0 = y * src_h / height as usize;
+        let y1 = ((y + 1) * src_h / height as usize).max(y0 + 1);
+        for x in 0..width as usize {
+            let x0 = x * src_w / width as usize;
+            let x1 = ((x + 1) * src_w / width as usize).max(x0 + 1);
+            let mut sum = [0u32; 4];
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    let i = (sy * src_w + sx) * 4;
+                    for (c, total) in sum.iter_mut().enumerate() {
+                        *total += u32::from(image.rgba[i + c]);
+                    }
+                }
+            }
+            let count = ((y1 - y0) * (x1 - x0)) as u32;
+            rgba.extend(sum.iter().map(|total| (total / count) as u8));
+        }
+    }
+    Image {
+        width,
+        height,
+        rgba,
+    }
+}
+
 pub fn encode_png(image: &Image) -> Result<Vec<u8>, png::EncodingError> {
     let mut bytes = Vec::new();
     {
@@ -179,6 +224,42 @@ pub fn encode_png(image: &Image) -> Result<Vec<u8>, png::EncodingError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn captures_are_opaque() {
+        assert_eq!(bgra_to_opaque_rgba(&[10, 20, 30, 0]), [30, 20, 10, 255]);
+    }
+
+    #[test]
+    fn shrinks_big_images_by_averaging() {
+        // 4x2: left half black, right half white.
+        let mut rgba = Vec::new();
+        for _ in 0..2 {
+            for x in 0..4 {
+                let v = if x < 2 { 0 } else { 255 };
+                rgba.extend([v, v, v, 255]);
+            }
+        }
+        let small = fit_within(
+            Image {
+                width: 4,
+                height: 2,
+                rgba: rgba.clone(),
+            },
+            2,
+        );
+        assert_eq!((small.width, small.height), (2, 1));
+        assert_eq!(small.rgba, [0, 0, 0, 255, 255, 255, 255, 255]);
+        let same = fit_within(
+            Image {
+                width: 4,
+                height: 2,
+                rgba,
+            },
+            10,
+        );
+        assert_eq!((same.width, same.height), (4, 2));
+    }
 
     #[test]
     fn keys_are_stable_and_valid() {
