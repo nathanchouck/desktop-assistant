@@ -5,7 +5,8 @@
 //! - `language.rs`: .ps1/.py/.cmd/.bat/.js/.sh and the programs that run them.
 //! - `index.rs`: reading the folder; `watch.rs` keeps it current.
 //! - `library.rs`: the shared state (index, running scripts, the app).
-//! - `provider.rs`: search rows; Enter runs the script.
+//! - `rows.rs`: the rows a query finds (pure, tested); `provider.rs`:
+//!   the search provider, which runs a script when it is picked.
 //! - `run.rs`: running one (no window, capped output, time limit);
 //!   `output.rs`: what it printed, as messages (pure, tested).
 //! - `starter.rs`: the README and example a new folder starts with.
@@ -17,6 +18,7 @@ pub mod language;
 pub mod library;
 mod output;
 mod provider;
+mod rows;
 mod run;
 mod starter;
 mod watch;

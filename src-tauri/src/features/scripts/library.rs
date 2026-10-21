@@ -204,7 +204,7 @@ impl Library {
                     file: s.file.clone(),
                     title: s.header.title.clone(),
                     description: s.header.description.clone(),
-                    icon: super::provider::icon(&s.header),
+                    icon: super::rows::icon(&s.header),
                     mode: s.header.mode,
                     argument: s.header.argument.clone(),
                     language: s.language.label().to_owned(),
