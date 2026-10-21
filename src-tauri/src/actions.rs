@@ -55,7 +55,11 @@ pub async fn carry_out(app: &AppHandle, activation: Activation) -> AppResult<Act
         }
         Activation::Paste { text } => paste(app, text.as_deref()).await?,
         Activation::OpenUrl { url } => {
-            open_url(app, url)?;
+            if is_settings_page(url) {
+                open_settings_page(app, url)?;
+            } else {
+                open_url(app, url)?;
+            }
             window::hide(app);
         }
         Activation::SetQuery { .. }
@@ -108,6 +112,34 @@ pub fn open_url(app: &AppHandle, url: &str) -> AppResult<()> {
         .open_url(url, None::<&str>)
         .map_err(|e| AppError::Open {
             path: url.to_owned(),
+            reason: e.to_string(),
+        })
+}
+
+/// Whether `uri` is a Windows Settings page (`ms-settings:display`): that
+/// scheme and a plain page name only, so a result can't open other
+/// protocols through it.
+pub fn is_settings_page(uri: &str) -> bool {
+    uri.strip_prefix("ms-settings:").is_some_and(|page| {
+        !page.is_empty()
+            && page
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    })
+}
+
+/// Opens a page of the Windows Settings app (see `is_settings_page`).
+pub fn open_settings_page(app: &AppHandle, uri: &str) -> AppResult<()> {
+    if !is_settings_page(uri) {
+        return Err(AppError::Open {
+            path: uri.to_owned(),
+            reason: "not a Windows Settings page".into(),
+        });
+    }
+    app.opener()
+        .open_url(uri, None::<&str>)
+        .map_err(|e| AppError::Open {
+            path: uri.to_owned(),
             reason: e.to_string(),
         })
 }
@@ -224,4 +256,21 @@ fn open_path(app: &AppHandle, path: &Path) -> AppResult<()> {
             path: path.display().to_string(),
             reason: e.to_string(),
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_plain_settings_pages_count() {
+        assert!(is_settings_page("ms-settings:display"));
+        assert!(is_settings_page("ms-settings:network-wifi"));
+        assert!(!is_settings_page("ms-settings:"));
+        assert!(!is_settings_page("ms-settings:display?x=1"));
+        assert!(!is_settings_page("ms-settings:../x"));
+        assert!(!is_settings_page("ms-settingsx:display"));
+        assert!(!is_settings_page("file:///C:/x.exe"));
+        assert!(!is_settings_page("https://example.com"));
+    }
 }
