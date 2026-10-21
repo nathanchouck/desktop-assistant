@@ -134,11 +134,11 @@ Check on a real Windows machine:
 
 ## M8 Later horizon
 Productivity
-- [ ] Calculator + unit/currency conversion inline (`2^10`, `5 mi to km`)
-- [ ] Clipboard history (text + images), pin, search
-- [ ] Snippets / text expansion
-- [ ] Quicklinks: `yt cats`, `gh repo`, custom web searches
-- [ ] Emoji / symbol picker
+- [x] Calculator + unit/currency conversion inline (`2^10`, `5 mi to km`)
+- [x] Clipboard history (text + images), pin, search
+- [x] Snippets / text expansion
+- [x] Quicklinks: `yt cats`, `gh repo`, custom web searches
+- [x] Emoji / symbol picker
 - [ ] System commands: lock, sleep, restart, empty recycle bin, toggle dark mode
 - [ ] Window management: snap left/right/halves/thirds, move to next monitor
 - [ ] Process killer (`kill chrome`)

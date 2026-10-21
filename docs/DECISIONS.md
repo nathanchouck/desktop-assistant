@@ -248,3 +248,38 @@ prefixes in `actions.rs` (every feature editing the same function) and
 separate IPC commands per feature (more bindings, the same follow-up logic
 copied around).
 
+## D-028 Calculator: fend behind a cautious trigger; ECB rates over WinHTTP
+The calculator uses fend-core rather than a small expression parser with hand-written unit tables. fend already covers arithmetic, about 1000 units ("3 cups in ml", "1 km^2 in mi^2"), number bases and currencies through a rate callback. It also has an interrupt hook, which lets each evaluation stop after 25 ms.
+
+An answer row always ranks first, so a wrong answer steals Enter from the app or file you meant. For that reason we decide whether to evaluate before fend sees the query. The query needs a digit plus an operation (an operator, a conversion, a function). Queries shaped like dates, versions, phone numbers, hyphenated names or one-letter prefixes are left alone. A leading `=` overrides all of this. Small rewrites (currency symbols, `f`/`c` temperatures, `in` as inches, lower-case file sizes, `x` for times, desk-calculator percentages) make everyday typing work.
+
+Exchange rates come from the European Central Bank's daily file. It's official, needs no key and has kept the same address for many years, but it covers only about 30 currencies. It's downloaded at most once a day with WinHTTP and saved to disk, so conversions work offline and search never downloads. WinHTTP comes with Windows and uses the system's certificates and proxy, which avoids adding a TLS stack to the app for one small file.
+
+Considered:
+- meval/evalexpr: no units.
+- open.er-api.com: about 160 currencies, but with terms of use and attribution.
+- reqwest with rustls: a large dependency for a single request.
+
+Related: emoji rows don't get the ranker's exact-name tier, so the single unprefixed emoji suggestion ("fire") can never sit above Firefox.
+
+## D-029 Clipboard history reads the clipboard itself, writes through arboard, and recognizes its own writes by sequence number
+Clipboard history needs three things from a read:
+- hold the clipboard only for a moment (apps that copy twice in a row fail while another program has it open);
+- check the privacy formats password managers set;
+- get the raw formats (`PNG`, `CF_DIBV5`, `CF_DIB`, `CF_HDROP`).
+
+So the listener reads with its own Windows code. It copies the bytes, closes the clipboard, and decodes later on another thread, with pure PNG/DIB/file-list parsers tested on Linux.
+
+Writing images (PNG + DIBV5) and file lists (`CF_HDROP`), and marking a write private, goes through `arboard`. It is the crate behind `tauri-plugin-clipboard-manager` and is already in the dependency tree at the same version. The plugin only offers text, and its image write needs tauri's `image-png` feature and still has no file lists or private flag.
+
+Our own writes (pasting an entry back, a snippet's temporary text, and putting the clipboard back afterwards) are recognized by Windows' clipboard sequence number, not by content. So they never reach history; pasting an entry moves it up directly.
+
+Repeats are found by hash, and images hash their pixels, so the same picture copied from another app doesn't add a second entry. Clip rows keep history order in `rank.rs` (pinned, then newest); frecency and name bonuses would otherwise shuffle the list.
+
+Snippets expand as you type by erasing the keyword and pasting through the clipboard, then putting the clipboard back. Typing the text as Unicode key events is slow for long text, and editors' auto-indent and autocomplete mangle it. The hooks only queue events, so typing is never slowed.
+
+Considered:
+- arboard for reading: it holds the clipboard open while decoding an image.
+- The plugin for images: no file lists or private flag.
+- Skipping our writes by comparing content: a re-encoded image differs.
+- Raw input instead of hooks: it can't tell our injected keys apart as reliably.

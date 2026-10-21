@@ -254,6 +254,52 @@ Shared helpers: `Shell::focus_window` / `press_keys` (Windows), `actions::paste`
 and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
 `AppPaths::thumbnails_dir()` as `thumb/<name>` icons.
 
+#### Calculator, quicklinks, emoji (`features/calc`, `features/quicklinks`, `features/emoji`)
+
+- **Calculator.** fend-core evaluates; `parse.rs` decides first whether a query is a calculation, because the answer row always ranks first and a false positive steals Enter from the app you meant. A query needs a digit and an operation (an operator, a `to`/`in`/`as` conversion, a function, `mod`, `of`). Dates, versions and phone numbers (`2024-01-01`, `1.2.3`, `555-1234`), hyphenated names (`k-9`), one-letter prefixes (`c `, `g `) and anything over 100 characters or 12 brackets deep are left alone. A leading `=` forces an answer. `rewrite.rs` turns everyday notation into fend's: `€50` → `50 EUR`, `72 f to c` → `72 °F to °C` (only when both sides are temperatures), `in` after a number → inch, `mb` → `MB`, `3x4` → `3 × 4`, and desk-calculator percentages (`200 + 10%` = 220, `80 * 15%` = 12). fend runs on a blocking thread with a 25 ms deadline. `format.rs` marks approximate answers with `≈`, rounds approximate conversions to 4 decimals and money to cents, groups digits in the title (Enter copies the plain value) and prefixes hex/binary/octal answers. Enter copies, Ctrl+Enter pastes into the window you came from.
+- **Exchange rates.** The European Central Bank's daily reference rates (`eurofxref-daily.xml`, about 30 currencies, euro base, no key), downloaded with WinHTTP by a task started in `calc::start`. It downloads when the saved rates are over a day old, checks hourly (10 minutes after a failure), and saves to `%LOCALAPPDATA%\desktop-assistant\exchange-rates.json` so conversions work offline. Search only reads what's in memory. Without rates, a currency query shows "Exchange rates aren't downloaded yet" (Enter retries); a currency the ECB doesn't publish shows "No exchange rate for XXX".
+- **Quicklinks.** `quicklinks.links` is a list of keyword, name and an http(s) address with `{query}`. `yt lofi` shows "Search YouTube for “lofi”" above apps and opens the address with the text percent-encoded. The keyword alone shows "Search YouTube · Type to search" below a good app match, and Enter fills in `yt `. A link without `{query}` just opens. Defaults: g, yt, gh, maps, wiki, amazon, translate, ddg.
+- **Emoji.** `:` or `emoji ` claims the query. The index (emojis crate, Unicode ≤ 15.1 since newer emoji are empty boxes on Windows, plus about 120 text symbols: arrows, checks, math, currency, typography, keys) is built once in `provider()`. It matches names, GitHub shortcodes, extra keywords (`lol`, `->`, `!=`) and emoticons (`:)`). `:` alone lists recently picked emoji (frecency), then popular ones. Enter pastes into the window you came from, Ctrl+Shift+C copies, and `emoji.skin_tone` applies to icons and paste. Without a prefix, a query that is exactly an emoji's name or shortcode (3+ characters: "thumbs up", "degree") gets one row at score 0.05, and the ranker gives emoji no exact-name tier, so "fire" never outranks Firefox.
+
+#### Clipboard history (`features/clipboard/`)
+
+- **Listening (Windows, `win.rs`):** a thread owns a message-only window registered with `AddClipboardFormatListener`. On each `WM_CLIPBOARDUPDATE` it skips:
+  - our own writes: the change's sequence number equals the last one we wrote; it waits for a write still in progress first;
+  - copies an app marks private: `ExcludeClipboardContentFromMonitorProcessing`, `Clipboard Viewer Ignore`, `CanIncludeInClipboardHistory` = 0;
+  - copies whose program is on `clipboard.ignore_apps` (password managers by default). The program is the clipboard owner, else the window in front.
+
+  Otherwise it copies the raw bytes out and closes the clipboard at once, because an app that copies twice fails while it's held open. Order: files (`CF_HDROP`), then text (`CF_UNICODETEXT`), then images (`PNG`, `CF_DIBV5`, `CF_DIB`). A recorder thread decodes and stores the copy. The PNG/DIB/file-list parsers are pure and tested on Linux.
+- **Storage:** its own `clipboard.db` in the data folder. Images are kept as `clipboard\<hash>.png`, with a 64 px thumbnail at `thumbnails\clip-<hash>.png` shown as `thumb/clip-<hash>`.
+  - Copying something already listed moves it to the top. Images are compared by pixels, so the same picture encoded differently is still a repeat.
+  - `max_items` (200) counts unpinned entries only; image files are deleted with their rows; leftover files are removed at startup.
+  - The list is mirrored in memory (the first 1000 characters of each text), so `query` never reads the disk.
+- **Search:** `clip` or `clipboard` (alone or followed by text) claims the query.
+  - Order: pinned first, then newest. `rank.rs` ranks Clip rows by their provider score only, so name matches and frecency don't reorder history.
+  - Text after the prefix filters by fuzzy match on the clip text or its program, with a minimum score, because long texts contain most letters in order somewhere.
+  - Keys: Enter pastes, Ctrl+Shift+C copies, Ctrl+Shift+P pins, Ctrl+D deletes. To paste, the entry goes back on the clipboard (text, PNG + bitmap, or a file list, written through `arboard`) and `Activation::Paste` does the rest.
+  - "Clear Clipboard History" asks first and keeps pinned entries. "Clipboard History" in normal search opens `clip `.
+- `system.rs` reads and writes the clipboard for both clipboard history and snippets.
+
+#### Snippets (`features/snippets/`)
+
+- **Settings:** `snippets.items` ({name, keyword, text}).
+- **Search:**
+  - A snippet is found by its keyword (typed with or without the trigger) or by its name.
+  - `snippet`, `snippets` and `snip <text>` claim the query and list them. `snip` alone lists them without claiming, so Snipping Tool still shows.
+  - Enter pastes, Ctrl+Shift+C copies.
+- **Placeholders:** `{clipboard}`, `{date}` (2026-10-21), `{time}` (14:05), `{datetime}`. Anything else in braces is left as typed.
+- **Expand as you type** (`snippets.expand_as_you_type`, off by default):
+  - A task checks the settings once a second and starts or stops `hook.rs`.
+  - Low-level keyboard and mouse hooks on a time-critical thread only queue key-downs (with modifier state and the window in front) and clicks to a worker, so typing never waits. Keys tagged `INJECTED_TAG` are skipped.
+  - The worker translates keys with the front window's layout (`ToUnicodeEx`, leaving dead-key state alone). `typing.rs` (pure) keeps the last 64 characters and resets on clicks, window changes, Ctrl/Alt/Win shortcuts and keys that move the caret.
+  - When the text typed ends with a keyword that starts with `snippets.trigger` (";"), it:
+    1. waits for modifiers to be released;
+    2. sends Backspace for each character of the keyword;
+    3. writes the snippet to the clipboard, marked private;
+    4. sends Ctrl+V;
+    5. after 750 ms puts the old clipboard content back, unless something new was copied meanwhile.
+  - Typing in the launcher is ignored. The hooks are re-installed every 10 s (D-025).
+
 ### Apps
 
 - `AppIndex` holds the Start menu's "All apps" (the AppsFolder) in memory:
