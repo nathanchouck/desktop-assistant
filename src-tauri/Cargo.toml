@@ -50,6 +50,11 @@ tauri-plugin-global-shortcut = "2.4"
 tauri-plugin-single-instance = "2.5"
 tauri-plugin-autostart = "2.7"
 tauri-plugin-clipboard-manager = "2.5"
+# Clipboard history writes images and file lists back, and marks snippet
+# pastes as private; the plugin only does text. Same version the plugin uses.
+arboard = "3.7"
+# Local date and time for snippet placeholders ({date}, {time}).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = "0.8"

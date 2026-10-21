@@ -826,9 +826,11 @@ name = "desktop-assistant"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "async-trait",
  "base64 0.22.1",
  "cc",
+ "chrono",
  "dirs 7.0.0",
  "futures",
  "getrandom 0.3.4",
