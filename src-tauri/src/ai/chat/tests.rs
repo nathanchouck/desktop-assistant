@@ -1,13 +1,17 @@
 use super::*;
 use crate::ai::{Approvals, BillingMode};
-use std::os::unix::fs::PermissionsExt;
 use tokio::sync::mpsc;
 
+/// A stand-in CLI. Run by `sh` rather than exec'd itself: exec'ing a file
+/// just written fails now and then ("text file busy") while another test
+/// thread is starting a process.
 fn script(dir: &Path, name: &str, body: &str) -> Launch {
     let path = dir.join(name);
     std::fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    Launch::Exe(path)
+    Launch::Node {
+        node: PathBuf::from("/bin/sh"),
+        cli: path,
+    }
 }
 
 /// A stand-in `claude` that ignores its arguments, prints a recorded
@@ -250,7 +254,8 @@ async fn a_spare_for_another_folder_is_replaced() {
 /// A stand-in `codex app-server`: answers each request by method (echoing
 /// its id), logs what it receives to `in.log` and its arguments to
 /// `args.log`. "RUN" asks to approve a command; "SLOW" waits for an
-/// interrupt. `auth` is what `getAuthStatus` reports.
+/// interrupt. `auth` is what `getAuthStatus` reports. With a `gone` file
+/// in `dir`, resuming fails like a deleted thread.
 fn fake_codex(dir: &Path, auth: &str) -> Launch {
     let log = dir.join("in.log");
     let body = format!(
@@ -266,7 +271,13 @@ while IFS= read -r line; do
     *'"method":"initialize"'*) reply "$id" '{{"userAgent":"desktop_assistant/0.163.0 (test)"}}' ;;
     *'"method":"getAuthStatus"'*) reply "$id" '{auth}' ;;
     *'"method":"account/login/start"'*) reply "$id" '{{"type":"apiKey"}}' ;;
-    *'"method":"thread/start"'*|*'"method":"thread/resume"'*) reply "$id" '{{"thread":{{"id":"t1"}},"model":"gpt-test"}}' ;;
+    *'"method":"thread/resume"'*)
+      if [ -e '{gone}' ]; then
+        printf '{{"id":%s,"error":{{"code":-32600,"message":"no rollout found for thread id t1"}}}}\n' "$id"
+      else
+        reply "$id" '{{"thread":{{"id":"t1"}},"model":"gpt-test"}}'
+      fi ;;
+    *'"method":"thread/start"'*) reply "$id" '{{"thread":{{"id":"t1"}},"model":"gpt-test"}}' ;;
     *'"method":"turn/interrupt"'*) reply "$id" '{{}}'; done_turn interrupted ;;
     *'"method":"turn/start"'*)
       reply "$id" '{{"turn":{{"id":"u1","status":"inProgress"}}}}'
@@ -289,6 +300,7 @@ done
 "#,
         args = dir.join("args.log").display(),
         log = log.display(),
+        gone = dir.join("gone").display(),
     );
     script(dir, "codex", &body)
 }
@@ -462,6 +474,33 @@ async fn codex_resumes_its_thread_after_an_idle_shutdown() {
             && sent.contains(r#""threadId":"t1""#),
         "{sent}"
     );
+}
+
+#[tokio::test]
+async fn codex_starts_fresh_when_the_thread_is_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let chat = Chat::new(tx);
+    let launch = fake_codex(dir.path(), SIGNED_IN);
+    chat.start("hi", codex_setup(&launch, dir.path()))
+        .await
+        .unwrap();
+    collect_until_done(&mut rx).await;
+    chat.shut_down_if_idle(Duration::ZERO).await;
+    std::fs::write(dir.path().join("gone"), b"").unwrap();
+
+    chat.follow_up("again", |_| Ok(codex_setup(&launch, dir.path())))
+        .await
+        .unwrap();
+    let events = collect_until_done(&mut rx).await;
+    assert!(
+        matches!(&events[0], AiEvent::TextDelta { text } if text.contains("starts fresh")),
+        "{events:?}"
+    );
+    assert_eq!(events.last(), Some(&AiEvent::Done));
+    let sent = received(dir.path());
+    assert!(sent.contains("thread/resume"));
+    assert_eq!(sent.matches("\"method\":\"thread/start\"").count(), 2);
 }
 
 #[tokio::test]

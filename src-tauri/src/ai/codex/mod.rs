@@ -663,7 +663,17 @@ mod tests {
             path: script.display().to_string(),
             ..ChatGptSettings::default()
         };
-        assert_eq!(check_status(&settings).await, CodexStatus::Ready);
+        // Exec'ing a file just written can fail now and then ("text file
+        // busy") while another test thread starts a process: that's Unknown.
+        let mut status = CodexStatus::Unknown;
+        for _ in 0..5 {
+            status = check_status(&settings).await;
+            if status != CodexStatus::Unknown {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(status, CodexStatus::Ready);
         let missing = ChatGptSettings {
             path: "/nope/codex".into(),
             ..ChatGptSettings::default()
