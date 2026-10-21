@@ -142,3 +142,16 @@ can't include the launcher even where they overlap. For a full-screen
 capture, set the launcher's display affinity to exclude it from capture
 (`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, Windows 10 2004+) for
 the moment of the capture only, so your own screenshots still show it.
+
+## D-020 Slow search results arrive late instead of being dropped
+Providers used to be skipped for a keystroke when they missed the 40 ms
+budget. A big file index (190k entries in testing, more on a real user
+folder) missed it on every keystroke, so files never showed up at all. Now
+the first response still goes out at 40 ms, a late provider keeps running,
+and its results replace the list through a `search-updated` event when
+they're ready. The index search also got faster (parallel across cores)
+and cancellable (a newer keystroke stops older searches), so late results
+are rare and cheap. Considered: just raising the budget (every keystroke
+would wait for the slowest provider) and incremental narrowing (re-score
+only the previous matches as you type; faster, but more state to keep
+right).

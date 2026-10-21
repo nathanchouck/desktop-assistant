@@ -6,6 +6,7 @@
 //! recently the file changed. Files rank a little below apps with an equally
 //! good match.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -144,6 +145,8 @@ pub struct FileProvider {
     index: Arc<FileIndex>,
     exclusions: Vec<String>,
     home: Option<String>,
+    /// Bumped by each index search, so older ones can stop early.
+    generation: Arc<AtomicU64>,
 }
 
 impl FileProvider {
@@ -159,6 +162,7 @@ impl FileProvider {
             index,
             exclusions,
             home: dirs::home_dir().map(|h| h.display().to_string()),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -169,9 +173,16 @@ impl FileProvider {
         let index = Arc::clone(&self.index);
         let query = IndexQuery::parse(kind, text);
         let now = unix_now();
-        tokio::task::spawn_blocking(move || index.search(query.scorer(now), MAX_HITS))
-            .await
-            .unwrap_or_default()
+        // Each search cancels the ones before it: only the newest query's
+        // results can still be shown.
+        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        let latest = Arc::clone(&self.generation);
+        tokio::task::spawn_blocking(move || {
+            let superseded = || latest.load(Ordering::Acquire) != generation;
+            index.search(|| query.scorer(now), MAX_HITS, &superseded)
+        })
+        .await
+        .unwrap_or_default()
     }
 
     fn to_items(&self, hits: Vec<FileHit>, text: &str, limit: usize) -> Vec<ResultItem> {

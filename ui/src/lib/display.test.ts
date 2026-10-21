@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shortenPath } from "./display";
+import { indexNotice, shortenPath } from "./display";
 
 describe("shortenPath", () => {
   it("leaves short paths alone", () => {
@@ -26,5 +26,16 @@ describe("shortenPath", () => {
     expect(short.startsWith("/…/")).toBe(true);
     expect(short.endsWith("/g/h")).toBe(true);
     expect(short.length).toBeLessThanOrEqual(14);
+  });
+});
+
+describe("indexNotice", () => {
+  it("shows progress only while files may be missing", () => {
+    expect(indexNotice(null)).toBeNull();
+    expect(indexNotice({ scanning: true, incomplete: false, entries: 9 })).toBeNull();
+    expect(indexNotice({ scanning: false, incomplete: true, entries: 0 })).toBe("Loading your file index…");
+    expect(indexNotice({ scanning: true, incomplete: true, entries: 48213 })).toBe(
+      `Indexing your files… ${(48213).toLocaleString()} found so far`,
+    );
   });
 });

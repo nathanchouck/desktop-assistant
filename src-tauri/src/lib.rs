@@ -159,6 +159,13 @@ fn start_file_index_unless_everything(app: &AppHandle) {
     let state = app.state::<AppState>();
     let shell = Arc::clone(&state.shell);
     let files = Arc::clone(&state.files);
+    // Progress for the footer while the index loads or scans.
+    let handle = app.clone();
+    files.on_status(move |status| {
+        if let Err(e) = (ipc::FileIndexChanged { status }).emit(&handle) {
+            tracing::debug!("could not send file index status: {e}");
+        }
+    });
     tauri::async_runtime::spawn(async move {
         if shell.everything_running().await {
             tracing::info!("Everything is running; using it for file search");

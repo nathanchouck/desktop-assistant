@@ -10,6 +10,8 @@ export const commands = {
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
 	settingsGet: () => __TAURI_INVOKE<Settings>("settings_get"),
 	searchQuery: (query: string, seq: number) => typedError<SearchResponse, IpcError>(__TAURI_INVOKE("search_query", { query, seq })),
+	/**  How far along the built-in file index is (for the footer). */
+	fileIndexStatus: () => __TAURI_INVOKE<IndexStatus>("file_index_status"),
 	/**  Runs an action on a result (open an app, run a command, ...). */
 	itemActivate: (id: string, action: Action) => typedError<null, IpcError>(__TAURI_INVOKE("item_activate", { id, action })),
 	launcherHide: () => __TAURI_INVOKE<void>("launcher_hide"),
@@ -32,7 +34,9 @@ export const commands = {
 /** Events */
 export const events = {
 	aiStream: makeEvent<AiStream>("ai-stream"),
+	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
+	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
 };
 
 /* Types */
@@ -110,6 +114,14 @@ export type ClaudeSettings = {
 	path: string,
 };
 
+/**
+ *  The file index's progress changed (sent a few times a second while it
+ *  scans).
+ */
+export type FileIndexChanged = {
+	status: IndexStatus,
+};
+
 export type GeneralSettings = {
 	launch_at_login: boolean,
 };
@@ -119,6 +131,19 @@ export type HotkeySettings = {
 	toggle: string,
 	/**  Tapping the Windows key on its own opens the launcher. */
 	win_key_override: boolean,
+};
+
+/**  How far along the index is, for the UI. */
+export type IndexStatus = {
+	/**  A full scan is reading the disk. */
+	scanning: boolean,
+	/**
+	 *  Some files can't be found yet: the index is loading, or the first
+	 *  scan is still running with no saved index to start from.
+	 */
+	incomplete: boolean,
+	/**  Files and folders indexed so far. */
+	entries: number,
 };
 
 /**
@@ -176,6 +201,15 @@ export type SearchSettings = {
 	 */
 	index_folders: string[],
 	max_results: number,
+};
+
+/**
+ *  Fuller results for search `seq`, from providers that missed the
+ *  per-keystroke budget. Replaces that search's list.
+ */
+export type SearchUpdated = {
+	seq: number,
+	items: ResultItem[],
 };
 
 export type Settings = {

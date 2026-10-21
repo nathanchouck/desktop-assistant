@@ -37,3 +37,30 @@ describe("LatestOnly.invalidate", () => {
     expect(g.accept(b)).toBe(true);
   });
 });
+
+describe("LatestOnly.acceptUpdate", () => {
+  it("takes a fuller answer for the newest request only", () => {
+    const g = new LatestOnly();
+    const a = g.next();
+    expect(g.accept(a)).toBe(true);
+    expect(g.acceptUpdate(a)).toBe(true);
+    const b = g.next();
+    expect(g.acceptUpdate(a)).toBe(false);
+    expect(g.accept(b)).toBe(true);
+  });
+
+  it("wins over a first answer that arrives after it", () => {
+    const g = new LatestOnly();
+    const a = g.next();
+    expect(g.acceptUpdate(a)).toBe(true);
+    expect(g.accept(a)).toBe(false);
+  });
+
+  it("is dropped after the query is cleared", () => {
+    const g = new LatestOnly();
+    const a = g.next();
+    expect(g.accept(a)).toBe(true);
+    g.invalidate();
+    expect(g.acceptUpdate(a)).toBe(false);
+  });
+});

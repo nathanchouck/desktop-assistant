@@ -64,9 +64,11 @@ Check on a real Windows machine:
 - [x] Filters: `f ` files only, `d ` folders only, `ext:pdf` (plus any Everything syntax when it's running)
 - [x] Query-sequence handling so stale results never flash (UI) and stale searches skip (worker)
 - [x] Windows CI installs Everything and runs a real search test
+- [x] Big indexes: results that miss the 40 ms budget arrive a moment later instead of being dropped; index search runs in parallel and stops when you type past it (D-020)
+- [x] Footer shows indexing progress until the first scan is done; files show up during the scan
 
 Check on a real Windows machine:
-- [ ] Without Everything: files in your user folder show up as you type (first launch needs a scan; check the log for its time)
+- [ ] Without Everything: files in your user folder show up as you type (first launch: the footer shows the scan's progress)
 - [ ] A file you just saved or renamed shows up within a few seconds
 - [ ] With Everything running: files anywhere on your drives show up
 - [ ] Ctrl+Enter opens Explorer with the file selected; Ctrl+Shift+C copies the path

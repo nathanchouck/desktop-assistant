@@ -3,7 +3,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use super::rules::Rules;
 use super::{IndexEntry, Tree};
@@ -45,7 +45,25 @@ pub fn list_dir(dir: &Path, rules: &Rules) -> io::Result<Vec<IndexEntry>> {
 /// entries have been read. Unreadable folders are skipped.
 pub fn walk(root: &Path, rules: &Rules, limit: usize) -> Tree {
     let mut tree = Tree::new();
+    walk_in_chunks(root, rules, limit, Duration::MAX, |chunk| {
+        tree.extend(chunk)
+    });
+    tree
+}
+
+/// Like `walk`, but hands over what it has read so far every `every` (and
+/// the rest at the end), so a long scan can show progress and results.
+/// Returns the number of entries read.
+pub fn walk_in_chunks(
+    root: &Path,
+    rules: &Rules,
+    limit: usize,
+    every: Duration,
+    mut emit: impl FnMut(Tree),
+) -> usize {
+    let mut tree = Tree::new();
     let mut count = 0usize;
+    let mut last_emit = Instant::now();
     let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let entries = match list_dir(&dir, rules) {
@@ -69,8 +87,15 @@ pub fn walk(root: &Path, rules: &Rules, limit: usize) -> Tree {
             );
             break;
         }
+        if last_emit.elapsed() >= every {
+            emit(std::mem::take(&mut tree));
+            last_emit = Instant::now();
+        }
     }
-    tree
+    if !tree.is_empty() {
+        emit(tree);
+    }
+    count
 }
 
 #[cfg(windows)]
@@ -145,6 +170,25 @@ mod tests {
         std::os::unix::fs::symlink(dir.path(), dir.path().join("real/loop")).unwrap();
         let tree = walk(dir.path(), &Rules::default(), usize::MAX);
         assert_eq!(tree.len(), 2);
+    }
+
+    #[test]
+    fn hands_over_everything_in_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..5 {
+            fs::create_dir_all(dir.path().join(format!("d{i}"))).unwrap();
+            fs::write(dir.path().join(format!("d{i}/f.txt")), b"x").unwrap();
+        }
+        let rules = Rules::default();
+        let mut chunks = 0;
+        let mut joined = Tree::new();
+        let count = walk_in_chunks(dir.path(), &rules, usize::MAX, Duration::ZERO, |chunk| {
+            chunks += 1;
+            joined.extend(chunk);
+        });
+        assert_eq!(count, 10);
+        assert!(chunks > 1, "a zero interval hands over every folder");
+        assert_eq!(joined, walk(dir.path(), &rules, usize::MAX));
     }
 
     #[test]

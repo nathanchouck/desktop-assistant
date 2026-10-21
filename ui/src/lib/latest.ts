@@ -19,8 +19,20 @@ export class LatestOnly {
     return true;
   }
 
+  /**
+   * For a later, fuller answer to request `seq` (results that missed the
+   * first response): applied only while `seq` is the newest request.
+   */
+  acceptUpdate(seq: number): boolean {
+    if (seq !== this.issued || seq < this.applied) return false;
+    this.applied = seq;
+    return true;
+  }
+
   /** Drops every response still in flight (e.g. after clearing the query). */
   invalidate(): void {
+    // Skip a number so late updates for the dropped request fail too.
+    this.issued += 1;
     this.applied = this.issued;
   }
 }

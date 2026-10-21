@@ -187,9 +187,12 @@ impl Chat {
    drops responses older than the latest `seq`.
 2. Prefix check first: `c ` forces Claude, `g ` forces ChatGPT, `>` lists
    commands. Forced AI skips search.
-3. The aggregator runs all providers in parallel with a 40 ms budget each,
+3. The aggregator runs all providers in parallel with a 40 ms budget,
    asking each for 4× the visible limit so frecency can lift weaker matches.
-   Late providers are dropped for this keystroke, not awaited.
+   What's in by then is shown. A provider that missed the budget keeps
+   going (up to 3 s); when it finishes, the full re-ranked list goes to the
+   UI as a `search-updated` event for that `seq`, applied only if it's still
+   the newest search (D-020).
 4. Results are merged, ranked (`rank.rs`), and capped at 8 visible rows. An
    "Ask Claude: <query>" row is always appended last.
 5. Keys (`ui/src/lib/keys.ts`):
@@ -246,12 +249,20 @@ built-in index. Nothing has to be installed. (D-017)
   and doesn't enter folders in `search.exclusions`. Caps at 2 million entries.
 - Shape: folder path → its direct children (`BTreeMap`), names as boxed
   strings with kind and modified time. Search scores every entry under a
-  read lock and keeps the top 100 in a min-heap; ~15 ms for 300k names, run
-  with `spawn_blocking`.
+  read lock and keeps the top 100 in a min-heap, run with `spawn_blocking`.
+  From 20k entries it splits the folders across up to 8 threads. Each
+  search bumps a generation counter and checks it every 4k entries, so a
+  search for a query you've typed past stops early.
 - Lifecycle, on its own thread: load the snapshot (`file-index.txt` in the
   data folder) so search works instantly → start watching → full rescan to
   catch changes made while closed → apply changes. Snapshot saved after each
   scan and every 5 minutes if anything changed.
+- First run (no snapshot): folders are added to the index as they're read
+  (every 0.3 s), so search works during the scan. Later rescans build the
+  new tree on the side and swap it in.
+- Progress: `IndexStatus { scanning, incomplete, entries }`, from
+  `file_index_status` and the `file-index-changed` event. While
+  `incomplete`, the footer says "Indexing your files… N found so far".
 - Watching: each root non-recursively, plus each indexed folder directly
   inside a root recursively, so AppData's churn never reaches us. Changes are
   batched (0.5 s quiet, 3 s max); each re-reads only the folder it happened

@@ -1,4 +1,4 @@
-import type { ResultItem } from "./bindings";
+import type { IndexStatus, ResultItem } from "./bindings";
 
 /**
  * Shortens a long path by cutting folders out of the middle, keeping the
@@ -27,4 +27,11 @@ export function detailFor(item: ResultItem): string | null {
   // Setup rows (e.g. "Start Everything") explain themselves.
   if (item.kind === "command" && !item.id.startsWith("cmd:")) return item.subtitle;
   return null;
+}
+
+/** Footer text while the file index isn't complete yet; null once it is. */
+export function indexNotice(status: IndexStatus | null): string | null {
+  if (!status?.incomplete) return null;
+  if (!status.scanning) return "Loading your file index…";
+  return `Indexing your files… ${status.entries.toLocaleString()} found so far`;
 }

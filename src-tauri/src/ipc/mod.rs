@@ -2,16 +2,18 @@
 //! After changing anything here, run `npm run bindings`.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use specta_typescript::Typescript;
 use tauri::{AppHandle, State, Wry};
-use tauri_specta::{collect_commands, collect_events, Builder};
+use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 use crate::actions;
 use crate::ai::{claude, AiEvent};
 use crate::error::IpcError;
-use crate::search::{Action, ResultItem};
+use crate::file_index::IndexStatus;
+use crate::search::{Action, Frecency, ResultItem};
 use crate::settings::Settings;
 use crate::state::AppState;
 use crate::window;
@@ -52,20 +54,40 @@ fn settings_get(state: State<'_, AppState>) -> Settings {
 #[tauri::command]
 #[specta::specta]
 async fn search_query(
+    app: AppHandle,
     state: State<'_, AppState>,
     query: String,
     seq: u32,
 ) -> Result<SearchResponse, IpcError> {
     let settings = state.settings();
     let limit = settings.search.max_results as usize;
-    let store = &state.store;
-    let items = state
+    let store = Arc::clone(&state.store);
+    let frecency: Frecency = Arc::new(move |id| store.frecency(id));
+    let outcome = state
         .search
-        .search(&query, limit, settings.ai.default_provider, &|id| {
-            store.frecency(id)
-        })
+        .search(&query, limit, settings.ai.default_provider, frecency)
         .await;
-    Ok(SearchResponse { seq, items })
+    // A slow provider (big file index, busy disk) sends its results later
+    // instead of dropping them.
+    if let Some(complete) = outcome.complete {
+        tauri::async_runtime::spawn(async move {
+            let items = complete.await;
+            if let Err(e) = (SearchUpdated { seq, items }).emit(&app) {
+                tracing::debug!("could not send late results: {e}");
+            }
+        });
+    }
+    Ok(SearchResponse {
+        seq,
+        items: outcome.items,
+    })
+}
+
+/// How far along the built-in file index is (for the footer).
+#[tauri::command]
+#[specta::specta]
+fn file_index_status(state: State<'_, AppState>) -> IndexStatus {
+    state.files.status()
 }
 
 /// Runs an action on a result (open an app, run a command, ...).
@@ -165,6 +187,21 @@ pub struct AiStream {
     pub event: AiEvent,
 }
 
+/// Fuller results for search `seq`, from providers that missed the
+/// per-keystroke budget. Replaces that search's list.
+#[derive(Debug, Clone, Serialize, specta::Type, tauri_specta::Event)]
+pub struct SearchUpdated {
+    pub seq: u32,
+    pub items: Vec<ResultItem>,
+}
+
+/// The file index's progress changed (sent a few times a second while it
+/// scans).
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+pub struct FileIndexChanged {
+    pub status: IndexStatus,
+}
+
 /// Sent each time the launcher appears, so the UI can focus the search box.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 pub struct LauncherShown;
@@ -175,6 +212,7 @@ pub fn builder() -> Builder<Wry> {
             app_info,
             settings_get,
             search_query,
+            file_index_status,
             item_activate,
             launcher_hide,
             launcher_set_height,
@@ -185,7 +223,12 @@ pub fn builder() -> Builder<Wry> {
             ai_close,
             open_external
         ])
-        .events(collect_events![LauncherShown, AiStream])
+        .events(collect_events![
+            LauncherShown,
+            AiStream,
+            FileIndexChanged,
+            SearchUpdated
+        ])
 }
 
 /// Where the generated TypeScript bindings live.

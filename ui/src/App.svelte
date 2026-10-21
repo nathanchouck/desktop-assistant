@@ -4,8 +4,9 @@
   import ResultList from "./components/ResultList.svelte";
   import ChatPane from "./components/ChatPane.svelte";
   import Footer from "./components/Footer.svelte";
-  import { commands, events } from "./lib/bindings";
+  import { commands, events, type IndexStatus } from "./lib/bindings";
   import { hasClaudePrefix, modelLabel, stripClaudePrefix } from "./lib/chat";
+  import { indexNotice } from "./lib/display";
   import { chatHints, chatIntentFor, intentFor, searchHints } from "./lib/keys";
   import { ChatStore } from "./lib/stores/chat.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
@@ -22,10 +23,13 @@
   let pane: ChatPane | undefined = $state();
   let content: HTMLDivElement;
   let hiddenAt = 0;
+  let indexStatus = $state<IndexStatus | null>(null);
 
   const expanded = $derived(chat.active || search.expanded);
   const notice = $derived(
-    chat.active ? `Claude${chat.transcript.model ? ` · ${modelLabel(chat.transcript.model)}` : ""}` : search.notice,
+    chat.active
+      ? `Claude${chat.transcript.model ? ` · ${modelLabel(chat.transcript.model)}` : ""}`
+      : (search.notice ?? indexNotice(indexStatus)),
   );
   const hints = $derived(
     chat.active
@@ -91,6 +95,7 @@
     const idle = Date.now() - hiddenAt > CHAT_RESET_MS;
     if (chat.active && idle && !chat.transcript.running && !chat.pending) void chat.close();
     bar.focusAndSelect();
+    void commands.fileIndexStatus().then((s) => (indexStatus = s));
   }
 
   onMount(() => {
@@ -111,7 +116,10 @@
     const unlisten = [
       events.launcherShown.listen(onShown),
       events.aiStream.listen((e) => chat.onEvent(e.payload)),
+      events.fileIndexChanged.listen((e) => (indexStatus = e.payload.status)),
+      events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
     ];
+    void commands.fileIndexStatus().then((s) => (indexStatus = s));
 
     return () => {
       observer.disconnect();

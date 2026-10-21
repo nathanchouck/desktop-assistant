@@ -1,4 +1,4 @@
-import { commands, type Action, type ResultItem } from "../bindings";
+import { commands, type Action, type ResultItem, type SearchUpdated } from "../bindings";
 import { LatestOnly } from "../latest";
 
 /** State for the search box and results list. */
@@ -36,6 +36,17 @@ export class SearchStore {
     if (!this.#latest.accept(res.data.seq)) return;
     this.items = res.data.items;
     this.selected = 0;
+  }
+
+  /** Fuller results for a search (files that took longer than the rest). */
+  onUpdate({ seq, items }: SearchUpdated): void {
+    if (!this.#latest.acceptUpdate(seq)) return;
+    // If you moved the highlight, keep it on the same row; otherwise the
+    // (possibly new) top row is highlighted.
+    const selectedId = this.selected > 0 ? this.items[this.selected]?.id : undefined;
+    this.items = items;
+    const kept = items.findIndex((item) => item.id === selectedId);
+    this.selected = kept >= 0 ? kept : 0;
   }
 
   clear(): void {

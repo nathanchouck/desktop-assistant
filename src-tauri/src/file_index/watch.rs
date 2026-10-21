@@ -23,6 +23,8 @@ const MAX_BATCH: Duration = Duration::from_secs(3);
 const SAVE_EVERY: Duration = Duration::from_secs(300);
 /// When the OS says events were lost, rescan everything, but not more often.
 const MIN_RESCAN_GAP: Duration = Duration::from_secs(600);
+/// How often a scan reports progress (and, on the first scan, adds results).
+const PROGRESS_EVERY: Duration = Duration::from_millis(300);
 
 enum Change {
     Paths(Vec<PathBuf>),
@@ -37,6 +39,7 @@ pub(super) fn run(index: Arc<FileIndex>) {
         index
             .dirty
             .store(false, std::sync::atomic::Ordering::Release);
+        index.set_incomplete(false);
     }
 
     // Watch before scanning so changes made during the scan queue up.
@@ -91,16 +94,40 @@ fn next_batch(rx: &Receiver<Change>) -> Result<Vec<Change>, RecvTimeoutError> {
 
 fn full_scan(index: &FileIndex) {
     let started = Instant::now();
+    index.set_scanning(true);
+    // With nothing indexed yet, add folders as they're read so search works
+    // during the first scan. Otherwise build the new tree on the side and
+    // swap it in at the end, so deleted files drop out without a gap.
+    let fill_live = index.is_empty();
     let mut tree = Tree::new();
     let mut budget = MAX_ENTRIES;
+    let mut total = 0;
     for root in &index.roots {
-        let part = scan::walk(Path::new(root), &index.rules, budget);
-        budget = budget.saturating_sub(count(&part));
-        tree.extend(part);
+        let read = scan::walk_in_chunks(
+            Path::new(root),
+            &index.rules,
+            budget,
+            PROGRESS_EVERY,
+            |chunk| {
+                if fill_live {
+                    index.insert_tree(chunk);
+                    index.report();
+                } else {
+                    tree.extend(chunk);
+                }
+            },
+        );
+        budget = budget.saturating_sub(read);
+        total += read;
     }
-    let total = count(&tree);
-    index.replace_all(tree);
+    if !fill_live {
+        index.replace_all(tree);
+    }
     index.save_if_dirty();
+    index
+        .scanning
+        .store(false, std::sync::atomic::Ordering::Release);
+    index.set_incomplete(false);
     tracing::info!(
         "file index: {total} entries scanned in {:?}",
         started.elapsed()
