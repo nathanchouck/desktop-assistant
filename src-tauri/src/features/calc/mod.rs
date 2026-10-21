@@ -1,7 +1,10 @@
 //! Calculator and unit / currency conversion right in search (`2^10`,
-//! `5 mi to km`, `100 usd in eur`). fend does the math; `parse` decides what
-//! counts as a calculation, `format` makes the answer readable, `rates`
-//! keeps exchange rates fresh in the background.
+//! `5 mi to km`, `100 usd in eur`).
+//!
+//! - `parse` decides what counts as a calculation (`tokens` splits the
+//!   query, `rewrite` turns everyday notation into fend's);
+//! - `eval` runs fend with a time limit, `format` makes the answer readable;
+//! - `rates` keeps exchange rates fresh in the background (`win` downloads).
 
 mod eval;
 mod format;
