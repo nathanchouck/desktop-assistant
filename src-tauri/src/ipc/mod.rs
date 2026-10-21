@@ -432,6 +432,9 @@ pub fn builder() -> Builder<Wry> {
             // [color]
             // [scripts]
             // [updater]
+            crate::features::updater::commands::update_status,
+            crate::features::updater::commands::update_check,
+            crate::features::updater::commands::update_install,
             // [integrations]
         ])
         .events(collect_events![
@@ -446,6 +449,7 @@ pub fn builder() -> Builder<Wry> {
             // [clipboard]
             // [color]
             // [updater]
+            crate::features::updater::UpdateStatusChanged,
         ])
 }
 
