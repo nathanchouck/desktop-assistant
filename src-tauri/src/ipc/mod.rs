@@ -376,6 +376,16 @@ async fn scripts_list(reload: bool) -> Result<ScriptsOverview, IpcError> {
         .map_err(|message| IpcError { message })
 }
 
+/// Opens the scripts folder in File Explorer, making it first (with a
+/// README and an example) if it doesn't exist.
+#[tauri::command]
+#[specta::specta]
+async fn scripts_open_folder(state: State<'_, AppState>) -> Result<(), IpcError> {
+    crate::features::scripts::open_folder(&state.shell)
+        .await
+        .map_err(|message| IpcError { message })
+}
+
 fn ai_err(e: crate::ai::AiError) -> IpcError {
     crate::error::AppError::from(e).into()
 }
@@ -443,6 +453,7 @@ pub fn builder() -> Builder<Wry> {
             // [color]
             // [scripts]
             scripts_list,
+            scripts_open_folder,
             // [updater]
             // [integrations]
             // [ai_commands]

@@ -129,7 +129,16 @@ impl Interpreters {
         if cfg!(windows) {
             Self {
                 powershell: windows_powershell(places).map(|p| {
-                    program(p, &["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+                    program(
+                        p,
+                        &[
+                            "-NoProfile",
+                            "-NonInteractive",
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-File",
+                        ],
+                    )
                 }),
                 python: find(&["py.exe"], places, &places.python_dirs())
                     .map(|p| program(p, &["-3"]))
@@ -192,7 +201,10 @@ impl Places {
     }
 
     fn node_dirs(&self) -> Vec<PathBuf> {
-        self.program_files.iter().map(|d| d.join("nodejs")).collect()
+        self.program_files
+            .iter()
+            .map(|d| d.join("nodejs"))
+            .collect()
     }
 }
 
@@ -244,11 +256,7 @@ fn git_bash(places: &Places) -> Option<PathBuf> {
         .iter()
         .map(|dir| dir.join("bash.exe"))
         .find(|p| exists(p) && !is_wsl_launcher(p));
-    on_path.or_else(|| {
-        git_bash_candidates(places)
-            .into_iter()
-            .find(|p| exists(p))
-    })
+    on_path.or_else(|| git_bash_candidates(places).into_iter().find(|p| exists(p)))
 }
 
 fn git_bash_candidates(places: &Places) -> Vec<PathBuf> {
@@ -350,7 +358,10 @@ mod tests {
             git_bash_candidates(&places),
             [
                 dir.path().join("PF").join(r"Git\bin\bash.exe"),
-                dir.path().join("Local").join("Programs").join(r"Git\bin\bash.exe"),
+                dir.path()
+                    .join("Local")
+                    .join("Programs")
+                    .join(r"Git\bin\bash.exe"),
             ]
         );
     }
@@ -366,7 +377,10 @@ mod tests {
             path: vec![a.clone()],
             ..Places::default()
         };
-        assert_eq!(find(&["py", "python"], &places, &[]), Some(a.join("python")));
+        assert_eq!(
+            find(&["py", "python"], &places, &[]),
+            Some(a.join("python"))
+        );
         assert_eq!(
             find(&["py", "python"], &places, std::slice::from_ref(&b)),
             Some(b.join("py"))

@@ -68,7 +68,10 @@ fn ids_round_trip() {
 #[test]
 fn text_after_a_title() {
     assert_eq!(text_after("say hello Ana", "Say Hello"), Some("Ana"));
-    assert_eq!(text_after("SAY HELLO   Ana Lee ", "Say Hello"), Some("Ana Lee"));
+    assert_eq!(
+        text_after("SAY HELLO   Ana Lee ", "Say Hello"),
+        Some("Ana Lee")
+    );
     assert_eq!(text_after("Café crème", "café"), Some("crème"));
     assert_eq!(text_after("say hello", "Say Hello"), None);
     assert_eq!(text_after("say hello ", "Say Hello"), None);
@@ -96,7 +99,10 @@ fn found_by_title_and_keywords() {
     );
     assert_eq!(ids(&rows(&idx, "ipconfig")), ["script:flush.cmd"]);
     let lock = rows(&idx, "lock");
-    assert_eq!(lock[0].subtitle, "lock.ps1", "the file when there's no description");
+    assert_eq!(
+        lock[0].subtitle, "lock.ps1",
+        "the file when there's no description"
+    );
     assert!(rows(&idx, "zzz").is_empty());
 }
 
@@ -177,7 +183,10 @@ fn reload_messages() {
         "Found 1 script command; 1 file isn't one (see Settings)."
     );
     idx.folder_error = Some("The folder doesn't exist.".into());
-    assert_eq!(reload_message(&idx), "Scripts folder: The folder doesn't exist.");
+    assert_eq!(
+        reload_message(&idx),
+        "Scripts folder: The folder doesn't exist."
+    );
 }
 
 /// A provider over a temporary scripts folder.
@@ -233,9 +242,18 @@ mod running {
         let p = ready(
             dir.path(),
             &[
-                ("copy.sh", "# @title Copy It\n# @mode copy\n# @argument\necho \"got $1\"\n"),
-                ("paste.sh", "# @title Paste It\n# @mode paste\nprintf 'a\\nb\\n'\n"),
-                ("out.sh", "# @title Show It\n# @mode output\necho one; echo two\n"),
+                (
+                    "copy.sh",
+                    "# @title Copy It\n# @mode copy\n# @argument\necho \"got $1\"\n",
+                ),
+                (
+                    "paste.sh",
+                    "# @title Paste It\n# @mode paste\nprintf 'a\\nb\\n'\n",
+                ),
+                (
+                    "out.sh",
+                    "# @title Show It\n# @mode output\necho one; echo two\n",
+                ),
                 ("quiet.sh", "# @title Quiet\n# @mode copy\ntrue\n"),
             ],
         )
@@ -273,9 +291,15 @@ mod running {
         let p = ready(
             dir.path(),
             &[
-                ("fail.sh", "# @title Fail\n# @mode output\necho 'disk full' >&2; exit 1\n"),
+                (
+                    "fail.sh",
+                    "# @title Fail\n# @mode output\necho 'disk full' >&2; exit 1\n",
+                ),
                 ("here.sh", "# @title Here\n# @mode copy\npwd\n"),
-                ("there.sh", "# @title There\n# @mode copy\n# @cwd explorer\npwd\n"),
+                (
+                    "there.sh",
+                    "# @title There\n# @mode copy\n# @cwd explorer\npwd\n",
+                ),
             ],
         )
         .await;
@@ -296,9 +320,16 @@ mod running {
             notice("There runs in File Explorer's folder: open the launcher from File Explorer.")
         );
         assert_eq!(
-            p.activate("script:here.sh", Action::CopyPath).await.unwrap(),
+            p.activate("script:here.sh", Action::CopyPath)
+                .await
+                .unwrap(),
             Activation::Copy {
-                text: dir.path().join("scripts").join("here.sh").display().to_string()
+                text: dir
+                    .path()
+                    .join("scripts")
+                    .join("here.sh")
+                    .display()
+                    .to_string()
             }
         );
     }
@@ -307,10 +338,7 @@ mod running {
     async fn silent_scripts_run_in_the_background() {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("ran");
-        let script = format!(
-            "# @title Touch\nsleep 0.3; touch '{}'\n",
-            marker.display()
-        );
+        let script = format!("# @title Touch\nsleep 0.3; touch '{}'\n", marker.display());
         let p = ready(dir.path(), &[("touch.sh", &script)]).await;
         assert_eq!(
             p.activate("script:touch.sh", Action::Run).await.unwrap(),

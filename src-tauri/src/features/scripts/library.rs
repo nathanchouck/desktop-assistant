@@ -138,6 +138,18 @@ impl Library {
             .unwrap_or_else(|_| self.index())
     }
 
+    /// The folder, made first (with the README and example) if it doesn't
+    /// exist yet, ready to open in File Explorer.
+    pub fn ensure_folder(&self) -> Result<PathBuf, String> {
+        let folder = self.folder();
+        if !folder.exists() {
+            starter::create(&folder)
+                .map_err(|e| format!("Couldn't make {}: {e}", folder.display()))?;
+            tracing::info!("made the scripts folder {}", folder.display());
+        }
+        Ok(folder)
+    }
+
     pub fn set_app(&self, app: AppHandle) {
         let _ = self.app.set(app);
     }
@@ -325,7 +337,10 @@ mod tests {
     fn the_default_folder_is_made_with_an_example() {
         let dir = tempfile::tempdir().unwrap();
         let lib = library(dir.path());
-        assert_eq!(lib.folder(), dir.path().join("config/desktop-assistant/scripts"));
+        assert_eq!(
+            lib.folder(),
+            dir.path().join("config/desktop-assistant/scripts")
+        );
         let index = lib.rescan_blocking();
         assert!(lib.folder().join("README.txt").is_file());
         // The example needs PowerShell, which a Linux machine may not have.
@@ -339,8 +354,26 @@ mod tests {
         std::fs::remove_file(lib.folder().join("hello.ps1")).unwrap();
         let index = lib.rescan_blocking();
         assert!(index.scripts.is_empty() && index.problems.is_empty());
+        assert_eq!(lib.ensure_folder().unwrap(), lib.folder());
+        assert!(!lib.folder().join("hello.ps1").exists());
         let overview = lib.overview();
         assert_eq!(overview.folder, overview.default_folder);
+    }
+
+    #[test]
+    fn a_chosen_folder_is_made_only_when_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = library(dir.path());
+        let chosen = dir.path().join("mine");
+        lib.settings.write().unwrap().scripts.folder = chosen.display().to_string();
+        let index = lib.rescan_blocking();
+        assert_eq!(
+            index.folder_error.as_deref(),
+            Some("The folder doesn't exist.")
+        );
+        assert!(!chosen.exists());
+        assert_eq!(lib.ensure_folder().unwrap(), chosen);
+        assert!(chosen.join("README.txt").is_file() && chosen.join("hello.ps1").is_file());
     }
 
     #[test]

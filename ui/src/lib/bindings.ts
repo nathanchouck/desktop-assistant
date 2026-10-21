@@ -66,6 +66,16 @@ export const commands = {
 	openExternal: (url: string) => typedError<null, IpcError>(__TAURI_INVOKE("open_external", { url })),
 	/**  Opens the folder with the log files (from an error toast). */
 	openLogFolder: () => typedError<null, IpcError>(__TAURI_INVOKE("open_log_folder")),
+	/**
+	 *  The scripts folder and what's in it, for the settings menu; read again
+	 *  first when `reload` is set.
+	 */
+	scriptsList: (reload: boolean) => typedError<ScriptsOverview, IpcError>(__TAURI_INVOKE("scripts_list", { reload })),
+	/**
+	 *  Opens the scripts folder in File Explorer, making it first (with a
+	 *  README and an example) if it doesn't exist.
+	 */
+	scriptsOpenFolder: () => typedError<null, IpcError>(__TAURI_INVOKE("scripts_open_folder")),
 };
 
 /** Events */
@@ -451,8 +461,61 @@ export type ResultItem = {
 	confirm: string | null,
 };
 
+export type ScriptInfo = {
+	file: string,
+	title: string,
+	description: string,
+	/**  Like a result's `icon` (`glyph:…` or `text:…`). */
+	icon: string,
+	mode: ScriptMode,
+	/**  What its text argument is called, if it takes one. */
+	argument: string | null,
+	/**  "PowerShell", "Python", ... */
+	language: string,
+	/**  Runs in File Explorer's folder rather than its own. */
+	in_explorer_folder: boolean,
+};
+
+/**  What happens to what a script prints. */
+export type ScriptMode = 
+/**  Runs in the background; a toast shows the last line it printed. */
+"silent" | 
+/**  Shows what it printed: in the footer, or a text file when long. */
+"output" | 
+/**  Copies what it printed. */
+"copy" | 
+/**  Pastes what it printed into the window you came from. */
+"paste";
+
+export type ScriptProblem = {
+	file: string,
+	message: string,
+};
+
 export type ScriptSettings = {
+	/**  Scripts in the folder show up in search. */
 	enabled: boolean,
+	/**
+	 *  Where scripts are read from. Empty: `scripts` in the settings
+	 *  folder (`%APPDATA%\desktop-assistant\scripts`). `~` is your user
+	 *  folder; `%NAME%` an environment variable.
+	 */
+	folder: string,
+	/**  Seconds a script may run before it's stopped. */
+	timeout_secs: number,
+};
+
+/**  The scripts folder for the settings menu. */
+export type ScriptsOverview = {
+	/**  The folder scripts are read from. */
+	folder: string,
+	/**  The folder used when the setting is empty. */
+	default_folder: string,
+	/**  Why the folder can't be read, if it can't. */
+	folder_error: string | null,
+	scripts: ScriptInfo[],
+	/**  Script files that aren't commands, and why. */
+	problems: ScriptProblem[],
 };
 
 export type SearchResponse = {

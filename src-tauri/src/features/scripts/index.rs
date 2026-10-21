@@ -160,9 +160,15 @@ mod tests {
         assert_eq!(
             problems,
             [
-                ("bad.ps1", "@mode “loud” isn't one of silent, output, copy or paste."),
+                (
+                    "bad.ps1",
+                    "@mode “loud” isn't one of silent, output, copy or paste."
+                ),
                 ("e.sh", "Bash scripts need Git Bash, which wasn't found."),
-                ("helper.py", "No @title in the comment at the top, so it isn't a command."),
+                (
+                    "helper.py",
+                    "No @title in the comment at the top, so it isn't a command."
+                ),
             ]
         );
         assert_eq!(index.folder_error, None);
@@ -173,6 +179,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let index = scan(&dir.path().join("nope"), &all_found());
         assert!(index.scripts.is_empty());
-        assert_eq!(index.folder_error.as_deref(), Some("The folder doesn't exist."));
+        assert_eq!(
+            index.folder_error.as_deref(),
+            Some("The folder doesn't exist.")
+        );
     }
 }

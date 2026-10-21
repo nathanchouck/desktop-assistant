@@ -167,7 +167,11 @@ fn commands(fuzzy: &mut FuzzyQuery, folder: &str) -> Vec<ResultItem> {
                 .filter_map(|k| fuzzy.score(k))
                 .map(|s| s * KEYWORD_WEIGHT)
                 .reduce(f32::max);
-            let score = fuzzy.score(title).into_iter().chain(by_keyword).reduce(f32::max)?;
+            let score = fuzzy
+                .score(title)
+                .into_iter()
+                .chain(by_keyword)
+                .reduce(f32::max)?;
             Some(
                 ResultItem::new(id, ItemKind::Command, title)
                     .with_subtitle(subtitle)
@@ -233,6 +237,16 @@ fn notice(message: impl Into<String>) -> Activation {
     Activation::Notice {
         message: message.into(),
     }
+}
+
+/// Opens the scripts folder in File Explorer, making it first if needed
+/// (then it has the README and the example, a starting point).
+pub async fn open_folder(library: &Library, shell: &Shell) -> Result<(), String> {
+    let folder = library.ensure_folder()?;
+    shell
+        .open_path(folder.display().to_string())
+        .await
+        .map_err(|e| format!("Couldn't open {}: {e}", folder.display()))
 }
 
 /// "Found 3 script commands", and whether some files aren't commands.
@@ -351,7 +365,8 @@ impl ScriptProvider {
             }
             std::fs::write(path, body.as_bytes())
         };
-        write(&path).map_err(|e| format!("Couldn't save the output of {}: {e}", script.header.title))?;
+        write(&path)
+            .map_err(|e| format!("Couldn't save the output of {}: {e}", script.header.title))?;
         self.shell
             .open_path(path.display().to_string())
             .await
@@ -359,11 +374,7 @@ impl ScriptProvider {
     }
 
     async fn open_folder(&self) -> Result<Activation, SearchError> {
-        let folder = self.library.folder();
-        std::fs::create_dir_all(&folder)
-            .map_err(|e| failed(format!("couldn't make {}: {e}", folder.display())))?;
-        self.shell
-            .open_path(folder.display().to_string())
+        open_folder(&self.library, &self.shell)
             .await
             .map_err(failed)?;
         Ok(Activation::Hide)
@@ -398,7 +409,8 @@ impl SearchProvider for ScriptProvider {
             }
             _ => {}
         }
-        let (file, argument) = parse_id(id).ok_or_else(|| failed(format!("{id} isn't a script")))?;
+        let (file, argument) =
+            parse_id(id).ok_or_else(|| failed(format!("{id} isn't a script")))?;
         let index = self.library.index();
         let script = index
             .scripts

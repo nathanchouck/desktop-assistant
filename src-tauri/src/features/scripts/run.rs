@@ -113,7 +113,10 @@ async fn pump(mut from: impl AsyncRead + Unpin, into: Arc<Mutex<Capped>>) {
 async fn finish(readers: Vec<JoinHandle<()>>) {
     let deadline = tokio::time::Instant::now() + DRAIN;
     for mut reader in readers {
-        if tokio::time::timeout_at(deadline, &mut reader).await.is_err() {
+        if tokio::time::timeout_at(deadline, &mut reader)
+            .await
+            .is_err()
+        {
             reader.abort();
         }
     }
@@ -176,7 +179,9 @@ mod tests {
     #[tokio::test]
     async fn reports_the_exit_code() {
         let outcome = run(bash("echo bad >&2; exit 3", Duration::from_secs(10))).await;
-        assert!(matches!(outcome, Outcome::Finished { code: Some(3), ref stderr, .. } if stderr == "bad\n"));
+        assert!(
+            matches!(outcome, Outcome::Finished { code: Some(3), ref stderr, .. } if stderr == "bad\n")
+        );
     }
 
     #[tokio::test]
@@ -196,8 +201,14 @@ mod tests {
     async fn doesnt_wait_for_programs_the_script_left_running() {
         let started = Instant::now();
         let outcome = run(bash("sleep 3 & echo started", Duration::from_secs(10))).await;
-        assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
-        assert!(matches!(outcome, Outcome::Finished { code: Some(0), ref stdout, .. } if stdout == "started\n"));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(
+            matches!(outcome, Outcome::Finished { code: Some(0), ref stdout, .. } if stdout == "started\n")
+        );
     }
 
     #[tokio::test]

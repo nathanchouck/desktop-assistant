@@ -272,11 +272,17 @@ mod tests {
         let h = hash("# @title Lock\n").unwrap();
         assert_eq!(h.mode, ScriptMode::Silent);
         assert_eq!(h.cwd, WorkDir::Script);
-        assert_eq!((h.description.as_str(), h.icon, h.argument), ("", None, None));
+        assert_eq!(
+            (h.description.as_str(), h.icon, h.argument),
+            ("", None, None)
+        );
         assert!(h.keywords.is_empty());
         // `@argument` without a name still takes text.
         assert_eq!(
-            hash("# @title X\n# @argument\n").unwrap().argument.as_deref(),
+            hash("# @title X\n# @argument\n")
+                .unwrap()
+                .argument
+                .as_deref(),
             Some("text")
         );
     }
@@ -303,7 +309,8 @@ mod tests {
 
     #[test]
     fn blank_lines_shebangs_and_plain_comments_are_skipped() {
-        let text = "#!/usr/bin/env python3\n\n# -*- coding: utf-8 -*-\n#\n#   @title   Spaced Out  \n";
+        let text =
+            "#!/usr/bin/env python3\n\n# -*- coding: utf-8 -*-\n#\n#   @title   Spaced Out  \n";
         assert_eq!(hash(text).unwrap().title, "Spaced Out");
         // A colon after the key works too, and keys ignore case.
         assert_eq!(hash("#@Title: Tight\n").unwrap().title, "Tight");

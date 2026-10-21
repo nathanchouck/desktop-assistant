@@ -14,22 +14,13 @@ pub fn oem_to_string(bytes: &[u8]) -> Option<String> {
     let len = i32::try_from(bytes.len()).ok()?;
     // SAFETY: the pointer and length describe `bytes`; a null output
     // buffer asks for the size needed.
-    let needed = unsafe {
-        MultiByteToWideChar(
-            CP_OEMCP,
-            0,
-            bytes.as_ptr(),
-            len,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
+    let needed =
+        unsafe { MultiByteToWideChar(CP_OEMCP, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
     let size = usize::try_from(needed).ok().filter(|n| *n > 0)?;
     let mut wide = vec![0u16; size];
     // SAFETY: `wide` has room for `needed` UTF-16 units.
-    let written = unsafe {
-        MultiByteToWideChar(CP_OEMCP, 0, bytes.as_ptr(), len, wide.as_mut_ptr(), needed)
-    };
+    let written =
+        unsafe { MultiByteToWideChar(CP_OEMCP, 0, bytes.as_ptr(), len, wide.as_mut_ptr(), needed) };
     wide.truncate(usize::try_from(written).ok().filter(|n| *n > 0)?);
     Some(String::from_utf16_lossy(&wide))
 }

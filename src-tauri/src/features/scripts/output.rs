@@ -68,7 +68,8 @@ impl Capped {
             if chunk.len() > room {
                 self.cut = true;
             }
-            self.bytes.extend_from_slice(&chunk[..chunk.len().min(room)]);
+            self.bytes
+                .extend_from_slice(&chunk[..chunk.len().min(room)]);
         }
     }
 
@@ -186,7 +187,9 @@ pub fn error_line(text: &str) -> Option<String> {
 /// details. The message is the lines before the last such position line.
 fn powershell_error(text: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
-    let at = lines.iter().rposition(|l| is_powershell_position(l.trim()))?;
+    let at = lines
+        .iter()
+        .rposition(|l| is_powershell_position(l.trim()))?;
     let start = lines[..at]
         .iter()
         .rposition(|l| is_noise(l))
@@ -269,9 +272,15 @@ mod tests {
 
     #[test]
     fn success_is_the_output_without_its_last_line_break() {
-        assert_eq!(result("T", &finished(0, "a\r\nb\r\n\r\n", "")), Ok("a\r\nb".into()));
+        assert_eq!(
+            result("T", &finished(0, "a\r\nb\r\n\r\n", "")),
+            Ok("a\r\nb".into())
+        );
         // Warnings on stderr don't make it a failure.
-        assert_eq!(result("T", &finished(0, "ok\n", "warning\n")), Ok("ok".into()));
+        assert_eq!(
+            result("T", &finished(0, "ok\n", "warning\n")),
+            Ok("ok".into())
+        );
     }
 
     #[test]
@@ -345,7 +354,10 @@ mod tests {
 
     #[test]
     fn last_line_for_silent_scripts() {
-        assert_eq!(last_line("T", "copying\nDone: 3 files\n\n"), "Done: 3 files");
+        assert_eq!(
+            last_line("T", "copying\nDone: 3 files\n\n"),
+            "Done: 3 files"
+        );
         assert_eq!(last_line("Lock", ""), "Ran Lock.");
     }
 

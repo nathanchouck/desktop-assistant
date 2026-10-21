@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use super::ProviderContext;
+use crate::platform::Shell;
 use crate::search::SearchProvider;
 use library::{Library, ScriptsOverview};
 
@@ -61,12 +62,7 @@ static LIBRARY: OnceLock<Arc<Library>> = OnceLock::new();
 /// Script commands in search.
 pub fn provider(ctx: &ProviderContext) -> Option<Arc<dyn SearchProvider>> {
     let library = LIBRARY
-        .get_or_init(|| {
-            Arc::new(Library::new(
-                ctx.paths.clone(),
-                Arc::clone(&ctx.settings),
-            ))
-        })
+        .get_or_init(|| Arc::new(Library::new(ctx.paths.clone(), Arc::clone(&ctx.settings))))
         .clone();
     Some(Arc::new(provider::ScriptProvider::new(
         library,
@@ -97,6 +93,16 @@ pub async fn overview(reload: bool) -> Result<ScriptsOverview, String> {
         library.rescan().await;
     }
     Ok(library.overview())
+}
+
+/// Opens the scripts folder in File Explorer (making it if needed), for
+/// the settings menu's button.
+pub async fn open_folder(shell: &Shell) -> Result<(), String> {
+    let library = LIBRARY
+        .get()
+        .cloned()
+        .ok_or("Script commands aren't ready yet.")?;
+    provider::open_folder(&library, shell).await
 }
 
 #[cfg(test)]

@@ -97,16 +97,8 @@ mod tests {
                 panic!("{what} never happened");
             }
         };
-        wait_for(
-            "first scan",
-            Box::new(move |l| l.index().folder == first),
-        )
-        .await;
-        std::fs::write(
-            dir.path().join("one").join("a.py"),
-            "# @title Ay\n",
-        )
-        .unwrap();
+        wait_for("first scan", Box::new(move |l| l.index().folder == first)).await;
+        std::fs::write(dir.path().join("one").join("a.py"), "# @title Ay\n").unwrap();
         wait_for(
             "new file noticed",
             Box::new(|l| {
