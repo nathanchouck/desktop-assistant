@@ -10,11 +10,20 @@
 //!   hidden too, so Windows saw nothing at all and Start can't open.
 //!
 //! When Windows did see a Win press (a shortcut, or a press our hook missed
-//! because it was too slow), its release is replayed behind a mask key so
-//! Start stays closed then too (D-015).
+//! or answered too late), its release is replayed behind a mask key so
+//! Start stays closed then too (D-015). A press we meant to hide but Windows
+//! got anyway is still a tap for the launcher; without the masked release
+//! Windows would think Win is still held and turn every key into Win+key.
 //!
 //! Pure logic, so it's tested on any platform; `win_key.rs` feeds it real
 //! keyboard events on Windows.
+
+use std::time::Duration;
+
+/// A held Windows key auto-repeats many times a second, so this long without
+/// any Windows key event while the detector thinks one is held means its
+/// release never reached us (the hook was skipped or removed meanwhile).
+pub const LOST_RELEASE_AFTER: Duration = Duration::from_millis(1_500);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
@@ -38,17 +47,16 @@ pub const VK_L: u32 = 0x4C;
 pub enum KeyEvent {
     /// A Windows key went down. `modifiers_held` is true if Shift, Ctrl or
     /// Alt were already down, which makes this a shortcut from the start.
-    WinDown {
-        side: Side,
-        modifiers_held: bool,
-    },
+    WinDown { side: Side, modifiers_held: bool },
     WinUp {
         side: Side,
+        /// Windows' own key state said this Win key was down when the
+        /// release reached the hook: Windows saw the press even if we meant
+        /// to hide it (our hook answered after `LowLevelHooksTimeout`).
+        os_saw_down: bool,
     },
     /// Any other key went down.
-    OtherDown {
-        vk: u32,
-    },
+    OtherDown { vk: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +76,10 @@ pub enum Verdict {
     /// Windows saw this Win key go down: hide the real release and replay
     /// it behind a mask key so Start doesn't open.
     MaskedRelease,
+    /// A lone tap, but Windows saw the press anyway (a late answer): open
+    /// the launcher *and* replay the release masked, so Windows neither
+    /// opens Start nor keeps thinking Win is held down.
+    MaskedTap,
 }
 
 #[derive(Debug, Default)]
@@ -84,6 +96,21 @@ impl TapDetector {
     /// No Windows key is held (safe to re-install the hook).
     pub fn is_idle(&self) -> bool {
         !self.down.iter().any(|&d| d)
+    }
+
+    /// Whether a Windows key we think is held was really let go without us
+    /// seeing it: nothing for `quiet` and Windows says no Win key is down.
+    /// Without this check the detector would stay "held" for good, and the
+    /// periodic re-install (which waits for idle, D-025) would never run.
+    /// Windows' state matters for a held shortcut (Win+arrows): the arrow
+    /// repeats, Win doesn't, but Windows knows Win is down.
+    pub fn release_lost(&self, quiet: Duration, os_win_down: bool) -> bool {
+        !self.is_idle() && quiet >= LOST_RELEASE_AFTER && !os_win_down
+    }
+
+    /// Forgets everything, after `release_lost`.
+    pub fn reset(&mut self) {
+        *self = Self::default();
     }
 
     pub fn on_event(&mut self, event: KeyEvent) -> Verdict {
@@ -136,17 +163,24 @@ impl TapDetector {
                     right: hidden[1],
                 }
             }
-            KeyEvent::WinUp { side } => {
+            KeyEvent::WinUp { side, os_saw_down } => {
                 let i = side.index();
                 let was_down = std::mem::replace(&mut self.down[i], false);
                 let was_shown = std::mem::replace(&mut self.shown[i], false);
-                if !was_down || was_shown {
+                if !was_down || was_shown || os_saw_down {
                     // Windows knows this key is down (or we missed the press
                     // and it might): mask the release so Start stays closed.
+                    // A press we meant to hide that Windows saw anyway is
+                    // still a tap for the launcher.
+                    let tap = was_down && !was_shown && self.armed && !self.down[1 - i];
                     if !self.down.iter().any(|&d| d) {
                         self.armed = false;
                     }
-                    return Verdict::MaskedRelease;
+                    return if tap {
+                        Verdict::MaskedTap
+                    } else {
+                        Verdict::MaskedRelease
+                    };
                 }
                 // Windows never saw this press: hide the release too.
                 let tap = self.armed && !self.down[1 - i];
@@ -181,7 +215,18 @@ mod tests {
     }
 
     fn up(side: Side) -> KeyEvent {
-        WinUp { side }
+        WinUp {
+            side,
+            os_saw_down: false,
+        }
+    }
+
+    /// A release where Windows' key state says it got the press.
+    fn up_seen(side: Side) -> KeyEvent {
+        WinUp {
+            side,
+            os_saw_down: true,
+        }
     }
 
     const E: KeyEvent = OtherDown { vk: 0x45 };
@@ -288,5 +333,63 @@ mod tests {
             up(Left),
         ]);
         assert_eq!(v, [Swallow, Tap, Swallow, Tap, Swallow, Tap]);
+    }
+
+    #[test]
+    fn a_tap_windows_saw_anyway_still_taps_but_masks_the_release() {
+        // The press reached Windows (late answer): open the launcher and
+        // replay the release masked, or Win stays stuck down in Windows.
+        assert_eq!(run(&[down(Left), up_seen(Left)]), [Swallow, MaskedTap]);
+        assert_eq!(
+            run(&[down(Right), down(Right), up_seen(Right)]),
+            [Swallow, Swallow, MaskedTap]
+        );
+    }
+
+    #[test]
+    fn a_shortcut_release_is_never_a_tap_even_if_windows_saw_it() {
+        let v = run(&[down(Left), E, up_seen(Left)]);
+        assert_eq!(v[2], MaskedRelease);
+        let v = run(&[down(Left), OtherDown { vk: VK_L }, up_seen(Left)]);
+        assert_eq!(v, [Swallow, Lock, MaskedRelease]);
+    }
+
+    #[test]
+    fn a_release_windows_saw_without_our_press_is_masked_not_a_tap() {
+        assert_eq!(run(&[up_seen(Left)]), [MaskedRelease]);
+    }
+
+    #[test]
+    fn a_late_tap_does_not_poison_the_next_one() {
+        let v = run(&[down(Left), up_seen(Left), down(Left), up(Left)]);
+        assert_eq!(v, [Swallow, MaskedTap, Swallow, Tap]);
+    }
+
+    #[test]
+    fn both_keys_with_a_late_release_never_tap() {
+        let v = run(&[down(Left), down(Right), up_seen(Right), up_seen(Left)]);
+        assert_eq!(v, [Swallow, Pass, MaskedRelease, MaskedRelease]);
+    }
+
+    #[test]
+    fn a_lost_release_is_noticed_only_when_quiet_and_windows_agrees() {
+        let mut d = TapDetector::default();
+        let quiet = LOST_RELEASE_AFTER;
+        assert!(!d.release_lost(quiet, false), "idle: nothing to lose");
+        d.on_event(down(Left));
+        assert!(!d.release_lost(quiet - Duration::from_millis(1), false));
+        assert!(!d.release_lost(quiet, true), "Windows says Win is held");
+        assert!(d.release_lost(quiet, false));
+    }
+
+    #[test]
+    fn a_reset_detector_taps_again() {
+        let mut d = TapDetector::default();
+        d.on_event(down(Left));
+        d.on_event(E);
+        d.reset();
+        assert!(d.is_idle());
+        assert_eq!(d.on_event(down(Left)), Swallow);
+        assert_eq!(d.on_event(up(Left)), Tap);
     }
 }

@@ -145,6 +145,17 @@ fn shortcut_pause(app: AppHandle, state: State<'_, AppState>, paused: bool) {
     }
 }
 
+/// Gives the Windows key hook a full second to answer before Windows uses
+/// the key anyway (`longer`), or puts Windows' default back. Applies after
+/// signing out.
+#[tauri::command]
+#[specta::specta]
+fn win_key_set_timeout(longer: bool) -> Result<(), IpcError> {
+    hotkey::set_longer_timeout(longer).map_err(|e| IpcError {
+        message: e.to_string(),
+    })
+}
+
 /// Restarts the launcher (to re-index with new folders).
 #[tauri::command]
 #[specta::specta]
@@ -415,6 +426,7 @@ pub fn builder() -> Builder<Wry> {
             app_status,
             app_restart,
             shortcut_pause,
+            win_key_set_timeout,
             search_query,
             file_index_status,
             item_activate,

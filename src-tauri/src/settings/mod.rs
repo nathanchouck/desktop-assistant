@@ -88,6 +88,9 @@ pub struct HotkeySettings {
     pub toggle: String,
     /// Tapping the Windows key on its own opens the launcher.
     pub win_key_override: bool,
+    /// If Start opens anyway right after a tap (Windows didn't wait for the
+    /// hook), close it and bring the launcher back.
+    pub close_start: bool,
 }
 
 impl Default for HotkeySettings {
@@ -95,6 +98,7 @@ impl Default for HotkeySettings {
         Self {
             toggle: "Ctrl+Space".into(),
             win_key_override: true,
+            close_start: true,
         }
     }
 }
@@ -323,7 +327,15 @@ mod tests {
         let (s, _) = parse("version = 1\n[hotkeys]\ntoggle = \"Alt+Space\"\n").unwrap();
         assert_eq!(s.hotkeys.toggle, "Alt+Space");
         assert!(s.hotkeys.win_key_override);
+        assert!(s.hotkeys.close_start);
         assert_eq!(s.search, SearchSettings::default());
+    }
+
+    #[test]
+    fn closing_start_can_be_turned_off() {
+        let (s, _) = parse("version = 1\n[hotkeys]\nclose_start = false\n").unwrap();
+        assert!(!s.hotkeys.close_start);
+        assert!(s.hotkeys.win_key_override);
     }
 
     #[test]
