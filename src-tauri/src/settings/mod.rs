@@ -1,9 +1,22 @@
-//! User settings, stored as TOML at `%APPDATA%\desktop-assistant\settings.toml`.
+//! User settings, stored as TOML in two files:
+//! - `settings.toml` in the settings folder: `%APPDATA%\desktop-assistant`,
+//!   or a synced folder (OneDrive) chosen in the menu (`folder.rs`), so
+//!   several PCs share it;
+//! - `settings.local.toml` in `%LOCALAPPDATA%\desktop-assistant`: this PC's
+//!   own values (`layers::MACHINE_KEYS`, plus any key added there by hand).
 //!
-//! Every field has a default: the file on disk is layered over the defaults
-//! before parsing, so a partial or older file still loads. Bump
-//! `CURRENT_VERSION` and add a step to `migrate` when a change needs more than
-//! a new defaulted field (renames, moved sections, changed meaning).
+//! Every field has a default: the files are layered over the defaults
+//! (defaults, then the synced file, then the local one) before parsing, so a
+//! partial or older file still loads. Bump `CURRENT_VERSION` and add a step
+//! to `migrate` when a change needs more than a new defaulted field
+//! (renames, moved sections, changed meaning); it runs on each file.
+//!
+//! - `layers.rs`: the split and merge (pure, tested).
+//! - `disk.rs`: reading and writing the files (tested with temp folders).
+//! - `folder.rs`: choosing the settings folder (OneDrive), moving there.
+//! - `live.rs`: saving from the menu and following changes made on another
+//!   PC while running, applied like a change made in the menu.
+//! - `commands.rs`: what the settings menu calls about the folder.
 
 use std::fs;
 use std::io;
@@ -17,7 +30,14 @@ use crate::features;
 use crate::integrations::McpSettings;
 
 mod appearance;
-pub use appearance::AppearanceSettings;
+pub mod commands;
+mod disk;
+pub mod folder;
+mod layers;
+pub mod live;
+
+pub use appearance::{AppearanceSettings, Density, GlassStrength};
+pub use layers::MACHINE_KEYS;
 
 pub const CURRENT_VERSION: u32 = 1;
 
@@ -256,8 +276,9 @@ pub struct GeneralSettings {
     pub launch_at_login: bool,
 }
 
-/// Loads settings, creating the file with defaults if it doesn't exist.
-/// A file that fails to parse is moved aside to `settings.toml.bad` and
+/// Loads settings from one file, creating it with defaults if it doesn't
+/// exist (the app itself uses `live::load_at_startup`, which also reads
+/// this PC's file). A file that fails to parse is moved aside to `settings.toml.bad` and
 /// replaced with defaults, so a typo never stops the launcher from starting.
 pub fn load_or_create(path: &Path) -> Result<Settings, SettingsError> {
     let text = match fs::read_to_string(path) {
@@ -296,47 +317,23 @@ pub fn load_or_create(path: &Path) -> Result<Settings, SettingsError> {
     }
 }
 
-/// Writes settings atomically (temp file, then rename).
+/// Writes all settings to one file atomically (temp file, then rename).
 pub fn save(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
-    let io_err = |source| SettingsError::Io {
-        path: path.to_owned(),
-        source,
-    };
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(io_err)?;
-    }
-    let text = toml::to_string_pretty(settings)?;
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, text).map_err(io_err)?;
-    fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
+    disk::write_atomic(path, &toml::to_string_pretty(settings)?)
 }
 
-/// Parses settings text. Returns `true` alongside the settings if the file
-/// was migrated and should be written back.
+/// Parses one settings file's text. Returns `true` alongside the settings
+/// if the file was migrated and should be written back.
 fn parse(text: &str) -> Result<(Settings, bool), SettingsError> {
-    let mut user: toml::Table = toml::from_str(text)?;
-    let migrated = migrate(&mut user);
-    let mut merged = default_table()?;
-    merge(&mut merged, user);
-    let settings: Settings = merged.try_into()?;
-    Ok((settings, migrated))
+    let texts = disk::Texts {
+        synced: Some(text.to_owned()),
+        local: None,
+    };
+    disk::settings_from(&texts).map_err(|(_, e)| e)
 }
 
 fn default_table() -> Result<toml::Table, SettingsError> {
     toml::Table::try_from(Settings::default()).map_err(|e| SettingsError::Shape(e.to_string()))
-}
-
-/// Recursively overlays `over` onto `base`. Tables merge; other values replace.
-fn merge(base: &mut toml::Table, over: toml::Table) {
-    for (key, value) in over {
-        match (base.get_mut(&key), value) {
-            (Some(toml::Value::Table(b)), toml::Value::Table(o)) => merge(b, o),
-            (_, v) => {
-                base.insert(key, v);
-            }
-        }
-    }
 }
 
 /// Upgrades an older settings table in place. Returns whether anything changed.
