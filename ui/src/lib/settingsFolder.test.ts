@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SettingsFolder } from "./bindings";
-import { folderHint, moveChoices, movedMessage } from "./settingsFolder";
+import { folderHint, missingNotice, moveChoices, movedMessage } from "./settingsFolder";
 
 const DEFAULT = String.raw`C:\Users\me\AppData\Roaming\desktop-assistant`;
 const ONEDRIVE = String.raw`C:\Users\me\OneDrive\desktop-assistant`;
@@ -38,6 +38,18 @@ describe("folderHint", () => {
   it("says whether settings are shared", () => {
     expect(folderHint(folder())).toMatch(/^Only this PC/);
     expect(folderHint(folder({ folder: ONEDRIVE, is_default: false }))).toMatch(/^Shared/);
+  });
+});
+
+describe("missingNotice", () => {
+  it("says what's used while a chosen folder is gone", () => {
+    expect(missingNotice(folder())).toBeNull();
+    expect(missingNotice(folder({ missing: ONEDRIVE }))).toBe(
+      `${ONEDRIVE} isn't there right now, so settings come from the default folder until it is.`,
+    );
+    expect(missingNotice(folder({ folder: ONEDRIVE, is_default: false, missing: ONEDRIVE }))).toMatch(
+      /isn't there right now, so the settings in use stay as they are/,
+    );
   });
 });
 

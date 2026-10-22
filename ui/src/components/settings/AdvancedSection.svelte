@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { commands, type FolderCheck, type SettingsFolder } from "../../lib/bindings";
-  import { folderHint, moveChoices, movedMessage } from "../../lib/settingsFolder";
+  import { folderHint, missingNotice, moveChoices, movedMessage } from "../../lib/settingsFolder";
   import type { SettingsStore } from "../../lib/stores/settings.svelte";
   import Banner from "./Banner.svelte";
   import Button from "./Button.svelte";
@@ -94,9 +94,7 @@
           {/if}
         </div>
         {#if folder.missing}
-          <Banner>
-            <span>{folder.missing} isn't there right now, so settings come from the default folder until it is.</span>
-          </Banner>
+          <Banner><span>{missingNotice(folder)}</span></Banner>
         {/if}
         {#if folder.unreadable}
           <Banner>

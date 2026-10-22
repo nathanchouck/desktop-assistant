@@ -279,3 +279,28 @@ fn a_chosen_folder_back_without_a_file_gets_the_current_settings() {
     assert!(text.contains("tint = \"teal\""), "{text}");
     assert!(pc.paths.data_dir.join(LOCAL_SETTINGS_FILE).exists());
 }
+
+#[test]
+fn a_folder_gone_while_running_keeps_the_settings_in_use() {
+    let (pc, synced) = pc(None);
+    let (files, mut s) = SettingsFiles::load(pc.paths.clone());
+    s.appearance.tint = "pink".into();
+    files.move_to(&synced, &s, false).unwrap();
+
+    fs::remove_dir_all(&synced).unwrap();
+    assert_eq!(
+        files.check(&s),
+        Change::None,
+        "not the default folder's older settings"
+    );
+    let location = files.location();
+    assert!(!location.is_default);
+    assert_eq!(location.missing.as_deref(), Some(synced.as_path()));
+
+    // The next save makes the folder again, and that's our own write.
+    s.appearance.tint = "green".into();
+    files.save(&s).unwrap();
+    assert!(synced.join(SETTINGS_FILE).exists());
+    assert_eq!(files.check(&s), Change::None);
+    assert_eq!(files.location().missing, None);
+}

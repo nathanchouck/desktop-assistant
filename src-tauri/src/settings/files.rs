@@ -144,12 +144,20 @@ impl SettingsFiles {
     pub fn check(&self, current: &Settings) -> Change {
         let mut known = self.lock();
         let dir = self.paths.settings_dir();
+        known.missing = dir.missing.clone();
+        if let Some(missing) = &dir.missing {
+            if known.files.synced.parent() == Some(missing.as_path()) {
+                // Gone while running (renamed, a drive unplugged): keep the
+                // settings in use rather than switch to the default folder's
+                // older ones. A save makes the folder again if it can.
+                return Change::None;
+            }
+        }
         let files = Files::in_folder(&dir.folder, &self.paths);
         let moved = files != known.files;
         if moved {
             tracing::info!("settings folder is now {}", dir.folder.display());
         }
-        known.missing = dir.missing;
         // A file that can't be read now (locked mid-sync, a cloud file
         // being fetched) is tried again on the next look.
         let texts = match files.read() {
@@ -204,7 +212,7 @@ impl SettingsFiles {
         let mut known = self.lock();
         // This PC's values go to its own file first, so they're kept
         // whichever settings are used from now on.
-        disk::write(&known.files, current, Scope::LocalOnly)?;
+        known.texts.local = disk::write(&known.files, current, Scope::LocalOnly)?.local;
         let target = Files::in_folder(folder, &self.paths);
         let in_use = target == known.files;
         let (texts, moved) = match folder::switch_for(&probe, replace) {

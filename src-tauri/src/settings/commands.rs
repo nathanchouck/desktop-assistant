@@ -22,8 +22,9 @@ pub struct SettingsFolder {
     pub default_folder: String,
     /// This PC's own settings (`settings.local.toml`).
     pub local_file: String,
-    /// A chosen folder that isn't there now; the default one is used
-    /// until it is.
+    /// A chosen folder that isn't there now. Missing at startup, the
+    /// default folder stands in until it's back; gone while running, the
+    /// settings in use stay.
     pub missing: Option<String>,
     /// `settings.toml` couldn't be read; only this PC's settings are saved
     /// until it can be.

@@ -750,8 +750,9 @@ export type SettingsFolder = {
 	/**  This PC's own settings (`settings.local.toml`). */
 	local_file: string,
 	/**
-	 *  A chosen folder that isn't there now; the default one is used
-	 *  until it is.
+	 *  A chosen folder that isn't there now. Missing at startup, the
+	 *  default folder stands in until it's back; gone while running, the
+	 *  settings in use stay.
 	 */
 	missing: string | null,
 	/**

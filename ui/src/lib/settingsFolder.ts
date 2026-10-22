@@ -26,6 +26,16 @@ export function folderHint(folder: SettingsFolder): string {
   return "Shared with every PC that uses this folder. Changes made on another PC apply here once they sync.";
 }
 
+/** A chosen folder that isn't there: at startup the default folder stands
+ * in; while running, the settings in use stay. */
+export function missingNotice(folder: SettingsFolder): string | null {
+  if (!folder.missing) return null;
+  const meanwhile = folder.is_default
+    ? "so settings come from the default folder until it is."
+    : "so the settings in use stay as they are. Saving a change makes the folder again.";
+  return `${folder.missing} isn't there right now, ${meanwhile}`;
+}
+
 /** What happened after a move, for the notice under the section. */
 export function movedMessage(moved: FolderMoved, before: SettingsFolder): string {
   const to = moved.location.folder;
