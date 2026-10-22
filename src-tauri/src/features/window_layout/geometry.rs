@@ -48,7 +48,9 @@ impl Rect {
 }
 
 /// How far a window's rectangle reaches past its visible frame on each
-/// side (DWM's invisible borders, about 7 px at 100% scale).
+/// side (DWM's invisible borders, about 7 px at 100% scale). Measured
+/// in `win.rs`; elsewhere only the tests use it.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Insets {
     pub left: i32,
@@ -59,8 +61,10 @@ pub struct Insets {
 
 /// Larger "borders" than this aren't borders: the frame bounds were
 /// wrong (some apps draw their own frame), so none are assumed.
+#[cfg_attr(not(windows), allow(dead_code))]
 const MAX_INSET: i32 = 64;
 
+#[cfg_attr(not(windows), allow(dead_code))]
 impl Insets {
     /// The insets between a window's rectangle and its visible frame.
     pub fn between(window: Rect, frame: Rect) -> Self {

@@ -14,6 +14,8 @@
 #[cfg(not(windows))]
 mod fallback;
 mod model;
+// Fed by the hooks in `win.rs`; elsewhere only its tests use it.
+#[cfg_attr(not(windows), allow(dead_code))]
 mod picking;
 mod provider;
 mod recent;

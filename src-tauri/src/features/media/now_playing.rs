@@ -109,6 +109,8 @@ impl NowPlaying {
         }
     }
 
+    /// Called by the watcher in `win.rs` (and tests).
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn set(&self, track: Option<Track>) {
         if let Ok(mut current) = self.track.write() {
             *current = track;

@@ -48,9 +48,6 @@ pub fn provider(_ctx: &ProviderContext) -> Option<Arc<dyn SearchProvider>> {
 
 /// Watches what's playing (Windows).
 pub fn start(_app: &AppHandle) {
-    if !os::SUPPORTED {
-        return;
-    }
     #[cfg(windows)]
     {
         let now = now_playing();
