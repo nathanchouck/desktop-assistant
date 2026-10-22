@@ -143,23 +143,30 @@ impl Recorder {
         recording.snapshot(now_ms)
     }
 
-    /// One streamed event; returns the conversation to save when it ends a
-    /// turn.
-    pub fn event(&mut self, conversation: u32, event: &AiEvent, now_ms: i64) -> Option<Record> {
+    /// One streamed event; returns what to save: the conversation when the
+    /// event ends a turn, and older ones a newer conversation has ended.
+    pub fn event(&mut self, conversation: u32, event: &AiEvent, now_ms: i64) -> Vec<Record> {
+        let mut saves = Vec::new();
         if !self.recordings.contains_key(&conversation) {
             if conversation <= self.newest {
-                return None;
+                return saves;
             }
-            // Its question hasn't been recorded yet (the ask is returning).
+            // A new conversation whose question isn't recorded yet (the ask
+            // is returning). The chat runs one at a time, so the others are
+            // over; that also keeps unrecorded ones (history off) from
+            // piling up.
+            saves = self.finish_others(conversation, now_ms);
+            self.newest = conversation;
             self.recordings.insert(conversation, Recording::pending());
         }
-        let recording = self.recordings.get_mut(&conversation)?;
+        let Some(recording) = self.recordings.get_mut(&conversation) else {
+            return saves;
+        };
         recording.dirty = true;
         if recording.transcript.apply(event) {
-            recording.snapshot(now_ms)
-        } else {
-            None
+            saves.extend(recording.snapshot(now_ms));
         }
+        saves
     }
 
     /// The chat was closed: every conversation is over. Returns what they
@@ -168,14 +175,11 @@ impl Recorder {
         self.finish_others(0, now_ms)
     }
 
-    /// Stops recording conversations whose records were deleted, so the
-    /// next save doesn't bring them back.
-    pub fn forget(&mut self, records: &[i64]) {
-        self.recordings.retain(|_, r| {
-            r.meta
-                .as_ref()
-                .is_none_or(|meta| !records.contains(&meta.record))
-        });
+    /// Stops recording the conversations whose records `deleted` picks, so
+    /// the next save doesn't bring them back.
+    pub fn forget(&mut self, deleted: impl Fn(i64) -> bool) {
+        self.recordings
+            .retain(|_, r| r.meta.as_ref().is_none_or(|meta| !deleted(meta.record)));
     }
 
     /// The record conversation `conversation` is saved in, if it's recorded.
@@ -266,8 +270,8 @@ mod tests {
         assert_eq!(saved[0].created_ms, 100);
         assert_eq!(saved[0].cwd, "/work");
 
-        assert!(r.event(1, &delta("Moving"), 300).is_none(), "not mid-turn");
-        let saved = r.event(1, &AiEvent::Done, 400).unwrap();
+        assert!(r.event(1, &delta("Moving"), 300).is_empty(), "not mid-turn");
+        let saved = r.event(1, &AiEvent::Done, 400).pop().unwrap();
         assert_eq!(saved.updated_ms, 400);
         assert_eq!(
             saved.entries,
@@ -312,12 +316,28 @@ mod tests {
         assert_eq!(ids, [1, 2]);
         assert_eq!(saved[0].entries.last(), Some(&assistant("half an ans")));
         // Late events of the old one are dropped.
-        assert!(r.event(1, &AiEvent::Done, 20).is_none());
+        assert!(r.event(1, &AiEvent::Done, 20).is_empty());
         assert_eq!(r.record_of(1), None);
         // An old conversation that was saved and is clean isn't saved again.
         r.event(2, &AiEvent::Done, 30);
         assert!(r.finish(40).is_empty());
         assert_eq!(r.record_of(2), None);
+    }
+
+    #[test]
+    fn a_newer_conversation_ends_the_older_ones() {
+        let mut r = Recorder::default();
+        r.begin(1, meta(1), "first", None, 0);
+        r.event(1, &delta("half an answer"), 0);
+        // Conversation 2 isn't recorded (history was off when it was
+        // asked): its first event ends 1, saved with what came.
+        let saved = r.event(2, &delta("not kept"), 10);
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].entries.last(), Some(&assistant("half an answer")));
+        assert_eq!(r.record_of(1), None);
+        // 3 ends 2 without saving anything: only one is held at a time.
+        assert!(r.event(3, &delta("Hi"), 20).is_empty());
+        assert_eq!(r.recordings.len(), 1);
     }
 
     #[test]
@@ -336,7 +356,7 @@ mod tests {
         // History was off when this one started: its follow-ups aren't kept.
         assert!(r.question(4, "more", None, 0).is_none());
         // Events for a conversation never asked about are held, not saved.
-        assert!(r.event(5, &AiEvent::Done, 0).is_none());
+        assert!(r.event(5, &AiEvent::Done, 0).is_empty());
         assert!(r.question(5, "more", None, 0).is_none());
         assert!(r.finish(0).is_empty());
     }
@@ -347,7 +367,7 @@ mod tests {
         let saved = Transcript::from_saved(vec![user("hi"), assistant("Hello")], "gpt-6".into());
         assert!(r.adopt(9, meta(42), saved, 0).is_empty());
         r.question(9, "and then?", None, 10);
-        let record = r.event(9, &AiEvent::Done, 20).unwrap();
+        let record = r.event(9, &AiEvent::Done, 20).pop().unwrap();
         assert_eq!(record.id, 42);
         assert_eq!(record.model, "gpt-6");
         assert_eq!(record.entries.len(), 3);
@@ -357,8 +377,8 @@ mod tests {
     fn forgotten_records_are_not_saved_again() {
         let mut r = Recorder::default();
         r.begin(1, meta(1), "secret", None, 0);
-        r.forget(&[1]);
-        assert!(r.event(1, &AiEvent::Done, 10).is_none());
+        r.forget(|record| record == 1);
+        assert!(r.event(1, &AiEvent::Done, 10).is_empty());
         assert!(r.question(1, "more", None, 20).is_none());
         assert!(r.finish(30).is_empty());
     }

@@ -43,17 +43,6 @@ impl HistoryProvider {
         Ok(Activation::OpenChat { chat })
     }
 
-    /// Runs a store change off the async runtime.
-    async fn blocking<T: Send + 'static>(
-        &self,
-        work: impl FnOnce(&ChatHistory) -> Result<T, super::store::StoreError> + Send + 'static,
-    ) -> Result<T, SearchError> {
-        let history = Arc::clone(&self.history);
-        tokio::task::spawn_blocking(move || work(&history))
-            .await
-            .map_err(failed)?
-            .map_err(failed)
-    }
 }
 
 fn failed(message: impl ToString) -> SearchError {
@@ -119,7 +108,7 @@ impl SearchProvider for HistoryProvider {
                 return self.reopen(latest).await;
             }
             CLEAR_ID => {
-                let removed = self.blocking(ChatHistory::clear).await?;
+                let removed = self.history.clear().await.map_err(failed)?;
                 tracing::info!("cleared {removed} saved chats");
                 return Ok(Activation::SetQuery {
                     query: LIST_QUERY.into(),
@@ -137,11 +126,11 @@ impl SearchProvider for HistoryProvider {
             rows::parse_entry_id(id).ok_or_else(|| failed(format!("{id} can't be opened")))?;
         match action {
             Action::Pin => {
-                self.blocking(move |h| h.store().toggle_pin(entry)).await?;
+                self.history.toggle_pin(entry).await.map_err(failed)?;
                 Ok(Activation::Refresh)
             }
             Action::Delete => {
-                self.blocking(move |h| h.delete(entry)).await?;
+                self.history.delete(entry).await.map_err(failed)?;
                 Ok(Activation::Refresh)
             }
             _ => self.reopen(entry).await,

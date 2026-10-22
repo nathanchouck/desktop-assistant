@@ -1,7 +1,12 @@
 //! Conversation history as one service: the store, the recorder following
 //! the live chat, and a writer thread that does the saving, so recording
 //! never makes streaming wait for the disk.
+//!
+//! Everything that reads or changes the database goes through that thread,
+//! in order: a delete can't be undone by an older save still waiting, and a
+//! reopened chat is read after its last save.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -20,6 +25,7 @@ use crate::settings::{self, SharedSettings};
 /// How often the age limit is applied while nothing is saved.
 const PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+const UNAVAILABLE: &str = "Chat history isn't available.";
 
 /// A saved conversation, reopened: the chat view shows it and a follow-up
 /// carries it on (it's the chat's current conversation).
@@ -40,12 +46,14 @@ pub struct HistoryOverview {
     pub pinned: u32,
 }
 
+type Work = Box<dyn FnOnce(&ConversationStore) + Send>;
+
 enum Job {
     /// Read the list into memory and apply the limits (at startup).
     Load,
     Save(Record),
-    #[cfg(test)]
-    Flush(mpsc::Sender<()>),
+    /// Any other read or change, in order with the saves.
+    Run(Work),
 }
 
 pub struct ChatHistory {
@@ -119,8 +127,8 @@ impl ChatHistory {
     /// One streamed event. Cheap: the transcript is in memory and saving
     /// happens on the writer thread.
     pub fn event(&self, conversation: u32, event: &AiEvent) {
-        let save = self.recorder().event(conversation, event, now_ms());
-        self.save_all(save);
+        let saves = self.recorder().event(conversation, event, now_ms());
+        self.save_all(saves);
     }
 
     /// The chat was closed.
@@ -132,24 +140,34 @@ impl ChatHistory {
     // --- The list ----------------------------------------------------------
 
     /// Removes one conversation; false if it was already gone.
-    pub fn delete(&self, id: i64) -> Result<bool, StoreError> {
+    pub async fn delete(&self, id: i64) -> Result<bool, String> {
         // First, so a live conversation isn't saved back.
-        self.recorder().forget(&[id]);
-        self.store.delete(id)
+        self.recorder().forget(|record| record == id);
+        self.in_order(move |store| store.delete(id)).await
     }
 
-    /// Removes every unpinned conversation; returns how many.
-    pub fn clear(&self) -> Result<usize, StoreError> {
-        let unpinned: Vec<i64> = self
+    /// Removes every unpinned conversation, the live one too; returns how
+    /// many.
+    pub async fn clear(&self) -> Result<usize, String> {
+        let pinned: HashSet<i64> = self
             .store
-            .with_summaries(|list| list.iter().filter(|s| !s.pinned).map(|s| s.id).collect());
-        self.recorder().forget(&unpinned);
-        Ok(self.store.clear()?.len())
+            .with_summaries(|list| list.iter().filter(|s| s.pinned).map(|s| s.id).collect());
+        // A new conversation whose first save is still queued isn't listed
+        // yet, and isn't pinned either.
+        self.recorder().forget(|record| !pinned.contains(&record));
+        self.in_order(|store| store.clear().map(|ids| ids.len()))
+            .await
     }
 
-    /// Applies the size and age limits now.
-    pub fn prune(&self) -> Result<(), StoreError> {
-        prune(&self.store, &self.settings)
+    /// Pins or unpins; returns the new state, or `None` if it's gone.
+    pub async fn toggle_pin(&self, id: i64) -> Result<Option<bool>, String> {
+        self.in_order(move |store| store.toggle_pin(id)).await
+    }
+
+    /// Applies the size and age limits now (a lowered limit shows at once).
+    pub async fn tidy(&self) -> Result<(), String> {
+        let settings = Arc::clone(&self.settings);
+        self.in_order(move |store| prune(store, &settings)).await
     }
 
     pub fn overview(&self) -> HistoryOverview {
@@ -166,11 +184,9 @@ impl ChatHistory {
     /// next follow-up resumes it (Claude Code `--resume` in its folder,
     /// Codex `thread/resume`). Recording carries on into the same record.
     pub async fn reopen(&self, chat: &Chat, id: i64) -> Result<OpenedChat, String> {
-        let store = Arc::clone(&self.store);
-        let record = tokio::task::spawn_blocking(move || store.load(id))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?
+        let record = self
+            .in_order(move |store| store.load(id))
+            .await?
             .ok_or("That chat isn't saved anymore.")?;
         let saved = Resumable::new(
             record.provider,
@@ -209,6 +225,22 @@ impl ChatHistory {
         })
     }
 
+    /// Runs `work` on the writer thread, after everything queued before it.
+    async fn in_order<T: Send + 'static>(
+        &self,
+        work: impl FnOnce(&ConversationStore) -> Result<T, StoreError> + Send + 'static,
+    ) -> Result<T, String> {
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let job = Job::Run(Box::new(move |store| {
+            let _ = reply.send(work(store));
+        }));
+        self.writer.send(job).map_err(|_| UNAVAILABLE.to_owned())?;
+        answer
+            .await
+            .map_err(|_| UNAVAILABLE.to_owned())?
+            .map_err(|e| e.to_string())
+    }
+
     fn save_all(&self, saves: impl IntoIterator<Item = Record>) {
         for record in saves {
             let _ = self.writer.send(Job::Save(record));
@@ -223,14 +255,17 @@ impl ChatHistory {
     #[cfg(test)]
     pub fn flush(&self) {
         let (done, wait) = mpsc::channel();
-        if self.writer.send(Job::Flush(done)).is_ok() {
+        let job = Job::Run(Box::new(move |_| {
+            let _ = done.send(());
+        }));
+        if self.writer.send(job).is_ok() {
             let _ = wait.recv_timeout(Duration::from_secs(5));
         }
     }
 }
 
-/// The writer thread: saves in order, and applies the limits after each
-/// save and every hour.
+/// The writer thread: runs jobs in order, and applies the limits after
+/// each save and every hour.
 fn write_jobs(jobs: &mpsc::Receiver<Job>, store: &ConversationStore, settings: &SharedSettings) {
     loop {
         let job = match jobs.recv_timeout(PRUNE_EVERY) {
@@ -252,9 +287,8 @@ fn write_jobs(jobs: &mpsc::Receiver<Job>, store: &ConversationStore, settings: &
                 }
                 store.save(&record).and_then(|()| prune(store, settings))
             }
-            #[cfg(test)]
-            Job::Flush(done) => {
-                let _ = done.send(());
+            Job::Run(work) => {
+                work(store);
                 Ok(())
             }
         };
@@ -282,167 +316,4 @@ pub fn now_ms() -> i64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::settings::Settings;
-    use std::sync::RwLock;
-    use tokio::sync::mpsc as tokio_mpsc;
-
-    fn history() -> (Arc<ChatHistory>, SharedSettings) {
-        let settings: SharedSettings = Arc::new(RwLock::new(Settings::default()));
-        let store = ConversationStore::in_memory().unwrap();
-        (ChatHistory::new(store, Arc::clone(&settings)), settings)
-    }
-
-    fn here() -> Resumable {
-        Resumable::new(ProviderId::Claude, std::env::temp_dir(), Some("s-1".into()))
-    }
-
-    fn titles(history: &ChatHistory) -> Vec<String> {
-        history
-            .store()
-            .with_summaries(|l| l.iter().map(|s| s.title.clone()).collect())
-    }
-
-    #[test]
-    fn records_a_conversation_as_it_goes() {
-        let (h, _) = history();
-        h.begin(1, here(), "what's 2+2?", Some("Desktop"));
-        h.flush();
-        assert_eq!(titles(&h), ["what's 2+2?"], "saved as soon as you ask");
-
-        h.event(1, &AiEvent::TextDelta { text: "4".into() });
-        h.event(1, &AiEvent::Done);
-        h.flush();
-        let id = h.store().latest().unwrap();
-        let saved = h.store().load(id).unwrap().unwrap();
-        assert_eq!(saved.session.as_deref(), Some("s-1"));
-        assert_eq!(saved.entries.len(), 2);
-        assert_eq!(
-            h.overview(),
-            HistoryOverview {
-                conversations: 1,
-                pinned: 0
-            }
-        );
-    }
-
-    #[test]
-    fn nothing_is_recorded_while_off() {
-        let (h, settings) = history();
-        settings.write().unwrap().history.enabled = false;
-        h.begin(1, here(), "secret", None);
-        h.event(1, &AiEvent::Done);
-        h.finish();
-        h.flush();
-        assert!(titles(&h).is_empty());
-
-        // Turned off mid-chat: later saves are dropped too.
-        settings.write().unwrap().history.enabled = true;
-        h.begin(2, here(), "first", None);
-        h.flush();
-        settings.write().unwrap().history.enabled = false;
-        h.question(2, "second", None);
-        h.flush();
-        let id = h.store().latest().unwrap();
-        assert_eq!(h.store().load(id).unwrap().unwrap().entries.len(), 1);
-    }
-
-    #[test]
-    fn keeps_to_the_limits() {
-        let (h, settings) = history();
-        settings.write().unwrap().history.max_conversations = 2;
-        for (i, title) in ["one", "two", "three"].iter().enumerate() {
-            h.begin(i as u32 + 1, here(), title, None);
-            h.flush();
-        }
-        assert_eq!(titles(&h), ["three", "two"]);
-    }
-
-    #[test]
-    fn deleting_the_live_conversation_stops_recording_it() {
-        let (h, _) = history();
-        h.begin(1, here(), "oops", None);
-        h.flush();
-        let id = h.store().latest().unwrap();
-        assert!(h.delete(id).unwrap());
-        h.event(1, &AiEvent::Done);
-        h.finish();
-        h.flush();
-        assert!(titles(&h).is_empty());
-
-        h.begin(2, here(), "a", None);
-        h.begin(3, here(), "b", None);
-        h.flush();
-        let pinned = h.store().latest().unwrap();
-        h.store().toggle_pin(pinned).unwrap();
-        assert_eq!(h.clear().unwrap(), 1);
-        h.question(3, "still pinned, still recorded", None);
-        h.flush();
-        assert_eq!(titles(&h), ["b"]);
-        assert_eq!(h.store().load(pinned).unwrap().unwrap().entries.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn reopens_a_saved_conversation_where_it_left_off() {
-        let (h, _) = history();
-        h.begin(1, here(), "hi", None);
-        h.event(
-            1,
-            &AiEvent::Started {
-                model: "claude-haiku-5-5".into(),
-            },
-        );
-        h.event(
-            1,
-            &AiEvent::TextDelta {
-                text: "Hello".into(),
-            },
-        );
-        h.event(1, &AiEvent::Done);
-        h.finish();
-        h.flush();
-        let id = h.store().latest().unwrap();
-
-        let (tx, _rx) = tokio_mpsc::unbounded_channel();
-        let chat = Chat::new(tx);
-        let opened = h.reopen(&chat, id).await.unwrap();
-        assert_eq!(opened.provider, ProviderId::Claude);
-        assert_eq!(opened.model, "claude-haiku-5-5");
-        assert_eq!(opened.entries.len(), 2);
-        assert_eq!(chat.provider().await, Some(ProviderId::Claude));
-        let resumable = chat.resumable(opened.conversation).await.unwrap();
-        assert_eq!(resumable.session().as_deref(), Some("s-1"));
-
-        // A follow-up is recorded into the same saved chat.
-        h.question(opened.conversation, "and you?", None);
-        h.flush();
-        assert_eq!(h.store().load(id).unwrap().unwrap().entries.len(), 3);
-        assert_eq!(h.overview().conversations, 1);
-
-        assert!(h.reopen(&chat, 999).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn a_chat_whose_folder_is_gone_says_so() {
-        let (h, _) = history();
-        let gone = Resumable::new(
-            ProviderId::Claude,
-            "/no/such/folder".into(),
-            Some("s".into()),
-        );
-        h.begin(1, gone, "hi", None);
-        h.finish();
-        h.flush();
-        let id = h.store().latest().unwrap();
-        let (tx, _rx) = tokio_mpsc::unbounded_channel();
-        let chat = Chat::new(tx);
-        let opened = h.reopen(&chat, id).await.unwrap();
-        assert!(matches!(
-            opened.entries.last(),
-            Some(ChatEntry::Note { text }) if text.contains("/no/such/folder")
-        ));
-        let resumable = chat.resumable(opened.conversation).await.unwrap();
-        assert_eq!(resumable.session(), None, "Claude starts over");
-    }
-}
+mod tests;
