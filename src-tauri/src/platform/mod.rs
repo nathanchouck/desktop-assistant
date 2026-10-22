@@ -317,6 +317,35 @@ impl Shell {
         }
     }
 
+    /// Shows Windows' "Open with" dialog for a file; the program picked
+    /// opens it. Returns once the dialog closes (cancelling is fine).
+    pub async fn open_with(&self, path: String) -> Result<(), PlatformError> {
+        #[cfg(windows)]
+        {
+            win::sta::run_once(move || win::file_ops::open_with(&path).map_err(os)).await?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            Err(PlatformError::Unsupported)
+        }
+    }
+
+    /// Moves a file or folder to the Recycle Bin. `Ok(false)` when it
+    /// stayed where it was: it couldn't be recycled and you said no to
+    /// deleting it for good (Windows asks), or you cancelled.
+    pub async fn trash(&self, path: String) -> Result<bool, PlatformError> {
+        #[cfg(windows)]
+        {
+            win::sta::run_once(move || win::file_ops::trash(&path).map_err(os)).await?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            Err(PlatformError::Unsupported)
+        }
+    }
+
     /// Opens the containing folder in Explorer with the item selected.
     pub async fn reveal_path(&self, path: String) -> Result<(), PlatformError> {
         #[cfg(windows)]

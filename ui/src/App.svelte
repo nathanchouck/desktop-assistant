@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import SearchBar from "./components/SearchBar.svelte";
   import ResultList from "./components/ResultList.svelte";
+  import ActionMenu from "./components/ActionMenu.svelte";
   import ChatPane from "./components/ChatPane.svelte";
   import SettingsPane from "./components/SettingsPane.svelte";
   import Footer from "./components/Footer.svelte";
@@ -9,6 +10,7 @@
   import { answeringLabel, forcedProvider, looksLikeAQuestion, PROVIDER_NAMES } from "./lib/chat";
   import { indexNotice } from "./lib/display";
   import { chatHints, chatIntentFor, intentFor, searchHints } from "./lib/keys";
+  import { ActionMenuStore } from "./lib/stores/actionMenu.svelte";
   import { ChatStore } from "./lib/stores/chat.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
   import { SettingsStore } from "./lib/stores/settings.svelte";
@@ -32,6 +34,8 @@
     defaultProvider,
   });
   const toasts = new ToastStore();
+  /** Ctrl+K: the selected result's actions. */
+  const menu = new ActionMenuStore();
   /** Shows why copying or pasting an answer failed. */
   const showError = (message: string | null) => {
     if (message) toasts.show({ level: "error", message });
@@ -67,6 +71,11 @@
   const hints = $derived(
     settingsOpen
       ? ([["Esc", "Close"]] as [string, string][])
+      : menu.open
+        ? ([
+            ["↵", "Run"],
+            ["Esc", "Back"],
+          ] as [string, string][])
       : chat.active
         ? chatHints({
             running: chat.transcript.running,
@@ -113,12 +122,32 @@
       case "settings":
         void openSettings();
         break;
+      case "menu":
+        if (search.current) menu.show(search.current);
+        break;
       case "escape":
         // First Esc clears the query; the next one hides the launcher.
         if (search.query) search.clear();
         else void commands.launcherHide();
         break;
     }
+  }
+
+  /** Runs the action menu's entry `index` on the row it was opened for. */
+  function chooseAction(index: number) {
+    const item = menu.item;
+    const action = menu.choose(index);
+    bar?.focus();
+    if (!item || !action) return;
+    // Late results may have moved the row since the menu opened.
+    const row = search.items.findIndex((i) => i.id === item.id);
+    if (row >= 0) void search.activate(row, [action]);
+  }
+
+  function closeMenu() {
+    if (!menu.open) return;
+    menu.close();
+    bar?.focus();
   }
 
   function onChatKey(e: KeyboardEvent) {
@@ -232,12 +261,17 @@
       {:else if chat.active}
         <ChatPane bind:this={pane} transcript={chat.transcript} onanswer={(allow) => chat.answer(allow)} />
       {:else}
-        <ResultList
-          items={search.items}
-          selected={search.selected}
-          onselect={(i) => (search.selected = i)}
-          onactivate={(i) => search.activate(i)}
-        />
+        <div class="results">
+          <ResultList
+            items={search.items}
+            selected={search.selected}
+            onselect={(i) => (search.selected = i)}
+            onactivate={(i) => search.activate(i)}
+          />
+          {#if menu.open}
+            <ActionMenu {menu} onchoose={chooseAction} onclose={closeMenu} />
+          {/if}
+        </div>
       {/if}
       <Footer {notice} {hints} toast={toasts.current} ondismiss={() => toasts.dismiss()} />
     {/if}
@@ -258,6 +292,9 @@
   .content {
     display: flex;
     flex-direction: column;
+  }
+  .results {
+    position: relative;
   }
   .settings-head {
     display: flex;

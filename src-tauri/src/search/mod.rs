@@ -76,6 +76,10 @@ pub enum Activation {
     /// Stay open and run the same search again (the result changed, e.g.
     /// it was pinned or deleted).
     Refresh,
+    /// Stay open, take the row away and show this in the footer: the
+    /// thing is gone, though the search may not know it yet (a file moved
+    /// to the Recycle Bin, before the index notices).
+    Removed { message: String },
     /// Show the settings menu.
     OpenSettings,
     /// Show this saved conversation in the chat view; it's already the

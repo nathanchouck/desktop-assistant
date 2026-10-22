@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatHints, chatIntentFor, intentFor, searchHints, shortcutFromEvent } from "./keys";
+import { chatHints, chatIntentFor, intentFor, keyFor, searchHints, shortcutFromEvent } from "./keys";
 
 const key = (k: string, mods: Partial<{ ctrl: boolean; shift: boolean; alt: boolean }> = {}) => ({
   key: k,
@@ -105,8 +105,29 @@ describe("action keys", () => {
       type: "activate",
       actions: ["ask_about"],
     });
-    expect(intentFor(key("d", { ctrl: true }))).toEqual({ type: "activate", actions: ["delete"] });
+    // Ctrl+D deletes a clip or chat, and sends a file to the Recycle Bin.
+    expect(intentFor(key("d", { ctrl: true }))).toEqual({ type: "activate", actions: ["delete", "trash"] });
     expect(intentFor(key("d"))).toBeNull();
+  });
+
+  it("opens the action menu with Ctrl+K", () => {
+    expect(intentFor(key("k", { ctrl: true }))).toEqual({ type: "menu" });
+    expect(intentFor(key("K", { ctrl: true }))).toEqual({ type: "menu" });
+    expect(intentFor(key("k"))).toBeNull();
+    expect(intentFor(key("k", { ctrl: true, shift: true }))).toBeNull();
+  });
+
+  it("names the key that runs each action on a row", () => {
+    const file = ["open", "reveal_in_explorer", "copy_path", "open_with", "trash"] as const;
+    expect(keyFor([...file], "open")).toBe("↵");
+    expect(keyFor([...file], "reveal_in_explorer")).toBe("Ctrl ↵");
+    expect(keyFor([...file], "copy_path")).toBe("Ctrl ⇧ C");
+    expect(keyFor([...file], "trash")).toBe("Ctrl D");
+    // Only the menu has it.
+    expect(keyFor([...file], "open_with")).toBeNull();
+    // A key means the first of its actions the row offers.
+    expect(keyFor(["copy", "paste"], "paste")).toBe("Ctrl ↵");
+    expect(keyFor(["open", "reveal_in_explorer", "paste"], "paste")).toBeNull();
   });
 });
 
@@ -116,7 +137,13 @@ describe("hints", () => {
       "↵",
       "Ctrl ↵",
       "Ctrl ⇧ C",
+      "Ctrl K",
       "Esc",
+    ]);
+    // One action: nothing more to show in a menu.
+    expect(searchHints(["run"])).toEqual([
+      ["↵", "Run"],
+      ["Esc", "Clear"],
     ]);
     expect(searchHints(["ask_ai"])[0]).toEqual(["↵", "Ask"]);
   });
@@ -133,9 +160,10 @@ describe("hints", () => {
   it("names Enter after the default action and skips repeats of a key", () => {
     const hints = searchHints(["paste", "copy", "pin", "delete"]);
     expect(hints[0]).toEqual(["↵", "Paste"]);
-    expect(hints.map(([k]) => k)).toEqual(["↵", "Ctrl ⇧ C", "Ctrl ⇧ P", "Ctrl D", "Esc"]);
+    // Two extra keys at most; the menu (Ctrl+K) lists the rest.
+    expect(hints.map(([k]) => k)).toEqual(["↵", "Ctrl ⇧ C", "Ctrl ⇧ P", "Ctrl K", "Esc"]);
     // Copy is the default: Ctrl+Enter pastes instead.
-    expect(searchHints(["copy", "paste"]).map(([, l]) => l)).toEqual(["Copy", "Paste", "Clear"]);
+    expect(searchHints(["copy", "paste"]).map(([, l]) => l)).toEqual(["Copy", "Paste", "Actions", "Clear"]);
   });
 
   it("puts approvals first while chatting", () => {

@@ -133,7 +133,11 @@ export type Action = "open" | "run_as_admin" | "reveal_in_explorer" | "copy_path
 /**  Pin or unpin the result. */
 "pin" | 
 /**  Ask the AI about this result (a file, a clip). */
-"ask_about";
+"ask_about" | 
+/**  Pick the program to open a file with (Windows' "Open with" dialog). */
+"open_with" | 
+/**  Move a file or folder to the Recycle Bin. The UI asks first. */
+"trash";
 
 /**
  *  What happens after a result is activated, besides what its provider
@@ -166,6 +170,12 @@ export type Activation =
  *  it was pinned or deleted).
  */
 { type: "refresh" } | 
+/**
+ *  Stay open, take the row away and show this in the footer: the
+ *  thing is gone, though the search may not know it yet (a file moved
+ *  to the Recycle Bin, before the index notices).
+ */
+{ type: "removed"; message: string } | 
 /**  Show the settings menu. */
 { type: "open_settings" } | 
 /**

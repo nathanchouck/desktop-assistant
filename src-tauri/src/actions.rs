@@ -1,6 +1,7 @@
 //! Carrying out what the user picked. Shared by the results list and the tray.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -14,7 +15,7 @@ use crate::search::commands::BuiltinCommand;
 use crate::search::files::path_from_id;
 use crate::search::{Action, Activation};
 use crate::state::AppState;
-use crate::window;
+use crate::{toast, window};
 
 const CLAUDE_INSTALL_PAGE: &str = "https://code.claude.com/docs/en/setup";
 /// The Codex README's install steps (Windows installer, npm).
@@ -35,8 +36,11 @@ pub async fn activate(app: &AppHandle, id: &str, action: Action) -> AppResult<Ac
     } else {
         activate_builtin(app, &state.shell, id, action).await?
     };
-    let opened = !matches!(action, Action::Delete | Action::Pin)
-        && !matches!(activation, Activation::Notice { .. } | Activation::Refresh);
+    let opened = !matches!(action, Action::Delete | Action::Pin | Action::Trash)
+        && !matches!(
+            activation,
+            Activation::Notice { .. } | Activation::Refresh | Activation::Removed { .. }
+        );
     if opened {
         if let Err(e) = state.store.record_open(id) {
             tracing::warn!("could not record open: {e}");
@@ -66,6 +70,7 @@ pub async fn carry_out(app: &AppHandle, activation: Activation) -> AppResult<Act
         | Activation::Ask { .. }
         | Activation::Notice { .. }
         | Activation::Refresh
+        | Activation::Removed { .. }
         | Activation::OpenSettings
         | Activation::OpenChat { .. } => {}
     }
@@ -148,7 +153,7 @@ pub fn open_settings_page(app: &AppHandle, uri: &str) -> AppResult<()> {
 /// Commands, apps and files: the results that came before `features/`.
 async fn activate_builtin(
     app: &AppHandle,
-    shell: &Shell,
+    shell: &Arc<Shell>,
     id: &str,
     action: Action,
 ) -> AppResult<Activation> {
@@ -184,11 +189,57 @@ async fn activate_builtin(
                     text: path.to_owned(),
                 })
             }
+            Action::OpenWith => open_with(app, shell, path),
+            Action::Trash => return trash(shell, path).await,
             _ => shell.open_path(path.to_owned()).await.map_err(launch_err)?,
         }
         return Ok(Activation::Hide);
     }
     Err(AppError::UnknownItem(id.to_owned()))
+}
+
+/// Shows "Open with" for `path` while the launcher hides. The dialog stays
+/// up until you pick, so nothing waits for it; a failure is a toast.
+fn open_with(app: &AppHandle, shell: &Arc<Shell>, path: &str) {
+    let (app, shell, path) = (app.clone(), Arc::clone(shell), path.to_owned());
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = shell.open_with(path.clone()).await {
+            toast::error(&app, format!("Couldn't show Open With for {}: {e}", file_name(&path)));
+        }
+    });
+}
+
+/// Moves `path` to the Recycle Bin; the launcher stays open without its row.
+async fn trash(shell: &Shell, path: &str) -> AppResult<Activation> {
+    let name = file_name(path);
+    tracing::info!("moving {path} to the Recycle Bin");
+    let moved = shell
+        .trash(path.to_owned())
+        .await
+        .map_err(|e| AppError::Trash {
+            path: name.clone(),
+            reason: e.to_string(),
+        })?;
+    Ok(if moved {
+        Activation::Removed {
+            message: format!("Moved {name} to the Recycle Bin."),
+        }
+    } else {
+        Activation::Notice {
+            message: format!("{name} was left where it is."),
+        }
+    })
+}
+
+/// The last part of a path, for messages ("report.pdf").
+fn file_name(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['\\', '/']);
+    trimmed
+        .rsplit(['\\', '/'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(trimmed)
+        .to_owned()
 }
 
 pub fn run_builtin(app: &AppHandle, cmd: BuiltinCommand) -> AppResult<()> {
@@ -264,6 +315,14 @@ fn open_path(app: &AppHandle, path: &Path) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_names_for_messages() {
+        assert_eq!(file_name(r"C:\Users\me\report.pdf"), "report.pdf");
+        assert_eq!(file_name(r"C:\Users\me\Old Stuff\"), "Old Stuff");
+        assert_eq!(file_name("/home/me/notes.md"), "notes.md");
+        assert_eq!(file_name(r"D:\"), "D:");
+    }
 
     #[test]
     fn only_plain_settings_pages_count() {
