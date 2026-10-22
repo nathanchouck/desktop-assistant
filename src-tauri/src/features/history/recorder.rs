@@ -238,8 +238,16 @@ pub fn resume_plan(saved: Resumable, found: Found, home: PathBuf) -> (Resumable,
     if found.folder && note.is_none() {
         return (saved, None);
     }
-    let cwd = if found.folder { saved.cwd.clone() } else { home };
-    let session = if note.is_some() { None } else { saved.session() };
+    let cwd = if found.folder {
+        saved.cwd.clone()
+    } else {
+        home
+    };
+    let session = if note.is_some() {
+        None
+    } else {
+        saved.session()
+    };
     (Resumable::new(saved.provider, cwd, session), note)
 }
 

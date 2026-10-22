@@ -42,7 +42,6 @@ impl HistoryProvider {
         let chat = self.history.reopen(&state.chat, id).await.map_err(failed)?;
         Ok(Activation::OpenChat { chat })
     }
-
 }
 
 fn failed(message: impl ToString) -> SearchError {
