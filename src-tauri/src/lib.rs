@@ -30,7 +30,6 @@ use tauri::{AppHandle, Manager, RunEvent};
 use tauri_specta::Event;
 
 use crate::paths::AppPaths;
-use crate::settings::Settings;
 use crate::state::AppState;
 
 pub fn run() {
@@ -39,10 +38,8 @@ pub fn run() {
     let _log_guard = logging::init(&paths.log_dir());
     tracing::info!("starting v{}", env!("CARGO_PKG_VERSION"));
 
-    let settings = settings::load_or_create(&paths.settings_file()).unwrap_or_else(|e| {
-        tracing::error!("{e}; using default settings");
-        Settings::default()
-    });
+    // settings.toml (maybe in a synced folder) with this PC's own file on top.
+    let (settings_files, settings) = settings::SettingsFiles::load(paths.clone());
 
     let builder = ipc::builder();
 
@@ -89,6 +86,7 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
             app.manage(state);
+            app.manage(settings_files);
             let handle = app.handle();
 
             let glass = window::apply_glass(handle);
@@ -106,6 +104,7 @@ pub fn run() {
             check_claude_status(handle, true);
             check_codex_status(handle, true);
             features::start(handle);
+            settings::live::start(handle);
 
             // Handy while developing; release builds start hidden in the tray.
             if cfg!(debug_assertions) {

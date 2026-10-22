@@ -85,7 +85,10 @@ Debugging tips:
    `Copy`/`Paste`/`OpenUrl` rather than doing those yourself. Risky
    commands set `with_confirm("Restart your PC?")`.
 5. Settings: grow your section's struct in your folder (every field needs
-   a default). UI: fill in `components/settings/<Name>Section.svelte`.
+   a default). A setting that only makes sense on one PC (a path on its
+   disk, how its Windows behaves) also goes in `settings::MACHINE_KEYS`,
+   so a synced `settings.toml` never carries it to another PC. UI: fill in
+   `components/settings/<Name>Section.svelte`.
 6. Windows-only code: `#[cfg(windows)] mod win;` in your folder, with a
    stub path so `cargo test` passes on Linux.
 7. Commands/events the UI needs go in `ipc/mod.rs` under your `// [name]`
@@ -146,5 +149,7 @@ Not worth it here: end-to-end UI automation, mocking Win32.
 ## Settings sync across my computers
 
 `settings.toml` and the MCP registry are plain text with no secrets, so they
-can live in a synced folder (OneDrive). Keys stay per machine in Credential
-Manager.
+can live in a synced folder (OneDrive; Settings → Advanced → Settings
+folder). Each PC's own values (`MACHINE_KEYS`) stay in
+`%LOCALAPPDATA%\desktop-assistant\settings.local.toml`, and keys stay per
+machine in Credential Manager.
