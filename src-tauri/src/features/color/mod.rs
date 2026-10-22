@@ -143,6 +143,8 @@ fn start_pick(
                 Ok(None) => tracing::debug!("color pick cancelled"),
                 Err(e) => {
                     if let Some(app) = APP.get() {
+                        // The launcher is hidden: open it so the error shows.
+                        crate::window::show(app, Instant::now());
                         crate::toast::error(app, format!("Couldn't pick a color: {e}"));
                     }
                 }
