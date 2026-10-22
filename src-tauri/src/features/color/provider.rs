@@ -152,12 +152,6 @@ fn value_from_id(rest: &str) -> Option<(Rgb, ColorFormat)> {
     Some((model::from_hex(hex)?, format))
 }
 
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
-}
-
 fn unknown(id: &str) -> SearchError {
     SearchError::Provider {
         provider: NAME,
@@ -184,7 +178,7 @@ impl SearchProvider for ColorProvider {
         if !settings::current(&self.settings).color_picker.enabled {
             return Ok(Vec::new());
         }
-        Ok(self.rows(query, now_ms()))
+        Ok(self.rows(query, super::now_ms()))
     }
 
     fn claims(&self, query: &str) -> bool {

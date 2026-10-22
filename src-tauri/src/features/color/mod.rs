@@ -184,6 +184,7 @@ fn finish(color: Rgb, settings: &SharedSettings, recent: &Mutex<Recent>) {
     crate::toast::info(app, format!("Copied {text}"));
 }
 
+/// Unix milliseconds, as recent colors store them.
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
