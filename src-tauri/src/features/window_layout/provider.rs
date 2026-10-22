@@ -398,7 +398,10 @@ mod tests {
         assert_eq!(found[0].id, "layout:left-half");
         assert_eq!(found[0].subtitle, "Moves “Untitled - Notepad”");
         let desktop = window("", "Progman");
-        assert_eq!(rows("left half", Some(&desktop))[0].subtitle, "Window layout");
+        assert_eq!(
+            rows("left half", Some(&desktop))[0].subtitle,
+            "Window layout"
+        );
         assert_eq!(rows("left half", None)[0].subtitle, "Window layout");
         let untitled = window("  ", "Notepad");
         assert_eq!(describe(&untitled), "notepad");

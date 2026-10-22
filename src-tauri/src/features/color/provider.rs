@@ -200,14 +200,16 @@ impl SearchProvider for ColorProvider {
 
     async fn activate(&self, id: &str, action: Action) -> Result<Activation, SearchError> {
         if id == PICK_ID {
-            return Ok(match super::start_pick(
-                Arc::clone(&self.settings),
-                Arc::clone(&self.recent),
-                self.marker.clone(),
-            ) {
-                Ok(()) => Activation::Hide,
-                Err(message) => Activation::Notice { message },
-            });
+            return Ok(
+                match super::start_pick(
+                    Arc::clone(&self.settings),
+                    Arc::clone(&self.recent),
+                    self.marker.clone(),
+                ) {
+                    Ok(()) => Activation::Hide,
+                    Err(message) => Activation::Notice { message },
+                },
+            );
         }
         if let Some(rest) = id.strip_prefix(VALUE_PREFIX) {
             let (color, format) = value_from_id(rest).ok_or_else(|| unknown(id))?;
@@ -340,7 +342,9 @@ mod tests {
     async fn enter_copies_ctrl_enter_pastes_ctrl_d_forgets() {
         let p = provider();
         assert_eq!(
-            p.activate("color:recent:#ff8800", Action::Copy).await.unwrap(),
+            p.activate("color:recent:#ff8800", Action::Copy)
+                .await
+                .unwrap(),
             Activation::Copy {
                 text: "#ff8800".into()
             }
@@ -359,9 +363,23 @@ mod tests {
                 .unwrap(),
             Activation::Refresh
         );
-        assert_eq!(ids(&p.rows("colors", 0)), ["color:pick", "color:recent:#008080"]);
+        assert_eq!(
+            ids(&p.rows("colors", 0)),
+            ["color:pick", "color:recent:#008080"]
+        );
         assert!(p.activate("color:recent:nope", Action::Copy).await.is_err());
-        assert!(p.activate("color:value:cmyk:#ff8800", Action::Copy).await.is_err());
+        assert!(p
+            .activate("color:value:cmyk:#ff8800", Action::Copy)
+            .await
+            .is_err());
+    }
+
+    #[test]
+    fn its_icon_is_drawn() {
+        assert!(crate::features::system::matching::glyph_exists(
+            "eyedropper"
+        ));
+        assert_eq!(pick_row().icon.as_deref(), Some("glyph:eyedropper"));
     }
 
     #[tokio::test]

@@ -137,12 +137,7 @@ fn window_titles() -> HashMap<u32, Vec<String>> {
     }
     let mut titles: HashMap<u32, Vec<String>> = HashMap::new();
     // SAFETY: the callback only runs during this call, while `titles` lives.
-    let _ = unsafe {
-        EnumWindows(
-            Some(each),
-            LPARAM(std::ptr::from_mut(&mut titles) as isize),
-        )
-    };
+    let _ = unsafe { EnumWindows(Some(each), LPARAM(std::ptr::from_mut(&mut titles) as isize)) };
     titles
 }
 

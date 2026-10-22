@@ -144,7 +144,11 @@ fn rows(groups: &[Group], needle: &str, limit: usize) -> Vec<ResultItem> {
                 .windows()
                 .any(|t| t.to_lowercase().contains(&lower))
                 .then_some(TITLE_SCORE);
-            by_name.into_iter().chain(by_title).reduce(f32::max).map(|s| (s, g))
+            by_name
+                .into_iter()
+                .chain(by_title)
+                .reduce(f32::max)
+                .map(|s| (s, g))
         })
         .collect();
     found.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -279,7 +283,11 @@ impl SearchProvider for ProcessProvider {
             Ok(procs) => procs,
             Err(e) => return Ok(notice(format!("Couldn't list processes: {e}"))),
         };
-        let chosen: Vec<Proc> = procs.iter().filter(|p| target.matches(p)).cloned().collect();
+        let chosen: Vec<Proc> = procs
+            .iter()
+            .filter(|p| target.matches(p))
+            .cloned()
+            .collect();
         let exe = chosen.first().map_or_else(
             || match &target {
                 Target::Program(exe) | Target::Process(_, exe) => exe.clone(),
@@ -321,9 +329,19 @@ mod tests {
         list::groups(&[
             proc(10, "chrome.exe", 300 * 1024 * 1024, &["Inbox - Gmail"]),
             proc(11, "chrome.exe", 200 * 1024 * 1024, &[]),
-            proc(20, "notepad.exe", 10 * 1024 * 1024, &["notes.txt - Notepad"]),
+            proc(
+                20,
+                "notepad.exe",
+                10 * 1024 * 1024,
+                &["notes.txt - Notepad"],
+            ),
             proc(21, "notepad.exe", 12 * 1024 * 1024, &["todo.txt - Notepad"]),
-            proc(30, "Spotify.exe", 150 * 1024 * 1024, &["Queen - Spotify Premium"]),
+            proc(
+                30,
+                "Spotify.exe",
+                150 * 1024 * 1024,
+                &["Queen - Spotify Premium"],
+            ),
             proc(40, "Code.exe", 0, &[]),
         ])
     }
@@ -378,7 +396,11 @@ mod tests {
         let rows = rows(&sample(), "notepad", 8);
         assert_eq!(
             ids(&rows),
-            ["proc:notepad.exe", "proc:pid:20:notepad.exe", "proc:pid:21:notepad.exe"]
+            [
+                "proc:notepad.exe",
+                "proc:pid:20:notepad.exe",
+                "proc:pid:21:notepad.exe"
+            ]
         );
         assert_eq!(rows[1].title, "notes.txt - Notepad");
         assert_eq!(rows[1].subtitle, "notepad.exe · PID 20");
@@ -403,6 +425,11 @@ mod tests {
         let code = all.iter().find(|r| r.id == "proc:code.exe").unwrap();
         assert_eq!(code.accessory, None, "unknown memory isn't shown");
         assert!(super::rows(&sample(), "zzzz", 8).is_empty());
+    }
+
+    #[test]
+    fn its_icon_is_drawn() {
+        assert!(crate::features::system::matching::glyph_exists("process"));
     }
 
     #[test]

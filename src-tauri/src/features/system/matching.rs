@@ -32,6 +32,14 @@ pub fn score(fuzzy: &mut FuzzyQuery, title: &str, keywords: &[&str]) -> Option<f
         .filter(|&s| s >= MIN_SCORE)
 }
 
+/// Whether `ui/src/lib/glyphs.ts` draws a glyph called `name`, so a
+/// typo in a row's icon fails a test instead of showing the kind's glyph.
+#[cfg(test)]
+pub fn glyph_exists(name: &str) -> bool {
+    const GLYPHS: &str = include_str!("../../../../ui/src/lib/glyphs.ts");
+    GLYPHS.contains(&format!("\n  {name}: ")) || GLYPHS.contains(&format!("\n  \"{name}\": "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,6 +60,13 @@ mod tests {
     fn unrelated_queries_dont() {
         assert_eq!(find("chrome", "Toggle Dark Mode", &["theme"]), None);
         assert_eq!(find("notepad", "Notification Settings", &[]), None);
+    }
+
+    #[test]
+    fn glyph_lookup() {
+        assert!(glyph_exists("lock"));
+        assert!(glyph_exists("layout-left"));
+        assert!(!glyph_exists("no-such-glyph"));
     }
 
     #[test]

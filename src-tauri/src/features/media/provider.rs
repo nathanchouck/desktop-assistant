@@ -133,7 +133,10 @@ mod tests {
         // Nothing playing: no Now Playing row.
         assert!(!ids(&rows("now playing", None)).contains(&"media:now-playing"));
         let play = &rows("play pause", Some(&t))[0];
-        assert_eq!(play.subtitle, "Bohemian Rhapsody — Queen · Playing · Spotify");
+        assert_eq!(
+            play.subtitle,
+            "Bohemian Rhapsody — Queen · Playing · Spotify"
+        );
     }
 
     #[tokio::test]

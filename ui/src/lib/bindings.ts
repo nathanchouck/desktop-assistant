@@ -71,6 +71,7 @@ export const commands = {
 /** Events */
 export const events = {
 	aiStream: makeEvent<AiStream>("ai-stream"),
+	colorPicked: makeEvent<ColorPicked>("color-picked"),
 	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
@@ -110,7 +111,10 @@ export type Activation =
  *  whatever is on the clipboard already when `None`.
  */
 { type: "paste"; text: string | null } | 
-/**  Open a web link (http or https only) in the browser, then hide. */
+/**
+ *  Open a web link (http or https only) in the browser, or a Windows
+ *  Settings page (`ms-settings:display`), then hide.
+ */
 { type: "open_url"; url: string } | 
 /**  Replace the search text and search again; the launcher stays open. */
 { type: "set_query"; query: string } | 
@@ -321,8 +325,37 @@ export type CodexStatus = "ready" | "not_installed" |
  */
 "unknown";
 
+/**  How a color is written when it's copied. */
+export type ColorFormat = 
+/**  `#ff8800` */
+"hex" | 
+/**  `rgb(255, 136, 0)` */
+"rgb" | 
+/**  `hsl(32, 100%, 50%)` */
+"hsl";
+
+/**
+ *  A color was picked and the launcher opened to show it: the UI lists
+ *  recent colors (`colors`).
+ */
+export type ColorPicked = {
+	/**  `#rrggbb`. */
+	hex: string,
+};
+
 export type ColorSettings = {
+	/**  "Pick Color" and colors in search. */
 	enabled: boolean,
+	/**
+	 *  How colors are copied: `#ff8800`, `rgb(255, 136, 0)` or
+	 *  `hsl(32, 100%, 50%)`.
+	 */
+	format: ColorFormat,
+	/**
+	 *  After a pick, open the launcher on your recent colors (the new one
+	 *  first). Off: the color is only copied.
+	 */
+	show_after_pick: boolean,
 };
 
 export type EmojiSettings = {
@@ -543,7 +576,13 @@ export type SnippetSettings = {
 };
 
 export type SystemSettings = {
+	/**  System commands and Settings pages in search. */
 	enabled: boolean,
+	/**
+	 *  Restart, shut down, sign out, hibernate and emptying the Recycle Bin
+	 *  ask in the footer first; Enter again runs them.
+	 */
+	confirm: boolean,
 };
 
 /**  Shown in the footer for a few seconds. */

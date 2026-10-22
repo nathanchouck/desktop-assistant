@@ -229,6 +229,17 @@ mod tests {
     }
 
     #[test]
+    fn every_icon_is_drawn() {
+        for layout in Layout::ALL {
+            let name = layout.glyph();
+            assert!(
+                crate::features::system::matching::glyph_exists(name),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
     fn every_layout_but_three_is_a_region() {
         let not_regions: Vec<_> = Layout::ALL
             .into_iter()

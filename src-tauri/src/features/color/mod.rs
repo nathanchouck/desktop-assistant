@@ -89,11 +89,10 @@ static PICKING: AtomicBool = AtomicBool::new(false);
 static RECENT: OnceLock<Arc<Mutex<Recent>>> = OnceLock::new();
 
 fn recent(paths: &AppPaths) -> Arc<Mutex<Recent>> {
-    Arc::clone(RECENT.get_or_init(|| {
-        Arc::new(Mutex::new(Recent::load(
-            paths.data_dir.join("colors.json"),
-        )))
-    }))
+    Arc::clone(
+        RECENT
+            .get_or_init(|| Arc::new(Mutex::new(Recent::load(paths.data_dir.join("colors.json"))))),
+    )
 }
 
 /// Notes that the system cursors are replaced (see `win.rs`).
@@ -204,10 +203,8 @@ mod tests {
         merged.extend("enabled = false\n".parse::<toml::Table>().unwrap());
         let s: ColorSettings = merged.try_into().unwrap();
         assert!(!s.enabled && s.show_after_pick);
-        let rgb: ColorSettings = toml::from_str(
-            "enabled = true\nformat = \"rgb\"\nshow_after_pick = false\n",
-        )
-        .unwrap();
+        let rgb: ColorSettings =
+            toml::from_str("enabled = true\nformat = \"rgb\"\nshow_after_pick = false\n").unwrap();
         assert_eq!(rgb.format, ColorFormat::Rgb);
     }
 

@@ -153,7 +153,10 @@ mod tests {
     #[test]
     fn player_names() {
         assert_eq!(app_name("Spotify.exe"), "Spotify");
-        assert_eq!(app_name("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"), "Spotify");
+        assert_eq!(
+            app_name("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"),
+            "Spotify"
+        );
         assert_eq!(
             app_name("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"),
             "Media Player"

@@ -6,12 +6,18 @@
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
-    LeftDown { x: i32, y: i32 },
+    LeftDown {
+        x: i32,
+        y: i32,
+    },
     LeftUp,
     RightDown,
     RightUp,
     /// Enter, with the cursor's position.
-    Enter { x: i32, y: i32 },
+    Enter {
+        x: i32,
+        y: i32,
+    },
     Escape,
 }
 

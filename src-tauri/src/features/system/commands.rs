@@ -200,13 +200,26 @@ pub const SETTINGS_PAGES: &[SettingsPage] = &[
     SettingsPage {
         page: "display",
         title: "Display Settings",
-        keywords: &["screen", "resolution", "brightness", "scale", "monitor", "hdr"],
+        keywords: &[
+            "screen",
+            "resolution",
+            "brightness",
+            "scale",
+            "monitor",
+            "hdr",
+        ],
         glyph: "monitor",
     },
     SettingsPage {
         page: "sound",
         title: "Sound Settings",
-        keywords: &["audio", "speakers", "microphone", "output device", "input device"],
+        keywords: &[
+            "audio",
+            "speakers",
+            "microphone",
+            "output device",
+            "input device",
+        ],
         glyph: "volume",
     },
     SettingsPage {
@@ -224,13 +237,26 @@ pub const SETTINGS_PAGES: &[SettingsPage] = &[
     SettingsPage {
         page: "network-status",
         title: "Network Settings",
-        keywords: &["internet", "ethernet", "ip address", "vpn", "proxy", "network"],
+        keywords: &[
+            "internet",
+            "ethernet",
+            "ip address",
+            "vpn",
+            "proxy",
+            "network",
+        ],
         glyph: "globe",
     },
     SettingsPage {
         page: "appsfeatures",
         title: "Installed Apps",
-        keywords: &["apps", "uninstall", "programs", "remove program", "apps settings"],
+        keywords: &[
+            "apps",
+            "uninstall",
+            "programs",
+            "remove program",
+            "apps settings",
+        ],
         glyph: "app",
     },
     SettingsPage {
@@ -254,7 +280,13 @@ pub const SETTINGS_PAGES: &[SettingsPage] = &[
     SettingsPage {
         page: "personalization",
         title: "Personalization Settings",
-        keywords: &["wallpaper", "background", "colors", "accent color", "lock screen"],
+        keywords: &[
+            "wallpaper",
+            "background",
+            "colors",
+            "accent color",
+            "lock screen",
+        ],
         glyph: "palette",
     },
     SettingsPage {
@@ -266,7 +298,13 @@ pub const SETTINGS_PAGES: &[SettingsPage] = &[
     SettingsPage {
         page: "storagesense",
         title: "Storage Settings",
-        keywords: &["disk space", "storage sense", "free up space", "cleanup", "drives"],
+        keywords: &[
+            "disk space",
+            "storage sense",
+            "free up space",
+            "cleanup",
+            "drives",
+        ],
         glyph: "folder",
     },
     SettingsPage {
@@ -284,13 +322,24 @@ pub const SETTINGS_PAGES: &[SettingsPage] = &[
     SettingsPage {
         page: "privacy",
         title: "Privacy Settings",
-        keywords: &["permissions", "camera access", "microphone access", "location"],
+        keywords: &[
+            "permissions",
+            "camera access",
+            "microphone access",
+            "location",
+        ],
         glyph: "lock",
     },
     SettingsPage {
         page: "about",
         title: "About This PC",
-        keywords: &["system info", "specs", "pc name", "windows version", "rename pc"],
+        keywords: &[
+            "system info",
+            "specs",
+            "pc name",
+            "windows version",
+            "rename pc",
+        ],
         glyph: "info",
     },
 ];
@@ -311,6 +360,17 @@ mod tests {
         }
         assert_eq!(SystemCommand::from_id("sys:nope"), None);
         assert_eq!(SettingsPage::from_id("sys:page:nope"), None);
+    }
+
+    #[test]
+    fn every_icon_is_drawn() {
+        use crate::features::system::matching::glyph_exists;
+        for cmd in SystemCommand::ALL {
+            assert!(glyph_exists(cmd.glyph()), "{}", cmd.glyph());
+        }
+        for page in SETTINGS_PAGES {
+            assert!(glyph_exists(page.glyph), "{}", page.glyph);
+        }
     }
 
     #[test]

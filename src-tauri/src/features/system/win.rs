@@ -18,8 +18,7 @@ use windows::Win32::System::Registry::{
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows::Win32::UI::Shell::{
-    SHEmptyRecycleBinW, SHQueryRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI,
-    SHQUERYRBINFO,
+    SHEmptyRecycleBinW, SHQueryRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI, SHQUERYRBINFO,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     PostMessageW, SendMessageTimeoutW, HWND_BROADCAST, SC_MONITORPOWER, SMTO_ABORTIFHUNG,
@@ -129,8 +128,8 @@ fn enable_shutdown_privilege() -> windows::core::Result<()> {
             &mut token,
         )?;
         let mut luid = LUID::default();
-        let result = LookupPrivilegeValueW(PCWSTR::null(), SE_SHUTDOWN_NAME, &mut luid).and_then(
-            |()| {
+        let result =
+            LookupPrivilegeValueW(PCWSTR::null(), SE_SHUTDOWN_NAME, &mut luid).and_then(|()| {
                 let privileges = TOKEN_PRIVILEGES {
                     PrivilegeCount: 1,
                     Privileges: [LUID_AND_ATTRIBUTES {
@@ -139,8 +138,7 @@ fn enable_shutdown_privilege() -> windows::core::Result<()> {
                     }],
                 };
                 AdjustTokenPrivileges(token, false, Some(&privileges), 0, None, None)
-            },
-        );
+            });
         let _ = CloseHandle(token);
         result
     }

@@ -74,7 +74,9 @@ pub fn killable(procs: &[Proc], own_pid: u32) -> Vec<Proc> {
     let ours = own_tree(procs, own_pid);
     procs
         .iter()
-        .filter(|p| !KERNEL_PIDS.contains(&p.pid) && !is_protected(&p.exe) && !ours.contains(&p.pid))
+        .filter(|p| {
+            !KERNEL_PIDS.contains(&p.pid) && !is_protected(&p.exe) && !ours.contains(&p.pid)
+        })
         .cloned()
         .collect()
 }
@@ -347,7 +349,10 @@ mod tests {
 
     #[test]
     fn questions() {
-        assert_eq!(confirm("chrome.exe", 12), "End all 12 chrome.exe processes?");
+        assert_eq!(
+            confirm("chrome.exe", 12),
+            "End all 12 chrome.exe processes?"
+        );
         assert_eq!(confirm("notepad.exe", 1), "End notepad.exe?");
         assert!(confirm("Explorer.EXE", 1).contains("taskbar"));
     }
@@ -374,8 +379,7 @@ mod tests {
         assert_eq!(
             report("Taskmgr.exe", &[Denied]),
             Report::Problem(
-                "Windows didn't let the launcher end Taskmgr.exe: it runs as administrator."
-                    .into()
+                "Windows didn't let the launcher end Taskmgr.exe: it runs as administrator.".into()
             )
         );
         assert_eq!(

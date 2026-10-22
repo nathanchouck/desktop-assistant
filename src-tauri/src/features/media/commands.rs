@@ -30,7 +30,12 @@ pub enum MediaCommand {
 }
 
 impl MediaCommand {
-    pub const ALL: [Self; 4] = [Self::PlayPause, Self::Next, Self::Previous, Self::NowPlaying];
+    pub const ALL: [Self; 4] = [
+        Self::PlayPause,
+        Self::Next,
+        Self::Previous,
+        Self::NowPlaying,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -94,6 +99,17 @@ mod tests {
             assert_eq!(MediaCommand::from_id(cmd.id()), Some(cmd));
         }
         assert_eq!(MediaCommand::from_id("media:nope"), None);
+    }
+
+    #[test]
+    fn every_icon_is_drawn() {
+        for cmd in MediaCommand::ALL {
+            let name = cmd.glyph();
+            assert!(
+                crate::features::system::matching::glyph_exists(name),
+                "{name}"
+            );
+        }
     }
 
     #[test]

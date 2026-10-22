@@ -148,7 +148,11 @@ mod tests {
         // A damaged file starts empty; bad entries are skipped.
         std::fs::write(&file, "not json").unwrap();
         assert!(Recent::load(file.clone()).colors().is_empty());
-        std::fs::write(&file, r##"[{"hex":"#zzzzzz","at":1},{"hex":"#00ff00","at":2}]"##).unwrap();
+        std::fs::write(
+            &file,
+            r##"[{"hex":"#zzzzzz","at":1},{"hex":"#00ff00","at":2}]"##,
+        )
+        .unwrap();
         let mixed = Recent::load(file);
         assert_eq!(mixed.colors().len(), 1);
         assert_eq!(mixed.colors()[0].color, Rgb::new(0, 255, 0));

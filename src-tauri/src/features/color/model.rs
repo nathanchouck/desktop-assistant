@@ -126,11 +126,7 @@ fn parse_hex(hex: &str) -> Option<Rgb> {
     let digit = |i: usize| u8::from_str_radix(&hex[i..=i], 16).ok();
     let pair = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
     match hex.len() {
-        3 => Some(Rgb::new(
-            digit(0)? * 17,
-            digit(1)? * 17,
-            digit(2)? * 17,
-        )),
+        3 => Some(Rgb::new(digit(0)? * 17, digit(1)? * 17, digit(2)? * 17)),
         6 => Some(Rgb::new(pair(0)?, pair(2)?, pair(4)?)),
         _ => None,
     }
@@ -161,7 +157,11 @@ fn parse_rgb(args: &[String]) -> Option<Rgb> {
 }
 
 fn parse_hsl(args: &[String]) -> Option<Rgb> {
-    let hue: f64 = args[0].strip_suffix("deg").unwrap_or(&args[0]).parse().ok()?;
+    let hue: f64 = args[0]
+        .strip_suffix("deg")
+        .unwrap_or(&args[0])
+        .parse()
+        .ok()?;
     let share = |a: &String| -> Option<f64> {
         let v: f64 = a.strip_suffix('%')?.parse().ok()?;
         (0.0..=100.0).contains(&v).then_some(v / 100.0)
@@ -188,10 +188,7 @@ mod tests {
         assert_eq!(ORANGE.format(ColorFormat::Hex), "#ff8800");
         assert_eq!(ORANGE.format(ColorFormat::Rgb), "rgb(255, 136, 0)");
         assert_eq!(ORANGE.format(ColorFormat::Hsl), "hsl(32, 100%, 50%)");
-        assert_eq!(
-            Rgb::new(0, 0, 0).format(ColorFormat::Hsl),
-            "hsl(0, 0%, 0%)"
-        );
+        assert_eq!(Rgb::new(0, 0, 0).format(ColorFormat::Hsl), "hsl(0, 0%, 0%)");
         assert_eq!(
             Rgb::new(255, 255, 255).format(ColorFormat::Hsl),
             "hsl(0, 0%, 100%)"
@@ -255,7 +252,10 @@ mod tests {
         assert_eq!(parse("hsl(nan, 10%, 50%)"), None);
         assert_eq!(parse("hsl(inf, 10%, 50%)"), None);
         // Hues wrap around.
-        assert_eq!(parse("hsl(-120, 100%, 50%)").unwrap().0, Rgb::new(0, 0, 255));
+        assert_eq!(
+            parse("hsl(-120, 100%, 50%)").unwrap().0,
+            Rgb::new(0, 0, 255)
+        );
         assert_eq!(parse("hsl(480, 100%, 50%)").unwrap().0, Rgb::new(0, 255, 0));
     }
 
