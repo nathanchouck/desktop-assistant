@@ -129,7 +129,7 @@ impl FileIndex {
             .name("file-index".into())
             .spawn(move || watch::run(index));
         if let Err(e) = spawned {
-            tracing::error!("could not start the file index: {e}");
+            crate::toast::report(format!("Couldn't start the file index: {e}"));
             self.started.store(false, Ordering::Release);
             self.set_incomplete(false);
         }
@@ -287,7 +287,7 @@ impl FileIndex {
         }
         let Ok(tree) = self.tree.read() else { return };
         if let Err(e) = snapshot::save(&self.snapshot_path, &self.roots, &tree) {
-            tracing::warn!("could not save the file index: {e}");
+            crate::toast::report(format!("Couldn't save the file index: {e}"));
         }
     }
 }

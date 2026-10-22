@@ -284,7 +284,11 @@ pub fn load_or_create(path: &Path) -> Result<Settings, SettingsError> {
         }
         Err(e) => {
             let bad = path.with_extension("toml.bad");
-            tracing::error!("{e}; moving it to {} and using defaults", bad.display());
+            crate::toast::report(format!(
+                "Your settings file has an error, so it was moved to {} and the defaults are \
+                 used. {e}",
+                bad.display()
+            ));
             fs::rename(path, &bad).map_err(|source| SettingsError::Io {
                 path: bad.clone(),
                 source,

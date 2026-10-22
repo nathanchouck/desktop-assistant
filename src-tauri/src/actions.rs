@@ -204,7 +204,10 @@ fn open_with(app: &AppHandle, shell: &Arc<Shell>, path: &str) {
     let (app, shell, path) = (app.clone(), Arc::clone(shell), path.to_owned());
     tauri::async_runtime::spawn(async move {
         if let Err(e) = shell.open_with(path.clone()).await {
-            toast::error(&app, format!("Couldn't show Open With for {}: {e}", file_name(&path)));
+            toast::error(
+                &app,
+                format!("Couldn't show Open With for {}: {e}", file_name(&path)),
+            );
         }
     });
 }

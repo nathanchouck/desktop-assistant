@@ -12,6 +12,7 @@
   import { chatHints, chatIntentFor, intentFor, searchHints } from "./lib/keys";
   import { ActionMenuStore } from "./lib/stores/actionMenu.svelte";
   import { ChatStore } from "./lib/stores/chat.svelte";
+  import { launcher } from "./lib/stores/launcher.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
   import { SettingsStore } from "./lib/stores/settings.svelte";
   import { ToastStore } from "./lib/stores/toast.svelte";
@@ -183,7 +184,14 @@
     }
   }
 
+  function onHidden() {
+    launcher.visible = false;
+    toasts.hidden();
+  }
+
   function onShown() {
+    launcher.visible = true;
+    toasts.shown();
     const idle = Date.now() - hiddenAt > CHAT_RESET_MS;
     if (chat.active && idle && !chat.transcript.running && !chat.pending) void chat.close();
     if (settingsOpen) settingsPane?.focus();
@@ -206,8 +214,11 @@
 
     const onBlur = () => (hiddenAt = Date.now());
     window.addEventListener("blur", onBlur);
+    // Release builds start hidden in the tray; toasts wait for the first open.
+    if (!document.hasFocus()) onHidden();
     const unlisten = [
       events.launcherShown.listen(onShown),
+      events.launcherHidden.listen(onHidden),
       events.aiStream.listen((e) => chat.onEvent(e.payload)),
       events.fileIndexChanged.listen((e) => (indexStatus = e.payload.status)),
       events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
@@ -220,6 +231,10 @@
       }),
     ];
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
+    // Problems from before the UI listened (startup), oldest first.
+    void commands.toastRecent().then((recent) => {
+      for (const { toast, age_ms } of recent) toasts.show(toast, Date.now() - age_ms);
+    });
     // Which AI is the default (for Tab, Shift+Tab and the chat footer).
     void settings.load();
 

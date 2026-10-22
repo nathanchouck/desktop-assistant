@@ -7,8 +7,8 @@ use windows::Win32::System::Com::{CoCreateInstance, IBindCtx, CLSCTX_ALL};
 use windows::Win32::UI::Shell::{
     FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName, SHOpenWithDialog,
     COPYENGINE_E_USER_CANCELLED, FOFX_ADDUNDORECORD, FOFX_RECYCLEONDELETE, FOF_ALLOWUNDO,
-    FOF_NOCONFIRMATION, FOF_WANTNUKEWARNING, OAIF_ALLOW_REGISTRATION, OAIF_EXEC,
-    OAIF_REGISTER_EXT, OPENASINFO,
+    FOF_NOCONFIRMATION, FOF_WANTNUKEWARNING, OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OAIF_REGISTER_EXT,
+    OPENASINFO,
 };
 use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
 
@@ -45,7 +45,8 @@ pub fn trash(path: &str) -> windows::core::Result<bool> {
     // SAFETY: COM calls on an STA thread (the caller's contract); every
     // interface is used only while alive.
     unsafe {
-        let item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(path), None::<&IBindCtx>)?;
+        let item: IShellItem =
+            SHCreateItemFromParsingName(&HSTRING::from(path), None::<&IBindCtx>)?;
         let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
         op.SetOperationFlags(
             FOF_ALLOWUNDO

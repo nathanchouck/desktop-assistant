@@ -237,7 +237,7 @@ async fn blocking<T: Send + 'static>(
 }
 
 /// Runs `work` shortly after the launcher hides. Sleep doesn't return
-/// until the PC wakes, so its failure can only be logged.
+/// until the PC wakes, so a failure is a toast, seen on the next open.
 fn after_hide(
     work: impl FnOnce() -> Result<(), String> + Send + 'static,
 ) -> Result<(), SearchError> {
@@ -246,7 +246,7 @@ fn after_hide(
         .spawn(move || {
             std::thread::sleep(SLEEP_DELAY);
             if let Err(e) = work() {
-                tracing::warn!("system command failed: {e}");
+                crate::toast::report(format!("That didn't work: {e}"));
             }
         })
         .map(|_| ())

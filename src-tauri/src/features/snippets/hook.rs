@@ -168,7 +168,7 @@ pub fn apply(running: Option<Expander>, wanted: &[Expansion]) -> Option<Expander
                 Some(expander)
             }
             Err(e) => {
-                tracing::warn!("could not start snippet expansion: {e}");
+                crate::toast::report(format!("Snippets won't expand as you type: {e}"));
                 None
             }
         },

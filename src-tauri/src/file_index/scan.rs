@@ -82,9 +82,10 @@ pub fn walk_in_chunks(
         count += entries.len();
         tree.insert(dir.to_string_lossy().into_owned(), entries);
         if count >= limit {
-            tracing::warn!(
-                "file index stopped at {limit} entries; add exclusions to index the rest"
-            );
+            crate::toast::report(format!(
+                "The file index stopped at {limit} files and folders; add exclusions in \
+                 Settings to index the rest"
+            ));
             break;
         }
         if last_emit.elapsed() >= every {

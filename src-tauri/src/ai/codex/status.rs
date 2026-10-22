@@ -77,11 +77,11 @@ pub async fn check_status(settings: &ChatGptSettings) -> CodexStatus {
             &String::from_utf8_lossy(&output.stderr),
         ),
         Ok(Err(e)) => {
-            tracing::warn!("could not check Codex's sign-in: {e}");
+            crate::toast::report(format!("Couldn't check Codex's sign-in: {e}"));
             CodexStatus::Unknown
         }
         Err(_) => {
-            tracing::warn!("Codex's sign-in check timed out");
+            crate::toast::report("Codex's sign-in check timed out");
             CodexStatus::Unknown
         }
     }

@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow, Window, WindowEvent,
 };
@@ -140,7 +141,15 @@ pub fn hide(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         state.launcher.mark_hidden();
     }
+    if let Err(e) = LauncherHidden.emit(app) {
+        tracing::debug!("could not notify UI of hide: {e}");
+    }
 }
+
+/// Sent each time the launcher hides, so the UI can hold toasts for the
+/// next open and stop anything that only matters while it's on screen.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+pub struct LauncherHidden;
 
 /// Resizes to `height` logical pixels (clamped), keeping the top edge fixed.
 pub fn set_height(app: &AppHandle, height: u32) {

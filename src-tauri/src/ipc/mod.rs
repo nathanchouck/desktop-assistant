@@ -475,6 +475,7 @@ pub fn builder() -> Builder<Wry> {
             // [appearance]
             // [google]
             // [polish]
+            crate::toast::toast_recent,
         ])
         .events(collect_events![
             LauncherShown,
@@ -493,6 +494,7 @@ pub fn builder() -> Builder<Wry> {
             // [ai_commands]
             // [google]
             // [polish]
+            crate::window::LauncherHidden,
         ])
 }
 

@@ -77,7 +77,9 @@ pub async fn start(host: Arc<dyn ToolHost>) -> std::io::Result<Endpoint> {
             let stream = match listener.accept().await {
                 Ok((stream, _)) => stream,
                 Err(e) => {
-                    tracing::warn!("MCP server stopped accepting: {e}");
+                    crate::toast::report(format!(
+                        "The launcher's tools for Claude and ChatGPT hit a problem: {e}"
+                    ));
                     continue;
                 }
             };

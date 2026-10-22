@@ -213,7 +213,9 @@ impl Watches {
                 watched: BTreeSet::new(),
             }),
             Err(e) => {
-                tracing::warn!("file index won't update live: {e}");
+                crate::toast::report(format!(
+                    "The file index won't see changes until the next restart: {e}"
+                ));
                 None
             }
         }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { launcher } from "../lib/stores/launcher.svelte";
   import type { SettingsStore } from "../lib/stores/settings.svelte";
   import AdvancedSection from "./settings/AdvancedSection.svelte";
   import AiCommandsSection from "./settings/AiCommandsSection.svelte";
@@ -32,8 +33,11 @@
     pane.focus();
   }
 
-  // Keep the status lines fresh while the menu is open.
+  // Keep the status lines fresh while the menu is on screen. The menu
+  // stays open in the hidden window, so stop then (and look again on open).
   $effect(() => {
+    if (!launcher.visible) return;
+    void store.refreshStatus();
     const timer = setInterval(() => void store.refreshStatus(), 2000);
     return () => clearInterval(timer);
   });

@@ -102,6 +102,8 @@ export const commands = {
 	 *  that couldn't happen.
 	 */
 	updateInstall: () => typedError<null, IpcError>(__TAURI_INVOKE("update_install")),
+	/**  Toasts sent before the UI listened (see `recent`). */
+	toastRecent: () => __TAURI_INVOKE<RecentToast[]>("toast_recent"),
 };
 
 /** Events */
@@ -109,6 +111,7 @@ export const events = {
 	aiStream: makeEvent<AiStream>("ai-stream"),
 	colorPicked: makeEvent<ColorPicked>("color-picked"),
 	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
+	launcherHidden: makeEvent<LauncherHidden>("launcher-hidden"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
 	showSettings: makeEvent<ShowSettings>("show-settings"),
@@ -512,6 +515,12 @@ export type ItemKind = "app" | "file" | "folder" | "command" | "ask_ai" |
 /**  A user script. */
 "script";
 
+/**
+ *  Sent each time the launcher hides, so the UI can hold toasts for the
+ *  next open and stop anything that only matters while it's on screen.
+ */
+export type LauncherHidden = null;
+
 /**  Sent each time the launcher appears, so the UI can focus the search box. */
 export type LauncherShown = null;
 
@@ -549,6 +558,13 @@ export type Quicklink = {
 export type QuicklinkSettings = {
 	enabled: boolean,
 	links: Quicklink[],
+};
+
+/**  A toast sent a moment ago, for a UI that just started listening. */
+export type RecentToast = {
+	toast: Toast,
+	/**  How long ago it was sent. */
+	age_ms: number,
 };
 
 /**  One row in the results list. */

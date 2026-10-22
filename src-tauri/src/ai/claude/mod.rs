@@ -259,11 +259,11 @@ pub async fn check_status(settings: &ClaudeSettings) -> ClaudeStatus {
     match tokio::time::timeout(Duration::from_secs(20), cmd.output()).await {
         Ok(Ok(output)) => parse_status(&String::from_utf8_lossy(&output.stdout)),
         Ok(Err(e)) => {
-            tracing::warn!("could not check Claude Code's sign-in: {e}");
+            crate::toast::report(format!("Couldn't check Claude Code's sign-in: {e}"));
             ClaudeStatus::Unknown
         }
         Err(_) => {
-            tracing::warn!("Claude Code's sign-in check timed out");
+            crate::toast::report("Claude Code's sign-in check timed out");
             ClaudeStatus::Unknown
         }
     }

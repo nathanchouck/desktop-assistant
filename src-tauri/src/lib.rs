@@ -40,7 +40,9 @@ pub fn run() {
     tracing::info!("starting v{}", env!("CARGO_PKG_VERSION"));
 
     let settings = settings::load_or_create(&paths.settings_file()).unwrap_or_else(|e| {
-        tracing::error!("{e}; using default settings");
+        toast::report(format!(
+            "Couldn't load your settings, so the defaults are used: {e}"
+        ));
         Settings::default()
     });
 
@@ -90,6 +92,7 @@ pub fn run() {
             builder.mount_events(app);
             app.manage(state);
             let handle = app.handle();
+            toast::init(handle);
 
             let glass = window::apply_glass(handle);
             tracing::info!("glass effect {}", if glass { "on" } else { "off" });
@@ -178,7 +181,9 @@ fn start_launcher_tools(app: &AppHandle) {
         let endpoint = match mcp::start(host).await {
             Ok(endpoint) => endpoint,
             Err(e) => {
-                tracing::warn!("launcher tools for Claude are off: {e}");
+                toast::report(format!(
+                    "The launcher's tools for Claude and ChatGPT are off: {e}"
+                ));
                 return;
             }
         };
@@ -197,7 +202,9 @@ fn start_launcher_tools(app: &AppHandle) {
             Ok(files) => {
                 let _ = state.tool_files.set(files);
             }
-            Err(e) => tracing::warn!("could not write the launcher tools config: {e}"),
+            Err(e) => toast::report(format!(
+                "The launcher's tools for Claude are off: couldn't write their config: {e}"
+            )),
         }
     });
 }
@@ -293,6 +300,6 @@ pub(crate) fn sync_launch_at_login(app: &AppHandle, enabled: bool) {
         Err(e) => Err(e),
     };
     if let Err(e) = result {
-        tracing::warn!("could not update launch at login: {e}");
+        toast::report(format!("Couldn't change starting at login: {e}"));
     }
 }
