@@ -4,6 +4,8 @@ import {
   applyEvent,
   approvalSummary,
   forcedProvider,
+  fromSaved,
+  lastAnswer,
   looksLikeAQuestion,
   isThinking,
   modelLabel,
@@ -148,5 +150,63 @@ describe("looksLikeAQuestion", () => {
     expect(looksLikeAQuestion("chro", [app, ask])).toBe(false);
     expect(looksLikeAQuestion("vs code", [app, ask])).toBe(false);
     expect(looksLikeAQuestion("ab", [ask])).toBe(false);
+  });
+});
+
+describe("fromSaved", () => {
+  it("shows a saved chat as it was, without empty captions", () => {
+    expect(
+      fromSaved([
+        { kind: "user", text: "sort these", context: "Downloads · 2 selected" },
+        { kind: "assistant", text: "Done." },
+        { kind: "tool", id: "t1", name: "Bash", summary: "mv a b", state: "ok" },
+        { kind: "approval", id: "r1", tool: "Bash", summary: "mv", detail: "mv a b", state: "denied" },
+        { kind: "user", text: "thanks", context: null },
+        { kind: "note", text: "Stopped" },
+      ]),
+    ).toEqual([
+      { kind: "user", text: "sort these", context: "Downloads · 2 selected" },
+      { kind: "assistant", text: "Done." },
+      { kind: "tool", id: "t1", name: "Bash", summary: "mv a b", state: "ok" },
+      { kind: "approval", id: "r1", tool: "Bash", summary: "mv", detail: "mv a b", state: "denied" },
+      { kind: "user", text: "thanks" },
+      { kind: "note", text: "Stopped" },
+    ]);
+  });
+});
+
+describe("lastAnswer", () => {
+  const t = (entries: Transcript["entries"]): Transcript => ({ entries, running: false, model: "" });
+
+  it("is the text since your last message, around any tool use", () => {
+    expect(
+      lastAnswer(
+        t([
+          { kind: "user", text: "a" },
+          { kind: "assistant", text: "old answer" },
+          { kind: "user", text: "b" },
+          { kind: "assistant", text: "Checking.\n" },
+          { kind: "tool", id: "1", name: "Read", summary: "x", state: "ok" },
+          { kind: "assistant", text: "**Found it.**" },
+          { kind: "note", text: "Stopped" },
+        ]),
+      ),
+    ).toBe("Checking.\n\n**Found it.**");
+  });
+
+  it("is null before an answer, or when the last turn had none", () => {
+    expect(lastAnswer(t([]))).toBeNull();
+    expect(lastAnswer(t([{ kind: "user", text: "a" }]))).toBeNull();
+    expect(
+      lastAnswer(
+        t([
+          { kind: "user", text: "a" },
+          { kind: "assistant", text: "answer" },
+          { kind: "user", text: "b" },
+          { kind: "error", text: "signed out" },
+        ]),
+      ),
+    ).toBeNull();
+    expect(lastAnswer(t([{ kind: "assistant", text: "  " }]))).toBeNull();
   });
 });

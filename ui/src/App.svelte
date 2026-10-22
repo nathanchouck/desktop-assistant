@@ -29,9 +29,14 @@
       void chat.ask(text, provider);
     },
     onSettings: () => void openSettings(),
+    onOpenChat: (saved) => chat.reopen(saved),
     defaultProvider,
   });
   const toasts = new ToastStore();
+  /** Shows why copying or pasting an answer failed. */
+  const showError = (message: string | null) => {
+    if (message) toasts.show({ level: "error", message });
+  };
   let bar: SearchBar | undefined = $state();
   let pane: ChatPane | undefined = $state();
   let settingsPane: SettingsPane | undefined = $state();
@@ -70,7 +75,11 @@
     settingsOpen
       ? ([["Esc", "Close"]] as [string, string][])
       : chat.active
-        ? chatHints({ running: chat.transcript.running, pending: chat.pending !== undefined })
+        ? chatHints({
+            running: chat.transcript.running,
+            pending: chat.pending !== undefined,
+            answer: chat.finishedAnswer !== null,
+          })
         : searchHints(search.current?.actions ?? [], PROVIDER_NAMES[search.otherProvider()]),
   );
 
@@ -132,6 +141,12 @@
         break;
       case "stop":
         void chat.stop();
+        break;
+      case "paste_answer":
+        void chat.pasteAnswer().then(showError);
+        break;
+      case "copy_answer":
+        void chat.copyAnswer().then(showError);
         break;
       case "scroll":
         pane?.scroll(intent.delta, intent.pages);

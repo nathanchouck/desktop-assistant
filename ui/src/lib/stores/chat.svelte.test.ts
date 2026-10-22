@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiStream } from "../bindings";
+import type { AiStream, OpenedChat } from "../bindings";
 
 const commands = vi.hoisted(() => ({
   aiAsk: vi.fn(),
@@ -7,6 +7,8 @@ const commands = vi.hoisted(() => ({
   aiApprove: vi.fn(),
   aiStop: vi.fn(),
   aiClose: vi.fn(),
+  chatCopyAnswer: vi.fn(),
+  chatPasteAnswer: vi.fn(),
 }));
 vi.mock("../bindings", () => ({ commands }));
 
@@ -136,5 +138,105 @@ describe("ChatStore", () => {
     chat.draft = "thanks";
     await chat.followUp();
     expect(chat.transcript.entries.at(-1)).toEqual({ kind: "user", text: "thanks" });
+  });
+  describe("a reopened chat (from history)", () => {
+    const saved = (conversation = 7): OpenedChat => ({
+      conversation,
+      provider: "chatgpt",
+      model: "gpt-6.1-sol",
+      entries: [
+        { kind: "user", text: "plan a trip", context: "Desktop" },
+        { kind: "assistant", text: "Kyoto in April." },
+      ],
+    });
+
+    it("shows the saved transcript, idle, with who answered", () => {
+      const chat = new ChatStore();
+      chat.draft = "leftover";
+      chat.reopen(saved());
+      expect(chat.active).toBe(true);
+      expect(chat.provider).toBe("chatgpt");
+      expect(chat.draft).toBe("");
+      expect(chat.transcript).toEqual({
+        entries: [
+          { kind: "user", text: "plan a trip", context: "Desktop" },
+          { kind: "assistant", text: "Kyoto in April." },
+        ],
+        running: false,
+        model: "gpt-6.1-sol",
+      });
+      expect(chat.finishedAnswer).toBe("Kyoto in April.");
+    });
+
+    it("carries the same conversation on with a follow-up", async () => {
+      commands.aiFollowUp.mockResolvedValue(reply(7, null, "chatgpt"));
+      const chat = new ChatStore();
+      chat.reopen(saved());
+      chat.draft = "and in May?";
+      await chat.followUp();
+      expect(commands.aiAsk).not.toHaveBeenCalled();
+      expect(commands.aiFollowUp).toHaveBeenCalledWith("and in May?");
+      expect(chat.transcript.running).toBe(true);
+      expect(chat.finishedAnswer).toBeNull();
+      // Its events are this conversation's; another's are ignored.
+      chat.onEvent(text(6, "stale"));
+      chat.onEvent(text(7, "Also nice."));
+      chat.onEvent({ conversation: 7, event: { type: "done" } });
+      expect(chat.transcript.entries.at(-1)).toEqual({ kind: "assistant", text: "Also nice." });
+      expect(chat.finishedAnswer).toBe("Also nice.");
+    });
+
+    it("drops what an earlier ask was still waiting for", async () => {
+      const answer = deferred<ReturnType<typeof reply>>();
+      commands.aiAsk.mockReturnValue(answer.promise);
+      const chat = new ChatStore();
+      const asking = chat.ask("hi");
+      chat.reopen(saved(9));
+      answer.resolve(reply(8));
+      await asking;
+      chat.onEvent(text(8, "late"));
+      expect(chat.transcript.entries).toHaveLength(2);
+      chat.onEvent({ conversation: 9, event: { type: "tool_started", id: "t1", name: "Read", summary: "" } });
+      expect(chat.transcript.entries).toHaveLength(3);
+    });
+  });
+
+  describe("the last answer", () => {
+    async function answered(): Promise<InstanceType<typeof ChatStore>> {
+      commands.aiAsk.mockResolvedValue(reply(1));
+      const chat = new ChatStore();
+      await chat.ask("what's new?");
+      chat.onEvent(text(1, "**Three** things."));
+      return chat;
+    }
+
+    it("is there only once the turn is over", async () => {
+      const chat = await answered();
+      expect(chat.finishedAnswer).toBeNull();
+      expect(await chat.copyAnswer()).toBeNull();
+      expect(await chat.pasteAnswer()).toBeNull();
+      expect(commands.chatCopyAnswer).not.toHaveBeenCalled();
+      expect(commands.chatPasteAnswer).not.toHaveBeenCalled();
+      chat.onEvent({ conversation: 1, event: { type: "done" } });
+      expect(chat.finishedAnswer).toBe("**Three** things.");
+    });
+
+    it("is copied or pasted as Markdown", async () => {
+      commands.chatCopyAnswer.mockResolvedValue(ok(null));
+      commands.chatPasteAnswer.mockResolvedValue(ok(null));
+      const chat = await answered();
+      chat.onEvent({ conversation: 1, event: { type: "done" } });
+      expect(await chat.copyAnswer()).toBeNull();
+      expect(commands.chatCopyAnswer).toHaveBeenCalledWith("**Three** things.");
+      expect(await chat.pasteAnswer()).toBeNull();
+      expect(commands.chatPasteAnswer).toHaveBeenCalledWith("**Three** things.");
+    });
+
+    it("reports a failure", async () => {
+      commands.chatPasteAnswer.mockResolvedValue({ status: "error", error: { message: "couldn't paste" } });
+      const chat = await answered();
+      chat.onEvent({ conversation: 1, event: { type: "done" } });
+      expect(await chat.pasteAnswer()).toBe("couldn't paste");
+    });
   });
 });

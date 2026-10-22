@@ -2,6 +2,7 @@ import {
   commands,
   type Action,
   type Activation,
+  type OpenedChat,
   type ProviderId,
   type ResultItem,
   type SearchUpdated,
@@ -26,6 +27,8 @@ export interface SearchHooks {
   onAsk: (text: string, provider: ProviderId | null) => void;
   /** Show the settings menu. */
   onSettings?: () => void;
+  /** Show a saved conversation (chat history) in the chat view. */
+  onOpenChat?: (chat: OpenedChat) => void;
   /** The AI that Tab and the "Ask" row use. */
   defaultProvider?: () => ProviderId;
 }
@@ -47,7 +50,7 @@ export class SearchStore {
   #armed: { id: string; until: number } | null = null;
 
   constructor(hooks: SearchHooks) {
-    this.#hooks = { onSettings: () => {}, defaultProvider: () => "claude", ...hooks };
+    this.#hooks = { onSettings: () => {}, onOpenChat: () => {}, defaultProvider: () => "claude", ...hooks };
   }
 
   async setQuery(query: string, keepSelection = false): Promise<void> {
@@ -185,6 +188,10 @@ export class SearchStore {
       case "open_settings":
         this.clear();
         this.#hooks.onSettings();
+        break;
+      case "open_chat":
+        this.clear();
+        this.#hooks.onOpenChat(activation.chat);
         break;
     }
   }

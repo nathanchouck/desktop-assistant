@@ -1,5 +1,5 @@
-import { commands, type AiStream, type ProviderId } from "../bindings";
-import { applyEvent, pendingApproval, type Transcript } from "../chat";
+import { commands, type AiStream, type OpenedChat, type ProviderId } from "../bindings";
+import { applyEvent, fromSaved, lastAnswer, pendingApproval, type Transcript } from "../chat";
 
 const empty = (): Transcript => ({ entries: [], running: false, model: "" });
 
@@ -14,6 +14,11 @@ export class ChatStore {
   provider = $state<ProviderId | null>(null);
 
   pending = $derived(pendingApproval(this.transcript));
+  /**
+   * The finished answer that Ctrl+Shift+C copies and Ctrl+Enter pastes;
+   * null while a turn runs or before any answer.
+   */
+  finishedAnswer = $derived(this.transcript.running ? null : lastAnswer(this.transcript));
 
   /** The backend's id for the conversation on screen; null before it starts. */
   #conversation: number | null = null;
@@ -34,6 +39,40 @@ export class ChatStore {
     this.draft = "";
     this.transcript = { entries: [{ kind: "user", text }], running: true, model: "" };
     await this.#start(text);
+  }
+
+  /**
+   * Shows a saved conversation (from chat history). The backend has made it
+   * the current one, so a follow-up carries it on.
+   */
+  reopen(saved: OpenedChat): void {
+    this.#generation++;
+    this.#conversation = saved.conversation;
+    this.#buffer = null;
+    this.#requested = saved.provider;
+    this.provider = saved.provider;
+    this.active = true;
+    this.draft = "";
+    this.transcript = { entries: fromSaved(saved.entries), running: false, model: saved.model };
+  }
+
+  /** Copies the last answer; returns an error message if that failed. */
+  async copyAnswer(): Promise<string | null> {
+    const text = this.finishedAnswer;
+    if (text === null) return null;
+    const res = await commands.chatCopyAnswer(text);
+    return res.status === "error" ? res.error.message : null;
+  }
+
+  /**
+   * Pastes the last answer into the window the launcher was opened from
+   * (the launcher hides); returns an error message if that failed.
+   */
+  async pasteAnswer(): Promise<string | null> {
+    const text = this.finishedAnswer;
+    if (text === null) return null;
+    const res = await commands.chatPasteAnswer(text);
+    return res.status === "error" ? res.error.message : null;
   }
 
   async followUp(): Promise<void> {

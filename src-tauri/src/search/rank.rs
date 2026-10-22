@@ -23,9 +23,10 @@ pub fn rank(items: &mut [ResultItem], query: &str, frecency: &dyn Fn(&str) -> f6
         .iter()
         .enumerate()
         .map(|(i, item)| {
-            // Clipboard history keeps its own order (pinned, then newest):
-            // when you copied something matters more than how it matches.
-            if item.kind == ItemKind::Clip {
+            // Clipboard and chat history keep their own order (pinned, then
+            // newest): when you copied or asked something matters more than
+            // how it matches.
+            if matches!(item.kind, ItemKind::Clip | ItemKind::Conversation) {
                 return (0, item.score, i);
             }
             let title = item.title.to_lowercase();
@@ -171,6 +172,21 @@ mod tests {
         let heavy = |id: &str| if id == "clip:1" { 100.0 } else { 0.0 };
         rank(&mut items, "clip", &heavy);
         assert_eq!(titles(&items), ["newest", "clip"]);
+    }
+
+    #[test]
+    fn saved_chats_keep_their_order() {
+        let chat = |id: &str, title: &str, score: f32| {
+            ResultItem::new(id, ItemKind::Conversation, title).with_score(score)
+        };
+        // A chat reopened often doesn't jump above a newer one.
+        let mut items = vec![
+            chat("history:2", "newest", 1.0),
+            chat("history:1", "history", 0.5),
+        ];
+        let heavy = |id: &str| if id == "history:1" { 100.0 } else { 0.0 };
+        rank(&mut items, "history", &heavy);
+        assert_eq!(titles(&items), ["newest", "history"]);
     }
 
     #[test]

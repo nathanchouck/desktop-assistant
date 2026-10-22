@@ -126,8 +126,8 @@ Check on a real Windows machine:
 - [ ] Settings file in a synced folder (OneDrive) option
 
 ## M7 Polish & reliability
-- [ ] Conversation history (SQLite) + `>history` to reopen
-- [ ] Copy last answer, paste answer into the previous app
+- [x] Conversation history (SQLite) + `>history` to reopen
+- [x] Copy last answer, paste answer into the previous app
 - [ ] Error toasts with "open log"
 - [x] Auto-update from GitHub Releases (Tauri updater; needs the signing key set up once, D-033)
 - [ ] Multi-monitor and DPI-change handling
