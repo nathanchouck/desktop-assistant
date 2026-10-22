@@ -456,6 +456,9 @@ pub fn builder() -> Builder<Wry> {
             scripts_list,
             scripts_open_folder,
             // [updater]
+            crate::features::updater::commands::update_status,
+            crate::features::updater::commands::update_check,
+            crate::features::updater::commands::update_install,
             // [integrations]
             // [ai_commands]
             // [appearance]
@@ -474,6 +477,7 @@ pub fn builder() -> Builder<Wry> {
             // [clipboard]
             // [color]
             // [updater]
+            crate::features::updater::UpdateStatusChanged,
             // [ai_commands]
             // [google]
             // [polish]

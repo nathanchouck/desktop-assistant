@@ -52,6 +52,9 @@ pub fn run() {
     }
 
     let state = AppState::new(paths, settings.clone());
+    // The updater's config section is completed before the app is built.
+    let mut context = tauri::generate_context!();
+    let updater = features::updater::plugin(context.config_mut());
 
     tauri::Builder::default()
         // Must be first: a second launch just shows the running launcher.
@@ -65,6 +68,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(updater)
         .invoke_handler(builder.invoke_handler())
         // App icons for the UI: <img src={convertFileSrc(key, "icon")}>.
         // `thumb/<name>` keys are PNGs from the thumbnails folder instead.
@@ -110,7 +114,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(window::on_window_event)
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building Desktop Assistant")
         .run(|app, event| {
             if let RunEvent::Exit = event {

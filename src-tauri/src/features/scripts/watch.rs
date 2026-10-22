@@ -29,11 +29,13 @@ pub async fn follow(library: Arc<Library>) {
     loop {
         let wanted = (library.settings().enabled, library.folder());
         if current.as_ref() != Some(&wanted) || (missing && wanted.1.is_dir()) {
-            watcher = None;
+            // Watch before scanning, so a file saved in between isn't missed.
+            watcher = if wanted.0 {
+                watch(&wanted.1, tx.clone())
+            } else {
+                None
+            };
             library.rescan().await;
-            if wanted.0 {
-                watcher = watch(&wanted.1, tx.clone());
-            }
             missing = wanted.0 && !wanted.1.is_dir();
             current = Some(wanted);
         }
