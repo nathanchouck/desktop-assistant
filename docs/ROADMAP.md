@@ -123,7 +123,7 @@ Check on a real Windows machine:
 - [ ] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs
 - [x] Status lines in settings: Claude Code sign-in, index count or Everything, Windows key hook
 - [x] Codex health (with M5)
-- [ ] Settings file in a synced folder (OneDrive) option
+- [x] Settings file in a synced folder (OneDrive) option
 
 ## M7 Polish & reliability
 - [x] Conversation history (SQLite) + `>history` to reopen
@@ -162,5 +162,5 @@ Integrations without AI (needs Google OAuth, D-008)
 
 Extensibility
 - [x] Script commands: drop a `.ps1`/`.py` with a header comment into a folder → becomes a command (Raycast-style)
-- [ ] Theme variants (tint color, blur strength)
-- [ ] Per-machine overrides on top of synced settings
+- [x] Theme variants (tint color, blur strength)
+- [x] Per-machine overrides on top of synced settings
