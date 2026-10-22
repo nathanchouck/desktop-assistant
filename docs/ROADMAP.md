@@ -141,10 +141,10 @@ Productivity
 - [x] Snippets / text expansion
 - [x] Quicklinks: `yt cats`, `gh repo`, custom web searches
 - [x] Emoji / symbol picker
-- [ ] System commands: lock, sleep, restart, empty recycle bin, toggle dark mode
-- [ ] Window management: snap left/right/halves/thirds, move to next monitor
-- [ ] Process killer (`kill chrome`)
-- [ ] Color picker
+- [x] System commands: lock, sleep, restart, empty recycle bin, toggle dark mode
+- [x] Window management: snap left/right/halves/thirds, move to next monitor
+- [x] Process killer (`kill chrome`)
+- [x] Color picker
 
 AI power features
 - [ ] Ask about selected text (hotkey grabs selection, opens with it as context)
@@ -158,7 +158,7 @@ Integrations without AI (needs Google OAuth, D-008)
 - [ ] `cal`: next events, join meeting link
 - [ ] `mail`: unread count, open thread
 - [ ] Drive file search merged into results
-- [ ] Media controls (play/pause/next, now playing)
+- [x] Media controls (play/pause/next, now playing)
 
 Extensibility
 - [x] Script commands: drop a `.ps1`/`.py` with a header comment into a folder → becomes a command (Raycast-style)

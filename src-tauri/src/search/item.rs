@@ -42,6 +42,8 @@ pub enum Action {
     Paste,
     /// Remove the result (a clip, a conversation).
     Delete,
+    /// End a running program (the process killer).
+    End,
     /// Pin or unpin the result.
     Pin,
     /// Ask the AI about this result (a file, a clip).

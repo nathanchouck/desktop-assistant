@@ -387,6 +387,38 @@ and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
   still publishes the installer, with a warning and no update files.
 - Only Windows builds check for updates.
 
+#### System tools (`features/system`, `features/window_layout`, `features/processes`, `features/color`, `features/media`)
+
+- **System commands.** Lock Screen, Sleep, Hibernate (listed only when `IsPwrHibernateAllowed`), Restart, Shut Down, Sign Out, Empty Recycle Bin, Toggle Dark Mode and Mute / Unmute, plus Windows Settings pages (Display, Sound, Bluetooth, Wi-Fi, Network, Installed Apps, Default Apps, Startup Apps, Windows Update, Personalization, Power, Storage, Notifications, Date & Time, Privacy, About), found by title or keyword ("reboot", "log out", "empty trash", "wifi") from two letters on (`system/matching.rs`, shared by the other tools). Each calls Windows directly, never `shutdown.exe` or PowerShell:
+  - `LockWorkStation` locks.
+  - `SetSuspendState` sleeps or hibernates 400 ms after the launcher hides. On Modern Standby PCs, which have no classic sleep, the display is turned off instead, as the power button does.
+  - `ExitWindowsEx` restarts, shuts down or signs out, with the shutdown privilege switched on. Shut down is hybrid when Fast Startup is on, as Start does it.
+  - `SHQueryRecycleBinW` / `SHEmptyRecycleBinW` read and empty the Recycle Bin.
+  - Dark mode writes `AppsUseLightTheme` and `SystemUsesLightTheme`, then broadcasts `WM_SETTINGCHANGE` "ImmersiveColorSet" on a side thread.
+  - Mute presses the mute media key.
+
+  Restart, Shut Down, Sign Out, Hibernate and Empty Recycle Bin ask in the footer unless `system.confirm` is off. The Recycle Bin row shows "12 items · 340 MB", looked up on a background thread at most every 30 s; an empty bin doesn't ask. Settings pages return `Activation::OpenUrl` with an `ms-settings:` link: `actions::carry_out` opens http(s) links and, besides those, only plain `ms-settings:<page>` links (`is_settings_page`).
+- **Window layouts.** These commands act on the window you were in when the launcher opened (`DesktopTracker::window`): Left/Right/Top/Bottom Half, Left/Center/Right Third, Left/Right Two Thirds, Maximize, Almost Maximize (90%), Center, Restore and Move to Next Monitor. The desktop, taskbars and shell flyouts get a notice instead.
+  - `geometry.rs` (pure) computes the target frame from the monitor's work area. Split points are measured from the work area's edges, so neighbors share an edge.
+  - `win.rs` works in physical pixels (a per-monitor-aware thread). It measures DWM's invisible borders (`DWMWA_EXTENDED_FRAME_BOUNDS` against `GetWindowRect`) and grows the target by them, so snapped windows meet edge to edge.
+  - It sets the size up to three times when a monitor change makes the app rescale itself.
+  - Minimized or maximized windows are restored first. Fixed-size dialogs keep their size. The window is brought to the front 80 ms after the launcher hides.
+  - Next Monitor goes left to right and wraps. The frame keeps its position and size relative to the work area, and a maximized window stays maximized.
+  - Restore puts a window back where it was before the launcher first moved it (`restore.rs`, up to 64 windows, forgotten once you move the window yourself). On a maximized window it un-maximizes.
+- **Process killer.** `kill` (alone or followed by text) claims the query.
+  - The list comes from a Toolhelp snapshot (path, private memory, titles of visible app windows), taken on demand and reused for 2 s.
+  - Rows are grouped by program, apps with windows first, then by memory: "chrome.exe" with "12 processes · Inbox – Gmail" and the memory at the right.
+  - Programs match by name or by window title. A program with several windowed processes also gets one row per window.
+  - Windows' own processes (smss, csrss, wininit, winlogon, lsass, services, svchost, dwm, System, Registry, …) and the launcher's own process tree are never listed. explorer.exe asks with a warning.
+  - Enter asks "End all 12 chrome.exe processes?". It then ends them parents first with `TerminateProcess`, waits up to 1 s, toasts "Ended 12 chrome.exe processes." and refreshes. Access denied (an elevated program) shows a footer notice.
+- **Color picker.**
+  - "Pick Color" hides the launcher, swaps the system cursors for a crosshair and installs low-level mouse and keyboard hooks on its own thread. The next left click (press and release both kept from the app) or Enter picks under the cursor; Esc or a right click cancels; it gives up after 30 s.
+  - The pixel is read with `BitBlt` in physical pixels and copied in `color_picker.format` (hex, `rgb()`, `hsl()`). It is added to the last 20 colors (`colors.json` in the data folder), a toast confirms it, and with `color_picker.show_after_pick` the launcher opens on `colors` (`color-picked` event).
+  - While the cursors are swapped, a marker file in the data folder notes it, so the next start restores them if the app died mid-pick.
+  - `colors` claims the query and lists recent colors with swatches (Enter copies, Ctrl+Enter pastes, Ctrl+D forgets). `color` lists them alongside other results.
+  - A typed `#ff8800`, `#f80`, `rgb(255, 136, 0)` or `hsl(32, 100%, 50%)` shows answer rows with the other formats.
+- **Media.** Play / Pause, Next Track and Previous Track press the media keys with `SendInput` (tagged `INJECTED_TAG`) 150 ms after the launcher hides, because the focused web view keeps media keys for itself. A watcher thread reads the current session from WinRT's `GlobalSystemMediaTransportControlsSessionManager` every 5 s, or at once when a search finds the last look over 2 s old, so search only reads memory. "Now Playing" shows "Title — Artist" over "Playing · Spotify" (Enter copies), and Play / Pause shows the track in its subtitle. When nothing is playing there is no Now Playing row.
+
 ### Apps
 
 - `AppIndex` holds the Start menu's "All apps" (the AppsFolder) in memory:

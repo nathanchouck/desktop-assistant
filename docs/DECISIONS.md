@@ -351,3 +351,10 @@ waits for the owner (it restarts the app and the AI sessions). Considered:
 checking the GitHub Releases API ourselves and running the installer
 (no signature check, or a hand-rolled one) and a Microsoft Store/winget
 listing (heavy for a personal app).
+
+## D-034 System tools call Windows directly; the color picker borrows the cursor instead of covering the screen
+Lock, sleep, restart, the Recycle Bin, dark mode, ending processes and moving windows call Win32 directly (`LockWorkStation`, `SetSuspendState`, `ExitWindowsEx`, `SHEmptyRecycleBinW`, the Personalize registry values plus a `WM_SETTINGCHANGE` broadcast, `TerminateProcess`, `SetWindowPos`). The alternative was running `shutdown.exe`, `rundll32` or PowerShell. Direct calls flash no console and depend on nothing in PATH, and failures come back as codes the footer can explain ("it runs as administrator"). Sleep on Modern Standby PCs, which have no classic sleep for `SetSuspendState` to ask for, turns the display off as the power button does.
+
+The color picker replaces the system cursors with a crosshair and catches the next click with low-level mouse and keyboard hooks on its own thread, then reads one pixel in physical pixels. Considered: a full-screen overlay window over a screenshot (it could show a magnifier, but needs a window per monitor at that monitor's DPI and captures the whole screen for one pixel). Replaced cursors outlive a crash, so a marker file in the data folder brings them back at the next start.
+
+Now Playing comes from WinRT's media sessions on a watcher thread, not from inside `query`, because asking another app's session can take longer than the 40 ms search budget.
