@@ -196,6 +196,7 @@ pub trait SearchProvider: Send + Sync {
 pub enum Activation {
     Hide, Copy { text }, Paste { text: Option<String> }, OpenUrl { url },
     SetQuery { query }, Ask { prompt, provider }, Notice { message }, Refresh, OpenSettings,
+    OpenChat { chat },  // a saved conversation, reopened (history)
 }
 
 // ai/mod.rs: what the UI hears about a conversation, in order.
@@ -418,6 +419,13 @@ and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
   - `colors` claims the query and lists recent colors with swatches (Enter copies, Ctrl+Enter pastes, Ctrl+D forgets). `color` lists them alongside other results.
   - A typed `#ff8800`, `#f80`, `rgb(255, 136, 0)` or `hsl(32, 100%, 50%)` shows answer rows with the other formats.
 - **Media.** Play / Pause, Next Track and Previous Track press the media keys with `SendInput` (tagged `INJECTED_TAG`) 150 ms after the launcher hides, because the focused web view keeps media keys for itself. A watcher thread reads the current session from WinRT's `GlobalSystemMediaTransportControlsSessionManager` every 5 s, or at once when a search finds the last look over 2 s old, so search only reads memory. "Now Playing" shows "Title — Artist" over "Playing · Spotify" (Enter copies), and Play / Pause shows the track in its subtitle. When nothing is playing there is no Now Playing row.
+
+#### Conversation history (`features/history/`)
+- **Recording:** `ai_ask` / `ai_follow_up` report each question (your text without the `<desktop_context>` block, plus the "Sees: …" caption) and the chat event loop reports each `AiEvent`. `transcript.rs` builds the chat as the pane shows it: messages, answer Markdown, tool lines, approvals with their verdicts, errors and notes. `recorder.rs` saves when you ask, when a turn ends and when the chat closes, so a crash loses at most the answer in progress. Nothing is recorded while `history.enabled` is off; saved chats stay until cleared.
+- **Storage:** `history.db` in the data folder, its own SQLite file. Each chat has its provider, model, Claude session or Codex thread id, folder, title (the first question, on one line), times, messages, pin and transcript (JSON). One writer thread runs every save, read and delete in order, so streaming never waits and a delete can't be undone by a queued save. Summaries (with up to 8,000 characters of lowercase text) live in memory for search. `max_conversations` (500) counts unpinned chats, oldest dropped first; `forget_after_days` (0 = never) drops unpinned chats unused that long.
+- **Search:** `history`, `>history` or `chats` (alone or followed by text) claims the query and lists chats pinned first, then newest ("Claude · 3 h ago", "N messages"). Text filters by fuzzy title or every word anywhere in what was said. Enter reopens, Ctrl+D deletes, Ctrl+Shift+P pins. Commands: Chat History, Resume Last Chat, Clear Chat History (asks; keeps pinned). The ranker keeps conversation rows in the provider's order.
+- **Reopening:** `Activation::OpenChat` carries the saved transcript. `Chat::adopt` makes the chat the current, idle conversation, so the next follow-up resumes it like after an idle shutdown (Claude Code `--resume` in its original folder, Codex `thread/resume`), with today's desktop context. If the folder is gone, or Claude Code has deleted the session (30 days by default), Claude starts over and the chat says so.
+- **Last answer:** in the chat, Ctrl+Shift+C copies the last answer's Markdown, and Ctrl+Enter pastes it into the window you came from (`actions::paste`; the launcher hides). The footer offers both once an answer is finished.
 
 ### Apps
 
@@ -678,7 +686,8 @@ it events and carries out its verdicts. (D-022)
 | What | Where |
 |---|---|
 | Settings | `%APPDATA%\desktop-assistant\settings.toml` |
-| History, frecency | `%LOCALAPPDATA%\desktop-assistant\data.db` |
+| Frecency | `%LOCALAPPDATA%\desktop-assistant\data.db` |
+| Chat history | `%LOCALAPPDATA%\desktop-assistant\history.db` |
 | Logs | `%LOCALAPPDATA%\desktop-assistant\logs\` (7 days kept) |
 | API keys | Windows Credential Manager, service `desktop-assistant` |
 
