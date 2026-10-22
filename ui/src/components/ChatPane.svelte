@@ -167,6 +167,19 @@
     font-family: var(--font-mono);
     font-size: 0.92em;
   }
+  /* LaTeX: a wide equation scrolls sideways instead of widening the pane. */
+  .answer :global(.math) {
+    margin: var(--space-2) 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .answer :global(.katex) {
+    font-size: 1.1em;
+  }
+  .answer :global(.katex-display) {
+    margin: 0;
+  }
   .answer :global(pre) {
     position: relative;
     padding: var(--space-2) var(--space-3);

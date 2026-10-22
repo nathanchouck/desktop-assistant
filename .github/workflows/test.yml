@@ -36,11 +36,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # libssl-dev: the updater's HTTPS uses OpenSSL on Linux (SChannel on
+      # Windows).
       - name: Install Tauri system libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libssl-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:

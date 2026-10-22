@@ -17,6 +17,8 @@ const FIX_ROWS: Record<ProviderId, string[]> = {
 
 /** A risky command waits this long for Enter again. */
 export const CONFIRM_MS = 4000;
+/** An action still running after this long says so in the footer. */
+export const SLOW_ACTION_MS = 400;
 
 /** What the store needs from the rest of the app. */
 export interface SearchHooks {
@@ -146,7 +148,14 @@ export class SearchStore {
       this.notice = `${item.confirm} Press Enter again to confirm.`;
       return;
     }
+    // Most actions are instant; a script that copies its output can take
+    // seconds, so say it's running rather than seem stuck.
+    const query = this.query;
+    const slow = setTimeout(() => {
+      if (this.query === query) this.notice = `Running ${item.title}…`;
+    }, SLOW_ACTION_MS);
     const res = await commands.itemActivate(item.id, chosen);
+    clearTimeout(slow);
     if (res.status === "error") this.notice = res.error.message;
     else this.#follow(res.data);
   }

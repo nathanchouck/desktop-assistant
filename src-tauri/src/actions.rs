@@ -241,8 +241,10 @@ pub fn run_builtin(app: &AppHandle, cmd: BuiltinCommand) -> AppResult<()> {
 }
 
 /// Restarts the launcher, closing Claude Code or Codex first so it isn't
-/// left behind.
+/// left behind. A downloaded update is installed instead, which restarts
+/// into the new version ("restart to install").
 pub async fn restart(app: &AppHandle) {
+    crate::features::updater::install_if_ready(app).await;
     if let Some(state) = app.try_state::<AppState>() {
         state.chat.shut_down().await;
     }

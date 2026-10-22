@@ -129,9 +129,10 @@ Check on a real Windows machine:
 - [ ] Conversation history (SQLite) + `>history` to reopen
 - [ ] Copy last answer, paste answer into the previous app
 - [ ] Error toasts with "open log"
-- [ ] Auto-update from GitHub Releases (Tauri updater)
+- [x] Auto-update from GitHub Releases (Tauri updater; needs the signing key set up once, D-033)
 - [ ] Multi-monitor and DPI-change handling
 - [ ] Perf pass against budgets; idle memory check
+- [x] LaTeX math in answers (KaTeX, bundled; prices stay text)
 
 ## M8 Later horizon
 Productivity
@@ -160,6 +161,6 @@ Integrations without AI (needs Google OAuth, D-008)
 - [ ] Media controls (play/pause/next, now playing)
 
 Extensibility
-- [ ] Script commands: drop a `.ps1`/`.py` with a header comment into a folder → becomes a command (Raycast-style)
+- [x] Script commands: drop a `.ps1`/`.py` with a header comment into a folder → becomes a command (Raycast-style)
 - [ ] Theme variants (tint color, blur strength)
 - [ ] Per-machine overrides on top of synced settings

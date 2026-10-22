@@ -365,6 +365,28 @@ fn open_log_folder(app: AppHandle) -> Result<(), IpcError> {
         .map_err(Into::into)
 }
 
+/// The scripts folder and what's in it, for the settings menu; read again
+/// first when `reload` is set.
+#[tauri::command]
+#[specta::specta]
+async fn scripts_list(
+    reload: bool,
+) -> Result<crate::features::scripts::library::ScriptsOverview, IpcError> {
+    crate::features::scripts::overview(reload)
+        .await
+        .map_err(|message| IpcError { message })
+}
+
+/// Opens the scripts folder in File Explorer, making it first (with a
+/// README and an example) if it doesn't exist.
+#[tauri::command]
+#[specta::specta]
+async fn scripts_open_folder(state: State<'_, AppState>) -> Result<(), IpcError> {
+    crate::features::scripts::open_folder(&state.shell)
+        .await
+        .map_err(|message| IpcError { message })
+}
+
 fn ai_err(e: crate::ai::AiError) -> IpcError {
     crate::error::AppError::from(e).into()
 }
@@ -431,7 +453,12 @@ pub fn builder() -> Builder<Wry> {
             // [system]
             // [color]
             // [scripts]
+            scripts_list,
+            scripts_open_folder,
             // [updater]
+            crate::features::updater::commands::update_status,
+            crate::features::updater::commands::update_check,
+            crate::features::updater::commands::update_install,
             // [integrations]
             // [ai_commands]
             // [appearance]
@@ -451,6 +478,7 @@ pub fn builder() -> Builder<Wry> {
             // [color]
             crate::features::color::ColorPicked,
             // [updater]
+            crate::features::updater::UpdateStatusChanged,
             // [ai_commands]
             // [google]
             // [polish]

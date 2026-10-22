@@ -66,6 +66,28 @@ export const commands = {
 	openExternal: (url: string) => typedError<null, IpcError>(__TAURI_INVOKE("open_external", { url })),
 	/**  Opens the folder with the log files (from an error toast). */
 	openLogFolder: () => typedError<null, IpcError>(__TAURI_INVOKE("open_log_folder")),
+	/**
+	 *  The scripts folder and what's in it, for the settings menu; read again
+	 *  first when `reload` is set.
+	 */
+	scriptsList: (reload: boolean) => typedError<ScriptsOverview, IpcError>(__TAURI_INVOKE("scripts_list", { reload })),
+	/**
+	 *  Opens the scripts folder in File Explorer, making it first (with a
+	 *  README and an example) if it doesn't exist.
+	 */
+	scriptsOpenFolder: () => typedError<null, IpcError>(__TAURI_INVOKE("scripts_open_folder")),
+	/**  Where updating stands. Changes arrive as `update-status-changed`. */
+	updateStatus: () => __TAURI_INVOKE<UpdateStatus>("update_status"),
+	/**
+	 *  Checks for an update now; a newer version starts downloading. Returns
+	 *  the status once the check is done.
+	 */
+	updateCheck: () => typedError<UpdateStatus, IpcError>(__TAURI_INVOKE("update_check")),
+	/**
+	 *  Installs the downloaded update and restarts into it. Only returns if
+	 *  that couldn't happen.
+	 */
+	updateInstall: () => typedError<null, IpcError>(__TAURI_INVOKE("update_install")),
 };
 
 /** Events */
@@ -77,6 +99,7 @@ export const events = {
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
 	showSettings: makeEvent<ShowSettings>("show-settings"),
 	toast: makeEvent<Toast>("toast"),
+	updateStatusChanged: makeEvent<UpdateStatusChanged>("update-status-changed"),
 };
 
 /* Types */
@@ -484,8 +507,61 @@ export type ResultItem = {
 	confirm: string | null,
 };
 
+export type ScriptInfo = {
+	file: string,
+	title: string,
+	description: string,
+	/**  Like a result's `icon` (`glyph:…` or `text:…`). */
+	icon: string,
+	mode: ScriptMode,
+	/**  What its text argument is called, if it takes one. */
+	argument: string | null,
+	/**  "PowerShell", "Python", ... */
+	language: string,
+	/**  Runs in File Explorer's folder rather than its own. */
+	in_explorer_folder: boolean,
+};
+
+/**  What happens to what a script prints. */
+export type ScriptMode = 
+/**  Runs in the background; a toast shows the last line it printed. */
+"silent" | 
+/**  Shows what it printed: in the footer, or a text file when long. */
+"output" | 
+/**  Copies what it printed. */
+"copy" | 
+/**  Pastes what it printed into the window you came from. */
+"paste";
+
+export type ScriptProblem = {
+	file: string,
+	message: string,
+};
+
 export type ScriptSettings = {
+	/**  Scripts in the folder show up in search. */
 	enabled: boolean,
+	/**
+	 *  Where scripts are read from. Empty: `scripts` in the settings
+	 *  folder (`%APPDATA%\desktop-assistant\scripts`). `~` is your user
+	 *  folder; `%NAME%` an environment variable.
+	 */
+	folder: string,
+	/**  Seconds a script may run before it's stopped. */
+	timeout_secs: number,
+};
+
+/**  The scripts folder for the settings menu. */
+export type ScriptsOverview = {
+	/**  The folder scripts are read from. */
+	folder: string,
+	/**  The folder used when the setting is empty. */
+	default_folder: string,
+	/**  Why the folder can't be read, if it can't. */
+	folder_error: string | null,
+	scripts: ScriptInfo[],
+	/**  Script files that aren't commands, and why. */
+	problems: ScriptProblem[],
 };
 
 export type SearchResponse = {
@@ -593,8 +669,51 @@ export type Toast = {
 
 export type ToastLevel = "info" | "error";
 
+/**  What the updater is doing. Shown in the settings menu and search. */
+export type UpdatePhase = 
+/**  This build has no public key to check updates with. */
+{ state: "not_set_up" } | 
+/**  Not checked yet since the app started. */
+{ state: "idle" } | { state: "checking" } | { state: "up_to_date" } | 
+/**  `percent` once the download's size is known. */
+{ state: "downloading"; version: string; percent: number | null } | 
+/**  Downloaded and its signature checked: installs on restart. */
+{ state: "ready"; version: string } | 
+/**  The installer is starting; the app is about to close. */
+{ state: "installing"; version: string } | 
+/**  A check or download failed; `message` says which and why. */
+{ state: "failed"; message: string };
+
 export type UpdateSettings = {
-	enabled: boolean,
+	/**
+	 *  Look for a new version a minute after start and every 6 hours, and
+	 *  download it in the background. Installing always waits for you.
+	 */
+	check_automatically: boolean,
+};
+
+/**  Where updating stands, for the settings menu. */
+export type UpdateStatus = {
+	/**  The running version ("0.1.0"). */
+	current_version: string,
+	phase: UpdatePhase,
+	/**  The phase in a few words ("Downloading v0.2.0… 40%"). */
+	summary: string,
+	/**  When a check last got an answer on this PC (seconds since 1970). */
+	last_checked: number | null,
+	/**
+	 *  Goes up with every change, so the UI can tell an answer that
+	 *  arrives late (a command's reply after newer events) and ignore it.
+	 */
+	revision: number,
+};
+
+/**
+ *  Sent whenever `UpdateStatus` changes (a few times a second at most
+ *  while downloading).
+ */
+export type UpdateStatusChanged = {
+	status: UpdateStatus,
 };
 
 /**  The Windows key override, for the settings menu. */
