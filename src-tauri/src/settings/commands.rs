@@ -125,7 +125,7 @@ async fn move_to(app: AppHandle, target: PathBuf, replace: bool) -> Result<Folde
     .await?;
     let (adopted, backup) = match moved {
         Moved::Adopted(settings) => {
-            live::adopted(&app, settings);
+            live::adopted(&app, *settings);
             (true, None)
         }
         Moved::Wrote { backup } => (false, backup.as_deref().map(show)),

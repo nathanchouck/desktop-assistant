@@ -37,7 +37,7 @@ pub enum Change {
     None,
     /// Changed elsewhere (another PC, a hand edit): these are the settings
     /// now.
-    Reloaded(Settings),
+    Reloaded(Box<Settings>),
     /// Changed elsewhere but not usable (a typo, a half-synced file). The
     /// current settings stay; reported once per version of the file.
     Broken(String),
@@ -52,7 +52,7 @@ pub enum Moved {
         backup: Option<PathBuf>,
     },
     /// The folder had settings (from another PC), and these are now in use.
-    Adopted(Settings),
+    Adopted(Box<Settings>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -185,7 +185,7 @@ impl SettingsFiles {
         let found = disk::settings_from(&texts);
         known.texts = texts;
         match found {
-            Ok((settings, _)) => Change::Reloaded(settings),
+            Ok((settings, _)) => Change::Reloaded(Box::new(settings)),
             Err((which, e)) => Change::Broken(format!("{} has a mistake: {e}", file_name(which))),
         }
     }
@@ -215,7 +215,7 @@ impl SettingsFiles {
                     .map_err(|e| MoveError::Unusable(e.to_string()))?;
                 let (settings, _) = disk::settings_from(&texts)
                     .map_err(|(_, e)| MoveError::Unusable(e.to_string()))?;
-                (texts, Moved::Adopted(settings))
+                (texts, Moved::Adopted(Box::new(settings)))
             }
             Switch::Write => {
                 fs::create_dir_all(folder)

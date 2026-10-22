@@ -148,7 +148,7 @@ async fn check(app: &AppHandle) {
     .await;
     match change {
         Ok(Change::None) => {}
-        Ok(Change::Reloaded(settings)) => reloaded(app, settings),
+        Ok(Change::Reloaded(settings)) => reloaded(app, *settings),
         Ok(Change::Broken(message)) => {
             toast::error(app, format!("Settings weren't reloaded: {message}"));
         }
