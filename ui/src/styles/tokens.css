@@ -2,7 +2,12 @@
  *
  * The window surface is opaque by default. When the OS blur (Acrylic) is
  * active, main.ts sets <html data-glass="on"> and the surface turns
- * translucent so the blurred desktop shows through. Tune the look here. */
+ * translucent so the blurred desktop shows through. Tune the look here.
+ *
+ * Theme variants (Settings → Appearance) are attributes on <html>, set by
+ * lib/theme.ts: data-tint picks the accent, data-glass-strength how
+ * see-through the glass is, data-density the row height. A custom tint
+ * sets --tint-custom* inline (computed from one color). */
 :root {
   color-scheme: light dark;
 
@@ -27,7 +32,18 @@
   --keycap: rgba(20, 30, 60, 0.06);
   --keycap-border: rgba(20, 30, 60, 0.1);
 
-  --accent: #4f7cff;
+  /* Accent presets. Light: white text on them reads (≥ 3.5:1); dark: they
+   * read on the dark surface and under --on-accent (theme.test.ts checks). */
+  --tint-blue: #4f7cff;
+  --tint-purple: #8257e6;
+  --tint-pink: #d6337f;
+  --tint-red: #d9363e;
+  --tint-orange: #d9650b;
+  --tint-green: #23955a;
+  --tint-teal: #0f8f99;
+  --tint-graphite: #5f6673;
+
+  --accent: var(--tint-blue);
   --on-accent: #ffffff;
   --danger: #d64545;
   --success: #2f9e5b;
@@ -35,11 +51,13 @@
   /* Settings */
   --switch-off: rgba(20, 30, 60, 0.18);
   --switch-knob: #ffffff;
+  --swatch-size: 20px;
+  --swatch-ring: rgba(20, 30, 60, 0.18);
 
-  /* Chat */
+  /* Chat (and settings banners): washes of the accent */
   --code: rgba(20, 30, 60, 0.06);
-  --approval: rgba(79, 124, 255, 0.08);
-  --approval-border: rgba(79, 124, 255, 0.35);
+  --approval: color-mix(in srgb, var(--accent) 8%, transparent);
+  --approval-border: color-mix(in srgb, var(--accent) 35%, transparent);
 
   /* Shape & spacing */
   --radius-row: 10px;
@@ -75,6 +93,45 @@
   --surface: rgba(255, 255, 255, 0.34);
   --hairline: rgba(255, 255, 255, 0.45);
 }
+/* Glass strength: how much of the blurred desktop shows through. */
+:root[data-glass="on"][data-glass-strength="subtle"] {
+  --surface: rgba(255, 255, 255, 0.62);
+}
+:root[data-glass="on"][data-glass-strength="strong"] {
+  --surface: rgba(255, 255, 255, 0.2);
+}
+
+:root[data-tint="purple"] {
+  --accent: var(--tint-purple);
+}
+:root[data-tint="pink"] {
+  --accent: var(--tint-pink);
+}
+:root[data-tint="red"] {
+  --accent: var(--tint-red);
+}
+:root[data-tint="orange"] {
+  --accent: var(--tint-orange);
+}
+:root[data-tint="green"] {
+  --accent: var(--tint-green);
+}
+:root[data-tint="teal"] {
+  --accent: var(--tint-teal);
+}
+:root[data-tint="graphite"] {
+  --accent: var(--tint-graphite);
+}
+:root[data-tint="custom"] {
+  --accent: var(--tint-custom, var(--tint-blue));
+  --on-accent: var(--on-tint-custom, #ffffff);
+}
+
+/* Compact: shorter rows and smaller icons (the window gets shorter too). */
+:root[data-density="compact"] {
+  --row-height: 32px;
+  --icon-size: 20px;
+}
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -95,7 +152,15 @@
     --keycap: rgba(255, 255, 255, 0.08);
     --keycap-border: rgba(255, 255, 255, 0.12);
 
-    --accent: #7c9cff;
+    --tint-blue: #7c9cff;
+    --tint-purple: #a98bff;
+    --tint-pink: #ff7eb6;
+    --tint-red: #ff7a7a;
+    --tint-orange: #ffa057;
+    --tint-green: #4cc98a;
+    --tint-teal: #4fd1d9;
+    --tint-graphite: #a9b0bd;
+
     --on-accent: #0d1020;
     --danger: #ff6b6b;
     --success: #4cc27e;
@@ -103,13 +168,25 @@
     --code: rgba(255, 255, 255, 0.07);
     --switch-off: rgba(255, 255, 255, 0.2);
     --switch-knob: #f2f3f5;
-    --approval: rgba(124, 156, 255, 0.1);
-    --approval-border: rgba(124, 156, 255, 0.4);
+    --swatch-ring: rgba(255, 255, 255, 0.25);
+    --approval: color-mix(in srgb, var(--accent) 10%, transparent);
+    --approval-border: color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
   :root[data-glass="on"] {
     --surface: rgba(18, 20, 26, 0.4);
     --hairline: rgba(255, 255, 255, 0.1);
+  }
+  :root[data-glass="on"][data-glass-strength="subtle"] {
+    --surface: rgba(18, 20, 26, 0.68);
+  }
+  :root[data-glass="on"][data-glass-strength="strong"] {
+    --surface: rgba(18, 20, 26, 0.24);
+  }
+
+  :root[data-tint="custom"] {
+    --accent: var(--tint-custom-dark, var(--tint-blue));
+    --on-accent: var(--on-tint-custom-dark, #0d1020);
   }
 }
 
