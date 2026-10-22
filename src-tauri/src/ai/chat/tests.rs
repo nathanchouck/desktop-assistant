@@ -140,6 +140,90 @@ async fn resumes_after_an_idle_shutdown() {
 }
 
 #[tokio::test]
+async fn a_saved_conversation_resumes_in_its_own_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let saved_in = tempfile::tempdir().unwrap();
+    let fixture = format!(
+        "{}/tests/fixtures/claude/text_reply.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let log = dir.path().join("args.log");
+    let launch = script(
+        dir.path(),
+        "claude",
+        &format!(
+            "echo \"$*\" >> '{log}'\npwd >> '{log}'\ncat '{fixture}'\ncat > /dev/null\n",
+            log = log.display()
+        ),
+    );
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let chat = Chat::new(tx);
+    let saved = Resumable::new(
+        ProviderId::Claude,
+        saved_in.path().to_path_buf(),
+        Some("s-42".into()),
+    );
+    let id = chat.adopt(saved).await;
+    assert_eq!(chat.provider().await, Some(ProviderId::Claude));
+    assert!(!log.exists(), "nothing runs until a follow-up");
+
+    let again = chat
+        .follow_up("more", |_| Ok(claude_setup(&launch, dir.path())))
+        .await
+        .unwrap();
+    assert_eq!(again, id);
+    let events = collect_until_done(&mut rx).await;
+    assert!(matches!(events.last(), Some(AiEvent::Done)));
+    let args = std::fs::read_to_string(&log).unwrap();
+    assert!(args.contains("--resume s-42"), "{args}");
+    assert!(
+        args.contains(&saved_in.path().display().to_string()),
+        "{args}"
+    );
+    // The session the AI reports is what a later resume uses.
+    let resumable = chat.resumable(id).await.unwrap();
+    assert_eq!(
+        resumable.session().as_deref(),
+        Some("00000000-0000-4000-8000-000000000000")
+    );
+    assert_eq!(resumable.cwd, saved_in.path());
+    assert!(chat.resumable(id + 1).await.is_none());
+}
+
+#[tokio::test]
+async fn adopting_ends_the_current_conversation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let chat = Chat::new(tx);
+    let launch = fake_codex(dir.path(), SIGNED_IN);
+    let first = chat
+        .start("hi", codex_setup(&launch, dir.path()))
+        .await
+        .unwrap();
+    collect_until_done(&mut rx).await;
+
+    let saved = Resumable::new(
+        ProviderId::Chatgpt,
+        dir.path().to_path_buf(),
+        Some("t1".into()),
+    );
+    let id = chat.adopt(saved).await;
+    assert_ne!(id, first);
+    assert!(chat.resumable(first).await.is_none());
+    chat.follow_up("again", |_| Ok(codex_setup(&launch, dir.path())))
+        .await
+        .unwrap();
+    let events = collect_until_done(&mut rx).await;
+    assert_eq!(events.last(), Some(&AiEvent::Done));
+    let sent = received(dir.path());
+    assert!(
+        sent.contains(r#""method":"thread/resume","params":{"#)
+            && sent.contains(r#""threadId":"t1""#),
+        "{sent}"
+    );
+}
+
+#[tokio::test]
 async fn reports_a_crash() {
     let dir = tempfile::tempdir().unwrap();
     let launch = script(

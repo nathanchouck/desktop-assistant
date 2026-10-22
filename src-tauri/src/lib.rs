@@ -221,6 +221,7 @@ fn start_chat(app: &AppHandle) {
                     check_claude_status(&app, true);
                     check_codex_status(&app, true);
                 }
+                features::history::observe(conversation, &event);
                 if let Err(e) = (ipc::AiStream {
                     conversation,
                     event,

@@ -162,6 +162,31 @@ struct Spare {
     born: Instant,
 }
 
+/// A conversation's provider, folder and session (or thread) id: enough to
+/// carry it on after it's closed (conversation history keeps it).
+#[derive(Clone)]
+pub struct Resumable {
+    pub provider: ProviderId,
+    pub cwd: PathBuf,
+    /// Filled in once the AI reports it; a resumed process may replace it.
+    session: Arc<StdMutex<Option<String>>>,
+}
+
+impl Resumable {
+    pub fn new(provider: ProviderId, cwd: PathBuf, session: Option<String>) -> Self {
+        Self {
+            provider,
+            cwd,
+            session: Arc::new(StdMutex::new(session)),
+        }
+    }
+
+    /// The session (thread) id, once known.
+    pub fn session(&self) -> Option<String> {
+        locked(&self.session).clone()
+    }
+}
+
 /// A conversation, possibly without a live process (after an idle shutdown).
 struct Conversation {
     id: u32,
@@ -254,6 +279,36 @@ impl Chat {
     /// Which provider the current conversation uses.
     pub async fn provider(&self) -> Option<ProviderId> {
         self.current.lock().await.as_ref().map(|c| c.provider)
+    }
+
+    /// Conversation `id`'s provider, folder and session, while it's the
+    /// current one.
+    pub async fn resumable(&self, id: u32) -> Option<Resumable> {
+        let current = self.current.lock().await;
+        let conversation = current.as_ref().filter(|c| c.id == id)?;
+        Some(Resumable {
+            provider: conversation.provider,
+            cwd: conversation.cwd.clone(),
+            session: Arc::clone(&conversation.resume),
+        })
+    }
+
+    /// Makes a saved conversation the current one (ending any other), idle
+    /// with no process: its next follow-up starts the AI resuming the
+    /// session in the conversation's folder, as after an idle shutdown.
+    /// Returns its id.
+    pub async fn adopt(&self, saved: Resumable) -> u32 {
+        self.close().await;
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        *self.current.lock().await = Some(Conversation {
+            id,
+            provider: saved.provider,
+            session: None,
+            resume: saved.session,
+            cwd: saved.cwd,
+            last_used: Instant::now(),
+        });
+        id
     }
 
     /// Answers a permission request.

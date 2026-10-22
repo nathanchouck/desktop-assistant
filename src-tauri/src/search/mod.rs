@@ -78,6 +78,11 @@ pub enum Activation {
     Refresh,
     /// Show the settings menu.
     OpenSettings,
+    /// Show this saved conversation in the chat view; it's already the
+    /// current one, so a follow-up carries it on.
+    OpenChat {
+        chat: crate::features::history::OpenedChat,
+    },
 }
 
 #[async_trait]
