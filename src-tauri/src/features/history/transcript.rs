@@ -12,7 +12,7 @@ const SEARCH_CHARS: usize = 8_000;
 const TITLE_CHARS: usize = 120;
 
 /// One line of a saved conversation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatEntry {
     /// Your message, without the desktop context block. `context`: what
@@ -22,7 +22,9 @@ pub enum ChatEntry {
         context: Option<String>,
     },
     /// Answer text (Markdown).
-    Assistant { text: String },
+    Assistant {
+        text: String,
+    },
     Tool {
         id: String,
         name: String,
@@ -36,9 +38,13 @@ pub enum ChatEntry {
         detail: String,
         state: ApprovalState,
     },
-    Error { text: String },
+    Error {
+        text: String,
+    },
     /// A quiet status line ("Stopped").
-    Note { text: String },
+    Note {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -69,6 +75,9 @@ pub struct Transcript {
     /// (the question is recorded once the ask returns, and a warm process
     /// may have spoken already): the question goes there.
     reply_start: Option<usize>,
+    /// That early reply has ended too (a quick error), so the question's
+    /// turn is over as soon as it's recorded.
+    ended_early: bool,
 }
 
 impl Transcript {
@@ -77,12 +86,11 @@ impl Transcript {
         Self {
             entries: settled(entries),
             model,
-            running: false,
-            reply_start: None,
+            ..Self::default()
         }
     }
 
-    /// Records your message; a turn starts.
+    /// Records your message; its turn starts (unless it already ended).
     pub fn user_message(&mut self, text: &str, context: Option<&str>) {
         let entry = ChatEntry::User {
             text: text.to_owned(),
@@ -92,7 +100,13 @@ impl Transcript {
             Some(at) if at <= self.entries.len() => self.entries.insert(at, entry),
             _ => self.entries.push(entry),
         }
-        self.running = true;
+        self.running = !std::mem::take(&mut self.ended_early);
+    }
+
+    /// A turn is in progress.
+    #[cfg(test)]
+    pub fn running(&self) -> bool {
+        self.running
     }
 
     /// Applies one event; true when it ends a turn (time to save).
@@ -116,9 +130,16 @@ impl Transcript {
             }),
             AiEvent::ToolFinished { id, ok } => {
                 for entry in &mut self.entries {
-                    if let ChatEntry::Tool { id: tool, state, .. } = entry {
+                    if let ChatEntry::Tool {
+                        id: tool, state, ..
+                    } = entry
+                    {
                         if tool == id {
-                            *state = if *ok { ToolState::Ok } else { ToolState::Failed };
+                            *state = if *ok {
+                                ToolState::Ok
+                            } else {
+                                ToolState::Failed
+                            };
                         }
                     }
                 }
@@ -178,6 +199,9 @@ impl Transcript {
     }
 
     fn end_turn(&mut self) -> bool {
+        if !self.running && self.reply_start.is_some() {
+            self.ended_early = true;
+        }
         self.running = false;
         true
     }
@@ -397,13 +421,19 @@ mod tests {
             ]
         );
 
-        // Even an error from start-up, before the first question.
+        assert!(t.running());
+
+        // Even an error from start-up, before the first question: that
+        // question's turn is over once it's recorded.
         let mut t = Transcript::default();
         t.apply(&AiEvent::Error {
             message: "signed out".into(),
         });
         t.user_message("hi", None);
         assert_eq!(t.entries[0], user("hi"));
+        assert!(!t.running());
+        t.user_message("again", None);
+        assert!(t.running(), "the next question runs as usual");
     }
 
     #[test]

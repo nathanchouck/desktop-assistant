@@ -95,11 +95,10 @@ impl ConversationStore {
 
     fn from_connection(mut conn: Connection) -> Result<Self, StoreError> {
         migrate(&mut conn)?;
-        let last: i64 = conn.query_row(
-            "SELECT COALESCE(MAX(id), 0) FROM conversations",
-            [],
-            |r| r.get(0),
-        )?;
+        let last: i64 =
+            conn.query_row("SELECT COALESCE(MAX(id), 0) FROM conversations", [], |r| {
+                r.get(0)
+            })?;
         Ok(Self {
             conn: Mutex::new(conn),
             summaries: RwLock::new(Vec::new()),
@@ -140,7 +139,11 @@ impl ConversationStore {
 
     /// The conversation used last, pinned or not.
     pub fn latest(&self) -> Option<i64> {
-        self.with_summaries(|list| list.iter().max_by_key(|s| (s.updated_ms, s.id)).map(|s| s.id))
+        self.with_summaries(|list| {
+            list.iter()
+                .max_by_key(|s| (s.updated_ms, s.id))
+                .map(|s| s.id)
+        })
     }
 
     /// (conversations, of which pinned).
@@ -285,7 +288,11 @@ impl ConversationStore {
         Ok(doomed)
     }
 
-    fn ids_where<P: rusqlite::Params>(&self, filter: &str, params: P) -> Result<Vec<i64>, StoreError> {
+    fn ids_where<P: rusqlite::Params>(
+        &self,
+        filter: &str,
+        params: P,
+    ) -> Result<Vec<i64>, StoreError> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!("SELECT id FROM conversations WHERE {filter}"))?;
         let rows = stmt.query_map(params, |r| r.get(0))?;
@@ -319,8 +326,11 @@ impl ConversationStore {
 }
 
 fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
-    let done: usize = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    for (i, step) in MIGRATIONS.iter().enumerate().skip(done) {
+    let done: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    for (i, step) in (0_i64..)
+        .zip(MIGRATIONS)
+        .skip(usize::try_from(done).unwrap_or(0))
+    {
         let tx = conn.transaction()?;
         tx.execute_batch(step)?;
         tx.pragma_update(None, "user_version", i + 1)?;
@@ -448,7 +458,11 @@ mod tests {
         assert_eq!(ids(&store), [new.id, mid.id, old.id]);
         assert_eq!(store.toggle_pin(old.id).unwrap(), Some(true));
         assert_eq!(ids(&store), [old.id, new.id, mid.id]);
-        assert_eq!(store.latest(), Some(new.id), "the last one used, pinned or not");
+        assert_eq!(
+            store.latest(),
+            Some(new.id),
+            "the last one used, pinned or not"
+        );
         assert_eq!(store.counts(), (3, 1));
 
         // Saving again keeps the pin.

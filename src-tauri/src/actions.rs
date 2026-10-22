@@ -62,7 +62,8 @@ pub async fn carry_out(app: &AppHandle, activation: Activation) -> AppResult<Act
         | Activation::Ask { .. }
         | Activation::Notice { .. }
         | Activation::Refresh
-        | Activation::OpenSettings => {}
+        | Activation::OpenSettings
+        | Activation::OpenChat { .. } => {}
     }
     Ok(activation)
 }

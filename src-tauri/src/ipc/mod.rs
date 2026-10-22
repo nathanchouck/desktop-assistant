@@ -296,9 +296,12 @@ async fn ai_ask(
     let setup = chat::new_conversation(&state, provider, context.as_ref()).map_err(ai_err)?;
     let message = desktop::with_context(&text, context.as_ref());
     let conversation = state.chat.start(&message, setup).await.map_err(ai_err)?;
+    let context = context.as_ref().and_then(DesktopContext::summary);
+    crate::features::history::asked(&state.chat, conversation, &text, context.as_deref(), true)
+        .await;
     Ok(AskReply {
         conversation,
-        context: context.as_ref().and_then(DesktopContext::summary),
+        context,
         provider,
     })
 }
@@ -320,9 +323,12 @@ async fn ai_follow_up(state: State<'_, AppState>, text: String) -> Result<AskRep
         .follow_up(&message, |provider| chat::setup_for(&state, provider))
         .await
         .map_err(ai_err)?;
+    let context = context.as_ref().and_then(DesktopContext::summary);
+    crate::features::history::asked(&state.chat, conversation, &text, context.as_deref(), false)
+        .await;
     Ok(AskReply {
         conversation,
-        context: context.as_ref().and_then(DesktopContext::summary),
+        context,
         provider,
     })
 }
@@ -347,6 +353,7 @@ async fn ai_stop(state: State<'_, AppState>) -> Result<(), IpcError> {
 #[specta::specta]
 async fn ai_close(state: State<'_, AppState>) -> Result<(), IpcError> {
     state.chat.close().await;
+    crate::features::history::closed();
     Ok(())
 }
 
@@ -448,6 +455,10 @@ pub fn builder() -> Builder<Wry> {
             // parallel work doesn't collide.
             // [ai]
             // [history]
+            crate::features::history::commands::history_overview,
+            crate::features::history::commands::history_clear,
+            crate::features::history::commands::chat_copy_answer,
+            crate::features::history::commands::chat_paste_answer,
             // [clipboard]
             // [snippets]
             // [system]
