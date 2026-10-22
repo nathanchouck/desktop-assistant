@@ -15,6 +15,12 @@ export class SettingsStore {
     await this.refreshStatus();
   }
 
+  /** Settings changed outside the menu (another PC through a synced
+   * folder, a hand edit) and are in use now. */
+  changed(settings: Settings): void {
+    this.settings = settings;
+  }
+
   async refreshStatus(): Promise<void> {
     const res = await commands.appStatus();
     if (res.status === "ok") this.status = res.data;
