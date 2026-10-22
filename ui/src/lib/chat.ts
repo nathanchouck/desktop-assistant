@@ -1,4 +1,4 @@
-import type { AiEvent, ProviderId } from "./bindings";
+import type { AiEvent, ChatEntry, ProviderId } from "./bindings";
 
 /** One line of the conversation as the chat pane shows it. */
 export type Entry =
@@ -73,6 +73,28 @@ export function applyEvent(t: Transcript, event: AiEvent): Transcript {
       break;
   }
   return t;
+}
+
+/** A saved conversation's lines (from chat history) as the chat pane shows them. */
+export function fromSaved(entries: ChatEntry[]): Entry[] {
+  return entries.map((e): Entry => {
+    if (e.kind !== "user") return { ...e };
+    return e.context ? { kind: "user", text: e.text, context: e.context } : { kind: "user", text: e.text };
+  });
+}
+
+/**
+ * The last answer's Markdown: what the AI wrote since your last message
+ * (text on both sides of its tool use, joined). `null` before any answer.
+ */
+export function lastAnswer(t: Transcript): string | null {
+  const parts: string[] = [];
+  for (let i = t.entries.length - 1; i >= 0; i--) {
+    const e = t.entries[i];
+    if (e?.kind === "user") break;
+    if (e?.kind === "assistant" && e.text.trim()) parts.unshift(e.text.trim());
+  }
+  return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
 /** The approval waiting for an answer, if any. */

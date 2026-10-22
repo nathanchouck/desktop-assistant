@@ -116,11 +116,20 @@ export function searchHints(actions: Action[], otherAi?: string): Hint[] {
   return [["↵", first ? enterLabels[first] : "Open"], ...extra, ["Esc", "Clear"]];
 }
 
-/** Footer hints while chatting. */
-export function chatHints(state: { running: boolean; pending: boolean }): Hint[] {
+/**
+ * Footer hints while chatting. `answer`: there's a finished answer to
+ * paste (Ctrl+Enter) or copy (Ctrl+Shift+C).
+ */
+export function chatHints(state: { running: boolean; pending: boolean; answer?: boolean }): Hint[] {
   if (state.pending) return [["Ctrl Y", "Approve"], ["Ctrl N", "Deny"]];
   if (state.running) return [["Esc", "Stop"]];
-  return [["↵", "Send"], ["Esc", "Close"]];
+  const answer: Hint[] = state.answer
+    ? [
+        ["Ctrl ↵", "Paste"],
+        ["Ctrl ⇧ C", "Copy"],
+      ]
+    : [];
+  return [["↵", "Send"], ...answer, ["Esc", "Close"]];
 }
 
 /** What a key press means while the chat is showing. */
@@ -130,6 +139,10 @@ export type ChatIntent =
   | { type: "approve"; allow: boolean }
   /** Stop the answer in progress (Ctrl+.). */
   | { type: "stop" }
+  /** Paste the last answer into the window you came from (Ctrl+Enter). */
+  | { type: "paste_answer" }
+  /** Copy the last answer (Ctrl+Shift+C). */
+  | { type: "copy_answer" }
   /** Scroll the conversation; `pages` false means one line. */
   | { type: "scroll"; delta: number; pages: boolean }
   | { type: "escape" };
@@ -137,9 +150,11 @@ export type ChatIntent =
 export function chatIntentFor(e: KeyLike): ChatIntent | null {
   const plain = !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
   const ctrlOnly = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+  const ctrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
   switch (e.key) {
     case "Enter":
-      return plain ? { type: "send" } : null;
+      if (plain) return { type: "send" };
+      return ctrlOnly ? { type: "paste_answer" } : null;
     case "Escape":
       return { type: "escape" };
     case "ArrowUp":
@@ -161,6 +176,7 @@ export function chatIntentFor(e: KeyLike): ChatIntent | null {
         return { type: "stop" };
     }
   }
+  if (ctrlShift && e.key.toLowerCase() === "c") return { type: "copy_answer" };
   return null;
 }
 

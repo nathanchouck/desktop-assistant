@@ -67,6 +67,20 @@ export const commands = {
 	/**  Opens the folder with the log files (from an error toast). */
 	openLogFolder: () => typedError<null, IpcError>(__TAURI_INVOKE("open_log_folder")),
 	/**
+	 *  How many chats are saved. Applies the current limits first, so a
+	 *  lowered cap or age shows at once.
+	 */
+	historyOverview: () => typedError<HistoryOverview, IpcError>(__TAURI_INVOKE("history_overview")),
+	/**  Deletes every saved chat except pinned ones. */
+	historyClear: () => typedError<HistoryOverview, IpcError>(__TAURI_INVOKE("history_clear")),
+	/**  Copies an answer (its Markdown) from the chat; the launcher stays open. */
+	chatCopyAnswer: (text: string) => typedError<null, IpcError>(__TAURI_INVOKE("chat_copy_answer", { text })),
+	/**
+	 *  Pastes an answer into the window the launcher was opened from (the
+	 *  launcher hides).
+	 */
+	chatPasteAnswer: (text: string) => typedError<null, IpcError>(__TAURI_INVOKE("chat_paste_answer", { text })),
+	/**
 	 *  The scripts folder and what's in it, for the settings menu; read again
 	 *  first when `reload` is set.
 	 */
@@ -147,7 +161,12 @@ export type Activation =
  */
 { type: "refresh" } | 
 /**  Show the settings menu. */
-{ type: "open_settings" };
+{ type: "open_settings" } | 
+/**
+ *  Show this saved conversation in the chat view; it's already the
+ *  current one, so a follow-up carries it on.
+ */
+{ type: "open_chat"; chat: OpenedChat };
 
 export type AiCommandSettings = {
 	enabled: boolean,
@@ -211,6 +230,8 @@ export type AppearanceSettings = {
 	tint: string,
 };
 
+export type ApprovalState = "pending" | "allowed" | "denied";
+
 /**  Who approves actions that change things (writing files, running commands). */
 export type Approvals = 
 /**  You do: an Approve / Deny card in the launcher. */
@@ -252,6 +273,18 @@ export type CalcSettings = {
 	/**  Convert currencies, with rates downloaded once a day. */
 	currency: boolean,
 };
+
+/**  One line of a saved conversation. */
+export type ChatEntry = 
+/**
+ *  Your message, without the desktop context block. `context`: what
+ *  the AI was told about the screen ("Downloads · 2 selected").
+ */
+{ kind: "user"; text: string; context: string | null } | 
+/**  Answer text (Markdown). */
+{ kind: "assistant"; text: string } | { kind: "tool"; id: string; name: string; summary: string; state: ToolState } | { kind: "approval"; id: string; tool: string; summary: string; detail: string; state: ApprovalState } | { kind: "error"; text: string } | 
+/**  A quiet status line ("Stopped"). */
+{ kind: "note"; text: string };
 
 /**  ChatGPT, answered through OpenAI's Codex CLI. */
 export type ChatGptSettings = {
@@ -370,8 +403,22 @@ export type GoogleSettings = {
 	enabled: boolean,
 };
 
+/**  What the settings menu shows. */
+export type HistoryOverview = {
+	conversations: number,
+	pinned: number,
+};
+
 export type HistorySettings = {
+	/**
+	 *  Save chats. Off: nothing new is saved; what's saved stays until
+	 *  cleared.
+	 */
 	enabled: boolean,
+	/**  Chats kept, not counting pinned ones; the oldest go first. */
+	max_conversations: number,
+	/**  Chats not used for this many days are forgotten (0: never). */
+	forget_after_days: number,
 };
 
 export type HotkeySettings = {
@@ -425,6 +472,19 @@ export type LauncherShown = null;
 
 export type McpSettings = {
 	enabled: boolean,
+};
+
+/**
+ *  A saved conversation, reopened: the chat view shows it and a follow-up
+ *  carries it on (it's the chat's current conversation).
+ */
+export type OpenedChat = {
+	/**  The chat's id for it, as `ai_ask` would return. */
+	conversation: number,
+	provider: ProviderId,
+	/**  The model that answered last ("claude-sonnet-5-5"); may be empty. */
+	model: string,
+	entries: ChatEntry[],
 };
 
 export type ProviderId = "claude" | "chatgpt";
@@ -629,6 +689,8 @@ export type Toast = {
 };
 
 export type ToastLevel = "info" | "error";
+
+export type ToolState = "running" | "ok" | "failed";
 
 /**  What the updater is doing. Shown in the settings menu and search. */
 export type UpdatePhase = 
