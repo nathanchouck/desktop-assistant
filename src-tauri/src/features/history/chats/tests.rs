@@ -123,11 +123,18 @@ async fn clearing_keeps_pinned_chats() {
 #[tokio::test]
 async fn reopens_a_saved_conversation_where_it_left_off() {
     let (h, _) = history();
-    h.begin(1, here(), "hi", None);
+    // ChatGPT: whether Claude Code still has a session depends on this
+    // machine (see `claude_sessions` for that).
+    let thread = Resumable::new(
+        ProviderId::Chatgpt,
+        std::env::temp_dir(),
+        Some("t-1".into()),
+    );
+    h.begin(1, thread, "hi", None);
     h.event(
         1,
         &AiEvent::Started {
-            model: "claude-haiku-5-5".into(),
+            model: "gpt-6.1-sol".into(),
         },
     );
     h.event(
@@ -143,12 +150,13 @@ async fn reopens_a_saved_conversation_where_it_left_off() {
 
     let chat = new_chat();
     let opened = h.reopen(&chat, id).await.unwrap();
-    assert_eq!(opened.provider, ProviderId::Claude);
-    assert_eq!(opened.model, "claude-haiku-5-5");
+    assert_eq!(opened.provider, ProviderId::Chatgpt);
+    assert_eq!(opened.model, "gpt-6.1-sol");
     assert_eq!(opened.entries.len(), 2);
-    assert_eq!(chat.provider().await, Some(ProviderId::Claude));
+    assert_eq!(chat.provider().await, Some(ProviderId::Chatgpt));
     let resumable = chat.resumable(opened.conversation).await.unwrap();
-    assert_eq!(resumable.session().as_deref(), Some("s-1"));
+    assert_eq!(resumable.session().as_deref(), Some("t-1"));
+    assert_eq!(resumable.cwd, std::env::temp_dir());
 
     // A follow-up is recorded into the same saved chat.
     h.question(opened.conversation, "and you?", None);

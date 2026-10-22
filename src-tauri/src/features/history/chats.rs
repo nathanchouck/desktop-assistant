@@ -15,7 +15,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tauri::AppHandle;
 
-use super::recorder::{resume_plan, Meta, Recorder};
+use super::claude_sessions;
+use super::recorder::{resume_plan, Found, Meta, Recorder};
 use super::store::{ConversationStore, Record, StoreError};
 use super::transcript::{ChatEntry, Transcript};
 use crate::ai::chat::{Chat, Resumable};
@@ -193,9 +194,9 @@ impl ChatHistory {
             PathBuf::from(&record.cwd),
             record.session.clone(),
         );
-        let folder_exists = !record.cwd.is_empty() && Path::new(&record.cwd).is_dir();
+        let found = look_for(&record).await;
         let home = dirs::home_dir().unwrap_or_default();
-        let (resumable, note) = resume_plan(saved, folder_exists, home);
+        let (resumable, note) = resume_plan(saved, found, home);
         // The same session handle goes to the chat and the recorder, so a
         // session id the resumed AI reports is saved too.
         let conversation = chat.adopt(resumable.clone()).await;
@@ -296,6 +297,23 @@ fn write_jobs(jobs: &mpsc::Receiver<Job>, store: &ConversationStore, settings: &
             tracing::warn!("chat history: {e}");
         }
     }
+}
+
+/// Whether a saved conversation's folder and Claude Code session are still
+/// there (off the async runtime: a network folder can be slow to answer).
+async fn look_for(record: &Record) -> Found {
+    let cwd = record.cwd.clone();
+    let session = (record.provider == ProviderId::Claude)
+        .then(|| record.session.clone())
+        .flatten();
+    let look = move || Found {
+        folder: !cwd.is_empty() && Path::new(&cwd).is_dir(),
+        session: session.as_deref().is_none_or(|s| !claude_sessions::gone(s)),
+    };
+    tokio::task::spawn_blocking(look).await.unwrap_or(Found {
+        folder: true,
+        session: true,
+    })
 }
 
 fn prune(store: &ConversationStore, settings: &SharedSettings) -> Result<(), StoreError> {

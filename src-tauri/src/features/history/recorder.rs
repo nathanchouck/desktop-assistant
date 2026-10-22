@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use super::store::Record;
 use super::transcript::{self, Transcript};
 use crate::ai::chat::Resumable;
-use crate::ai::AiEvent;
+use crate::ai::{AiEvent, ProviderId};
 
 /// What's known about a recorded conversation besides its transcript.
 pub struct Meta {
@@ -207,37 +207,45 @@ impl Recorder {
     }
 }
 
+/// What reopening found on disk.
+#[derive(Debug, Clone, Copy)]
+pub struct Found {
+    /// The conversation's folder still exists.
+    pub folder: bool,
+    /// Claude Code still has the session (see `claude_sessions`).
+    pub session: bool,
+}
+
 /// Where a reopened conversation continues, and a note when it can't pick
-/// up where it left off. Claude Code keeps sessions per folder, so with its
-/// folder gone it starts over (in your home folder); a Codex thread
-/// resumes anywhere.
-pub fn resume_plan(
-    saved: Resumable,
-    folder_exists: bool,
-    home: PathBuf,
-) -> (Resumable, Option<String>) {
-    if folder_exists {
+/// up where it left off. Claude Code keeps sessions per folder and deletes
+/// old ones, so without either it starts over (in your home folder if the
+/// folder is gone). A Codex thread resumes anywhere, and one that's gone
+/// is replaced when it resumes.
+pub fn resume_plan(saved: Resumable, found: Found, home: PathBuf) -> (Resumable, Option<String>) {
+    let note = match saved.provider {
+        ProviderId::Chatgpt => None,
+        ProviderId::Claude if !found.folder => Some(format!(
+            "Its folder ({}) is gone, so Claude starts this conversation over.",
+            saved.cwd.display()
+        )),
+        ProviderId::Claude if !found.session => Some(
+            "Claude Code no longer has this conversation (it deletes old ones), \
+             so your next message starts it over."
+                .to_owned(),
+        ),
+        ProviderId::Claude => None,
+    };
+    if found.folder && note.is_none() {
         return (saved, None);
     }
-    let gone = saved.cwd.display().to_string();
-    match saved.provider {
-        crate::ai::ProviderId::Claude => (
-            Resumable::new(saved.provider, home, None),
-            Some(format!(
-                "Its folder ({gone}) is gone, so Claude starts this conversation over."
-            )),
-        ),
-        crate::ai::ProviderId::Chatgpt => {
-            let session = saved.session();
-            (Resumable::new(saved.provider, home, session), None)
-        }
-    }
+    let cwd = if found.folder { saved.cwd.clone() } else { home };
+    let session = if note.is_some() { None } else { saved.session() };
+    (Resumable::new(saved.provider, cwd, session), note)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::ProviderId;
     use crate::features::history::transcript::ChatEntry;
 
     fn meta(record: i64) -> Meta {
@@ -384,21 +392,37 @@ mod tests {
     }
 
     #[test]
-    fn a_lost_folder_means_claude_starts_over() {
+    fn claude_starts_over_without_its_folder_or_session() {
         let home = PathBuf::from("/home/me");
+        let all = Found {
+            folder: true,
+            session: true,
+        };
         let claude = Resumable::new(ProviderId::Claude, "/gone".into(), Some("s".into()));
-        let (plan, note) = resume_plan(claude.clone(), true, home.clone());
+        let (plan, note) = resume_plan(claude.clone(), all, home.clone());
         assert_eq!(
             (plan.session(), plan.cwd, note),
             (Some("s".into()), "/gone".into(), None)
         );
 
-        let (plan, note) = resume_plan(claude, false, home.clone());
+        let no_folder = Found {
+            folder: false,
+            ..all
+        };
+        let (plan, note) = resume_plan(claude.clone(), no_folder, home.clone());
         assert_eq!((plan.session(), plan.cwd), (None, home.clone()));
         assert!(note.unwrap().contains("/gone"));
 
+        let no_session = Found {
+            session: false,
+            ..all
+        };
+        let (plan, note) = resume_plan(claude, no_session, home.clone());
+        assert_eq!((plan.session(), plan.cwd), (None, "/gone".into()));
+        assert!(note.unwrap().contains("no longer has"));
+
         let codex = Resumable::new(ProviderId::Chatgpt, "/gone".into(), Some("t".into()));
-        let (plan, note) = resume_plan(codex, false, home.clone());
+        let (plan, note) = resume_plan(codex, no_folder, home.clone());
         assert_eq!(
             (plan.session(), plan.cwd, note),
             (Some("t".into()), home, None)

@@ -6,6 +6,7 @@
 //! - `recorder.rs`: follows the live chat, says what to save when.
 //! - `store.rs`: the database, with a summary of each chat in memory.
 //! - `chats.rs`: the three together, a writer thread, and reopening.
+//! - `claude_sessions.rs`: whether Claude Code still has a session.
 //! - `rows.rs` / `provider.rs`: search rows and what Enter, pin and delete do.
 //! - `commands.rs`: the settings menu's count and Clear, and the chat's
 //!   copy / paste of the last answer.
@@ -14,6 +15,7 @@
 //! each event (`observe`), and closing the chat (`closed`).
 
 mod chats;
+mod claude_sessions;
 pub mod commands;
 mod provider;
 mod recorder;
