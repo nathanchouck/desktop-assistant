@@ -165,6 +165,7 @@ impl ConversationStore {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                  ON CONFLICT(id) DO UPDATE SET
                    model = excluded.model, session = excluded.session,
+                   cwd = excluded.cwd,
                    updated = excluded.updated, messages = excluded.messages,
                    search = excluded.search, transcript = excluded.transcript",
                 params![

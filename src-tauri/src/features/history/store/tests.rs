@@ -36,10 +36,13 @@ fn saves_and_loads_a_conversation() {
     saved.provider = ProviderId::Chatgpt;
     store.save(&saved).unwrap();
 
-    // A later save replaces the content, keeping when it started.
+    // A later save replaces the content, keeping when it started. A chat
+    // that carried on elsewhere (its folder was gone) keeps the new folder.
     saved.entries.push(ChatEntry::Note {
         text: "Stopped".into(),
     });
+    saved.cwd = "/home/me/elsewhere".into();
+    saved.session = Some("s-2".into());
     saved.updated_ms = 2_000;
     saved.created_ms = 9_999;
     store.save(&saved).unwrap();
