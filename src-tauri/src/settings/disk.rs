@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use toml::Table;
 
 use super::{default_table, layers, migrate, Settings, SettingsError};
-use crate::paths::AppPaths;
+use crate::paths::{AppPaths, SETTINGS_FILE};
 
 const SYNCED_HEADER: &str = "\
 # Desktop Assistant settings. Missing keys use their defaults.
@@ -34,8 +34,13 @@ pub struct Files {
 impl Files {
     /// The files in use now (the settings folder can change while running).
     pub fn of(paths: &AppPaths) -> Self {
+        Self::in_folder(&paths.settings_dir().folder, paths)
+    }
+
+    /// The files with `settings.toml` in `folder`.
+    pub fn in_folder(folder: &Path, paths: &AppPaths) -> Self {
         Self {
-            synced: paths.settings_file(),
+            synced: folder.join(SETTINGS_FILE),
             local: paths.local_settings_file(),
         }
     }
@@ -155,25 +160,63 @@ pub enum Scope {
 pub fn write(files: &Files, settings: &Settings, scope: Scope) -> Result<Texts, SettingsError> {
     // What's there now, for keys to keep and to skip unchanged files. A
     // file that can't be read is simply written.
-    let on_disk = Texts {
+    let on_disk = on_disk(files);
+    let wanted = texts_for(settings, &on_disk)?;
+    replace(files, on_disk, wanted, scope)
+}
+
+/// Writes `settings` to `target`, another settings folder, keeping the
+/// keys that `source` (the files in use) has and this version doesn't
+/// know, so a move carries the whole file.
+pub fn copy_to(target: &Files, settings: &Settings, source: &Texts) -> Result<Texts, SettingsError> {
+    let wanted = texts_for(settings, source)?;
+    replace(target, on_disk(target), wanted, Scope::Both)
+}
+
+fn on_disk(files: &Files) -> Texts {
+    Texts {
         synced: read_text(&files.synced).ok().flatten(),
         local: read_text(&files.local).ok().flatten(),
-    };
-    let wanted = texts_for(settings, &on_disk)?;
-    let mut now = on_disk;
+    }
+}
+
+/// Writes each file whose text changes from `now` to `wanted`.
+fn replace(files: &Files, mut now: Texts, wanted: Texts, scope: Scope) -> Result<Texts, SettingsError> {
     if scope == Scope::Both && wanted.synced != now.synced {
         if let Some(text) = &wanted.synced {
+            keep_if_broken(&files.synced, now.synced.as_deref());
             write_atomic(&files.synced, text)?;
             now.synced = wanted.synced;
         }
     }
     if wanted.local != now.local {
         if let Some(text) = &wanted.local {
+            keep_if_broken(&files.local, now.local.as_deref());
             write_atomic(&files.local, text)?;
             now.local = wanted.local;
         }
     }
     Ok(now)
+}
+
+/// Copies a file that doesn't parse to `<name>.bad` before a save replaces
+/// it: a hand edit with a typo shouldn't just vanish.
+fn keep_if_broken(path: &Path, text: Option<&str>) {
+    let Some(text) = text else { return };
+    if toml::from_str::<Table>(text).is_ok() {
+        return;
+    }
+    let bad = bad_name(path);
+    match fs::copy(path, &bad) {
+        Ok(_) => tracing::warn!("{} had an error; kept a copy as {}", path.display(), bad.display()),
+        Err(e) => tracing::warn!("could not keep a copy of {}: {e}", path.display()),
+    }
+}
+
+fn bad_name(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_owned();
+    name.push(".bad");
+    path.with_file_name(name)
 }
 
 /// Reads a file; `None` if there's no file.
@@ -204,9 +247,7 @@ pub fn write_atomic(path: &Path, text: &str) -> Result<(), SettingsError> {
 /// Moves a file that doesn't parse to `<name>.bad` (replacing an older
 /// one), so it can be fixed by hand and isn't read again.
 pub fn set_aside(path: &Path) -> io::Result<PathBuf> {
-    let mut name = path.file_name().unwrap_or_default().to_owned();
-    name.push(".bad");
-    let bad = path.with_file_name(name);
+    let bad = bad_name(path);
     fs::rename(path, &bad)?;
     Ok(bad)
 }
@@ -260,7 +301,12 @@ pub fn load(files: &Files) -> Loaded {
         }
     };
     let created = texts.synced.is_none() && unreadable.is_none();
-    if created || migrated {
+    // No file for this PC yet: the first start since settings were split
+    // (or it was deleted). Writing now moves this PC's values out of the
+    // one old file at once, so a later move to a synced folder can't
+    // leave them behind.
+    let first_split = texts.local.is_none();
+    if created || migrated || first_split {
         let scope = if unreadable.is_some() {
             Scope::LocalOnly
         } else {
@@ -304,25 +350,58 @@ mod tests {
     }
 
     #[test]
-    fn an_old_single_file_loads_unchanged_and_splits_on_save() {
+    fn an_old_single_file_is_split_at_the_first_start() {
         let dir = tempfile::tempdir().unwrap();
         let f = files(dir.path());
         let mut old = Settings::default();
         old.search.index_folders = vec![r"D:\Work".into()];
         old.general.launch_at_login = true;
         old.ai.default_provider = ProviderId::Chatgpt;
+        old.appearance.tint = "purple".into();
         super::super::save(&f.synced, &old).unwrap();
-        let before = fs::read_to_string(&f.synced).unwrap();
 
         let loaded = load(&f);
         assert_eq!(loaded.settings, old, "nothing lost");
-        assert_eq!(fs::read_to_string(&f.synced).unwrap(), before, "not rewritten");
-        assert!(!f.local.exists());
+        assert_eq!(f.read().unwrap(), loaded.texts);
+        let synced = loaded.texts.synced.as_deref().unwrap();
+        let local = loaded.texts.local.as_deref().unwrap();
+        assert!(!synced.contains(r"D:\Work"), "{synced}");
+        assert!(synced.contains("default_provider = \"chatgpt\""), "{synced}");
+        assert!(local.contains(r"D:\Work"), "{local}");
+        assert!(local.contains("launch_at_login = true"), "{local}");
+        assert_eq!(load(&f).settings, old, "the same after the split");
+    }
 
-        let texts = write(&f, &loaded.settings, Scope::Both).unwrap();
-        assert!(!texts.synced.as_deref().unwrap().contains("D:\\\\Work"));
-        assert!(texts.local.as_deref().unwrap().contains("D:\\\\Work"));
-        assert_eq!(load(&f).settings, old);
+    #[test]
+    fn a_save_keeps_a_copy_of_a_file_that_does_not_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = files(dir.path());
+        load(&f);
+        fs::write(&f.synced, "[hotkeys\ntoggle = 'Alt+Space'\n").unwrap();
+        write(&f, &Settings::default(), Scope::Both).unwrap();
+        let bad = f.synced.with_file_name("settings.toml.bad");
+        assert_eq!(fs::read_to_string(bad).unwrap(), "[hotkeys\ntoggle = 'Alt+Space'\n");
+        assert!(load(&f).settings == Settings::default());
+    }
+
+    #[test]
+    fn copying_to_another_folder_keeps_unknown_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = files(dir.path());
+        let source = Texts {
+            synced: Some("future_key = 7\n[search]\nmax_results = 5\n".into()),
+            local: None,
+        };
+        let (settings, _) = settings_from(&source).unwrap();
+        let target = Files {
+            synced: dir.path().join("OneDrive").join("settings.toml"),
+            local: f.local.clone(),
+        };
+        let texts = copy_to(&target, &settings, &source).unwrap();
+        assert_eq!(target.read().unwrap(), texts);
+        let synced = texts.synced.unwrap();
+        assert!(synced.contains("future_key = 7"), "{synced}");
+        assert!(synced.contains("max_results = 5"), "{synced}");
     }
 
     #[test]

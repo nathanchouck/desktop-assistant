@@ -13,10 +13,14 @@
 //!
 //! - `layers.rs`: the split and merge (pure, tested).
 //! - `disk.rs`: reading and writing the files (tested with temp folders).
-//! - `folder.rs`: choosing the settings folder (OneDrive), moving there.
-//! - `live.rs`: saving from the menu and following changes made on another
-//!   PC while running, applied like a change made in the menu.
+//! - `folder.rs`: choosing the settings folder (OneDrive).
+//! - `files.rs`: the files in use and what they last held, so our own
+//!   writes aren't mistaken for changes; moving to another folder.
+//! - `live.rs`: saving from the menu, and following changes made on
+//!   another PC (or by hand) while running, applied like a change made in
+//!   the menu.
 //! - `commands.rs`: what the settings menu calls about the folder.
+//! - `appearance.rs`: theme choices (the UI turns them into CSS).
 
 use std::fs;
 use std::io;
@@ -32,11 +36,13 @@ use crate::integrations::McpSettings;
 mod appearance;
 pub mod commands;
 mod disk;
+mod files;
 pub mod folder;
 mod layers;
 pub mod live;
 
 pub use appearance::{AppearanceSettings, Density, GlassStrength};
+pub use files::SettingsFiles;
 pub use layers::MACHINE_KEYS;
 
 pub const CURRENT_VERSION: u32 = 1;
@@ -277,9 +283,10 @@ pub struct GeneralSettings {
 }
 
 /// Loads settings from one file, creating it with defaults if it doesn't
-/// exist (the app itself uses `live::load_at_startup`, which also reads
-/// this PC's file). A file that fails to parse is moved aside to `settings.toml.bad` and
-/// replaced with defaults, so a typo never stops the launcher from starting.
+/// exist (the app itself uses `SettingsFiles::load`, which also reads this
+/// PC's file). A file that fails to parse is moved aside to
+/// `settings.toml.bad` and replaced with defaults, so a typo never stops
+/// the launcher from starting.
 pub fn load_or_create(path: &Path) -> Result<Settings, SettingsError> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,

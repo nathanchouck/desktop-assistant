@@ -229,8 +229,8 @@ mod tests {
 
     #[test]
     fn local_values_win_over_synced_ones() {
-        let synced = table("[search]\nindex_folders = ['C:\\\\Other']\nmax_results = 5\n");
-        let local = table("[search]\nindex_folders = ['D:\\\\Mine']\n");
+        let synced = table("[search]\nindex_folders = ['C:\\Other']\nmax_results = 5\n");
+        let local = table("[search]\nindex_folders = ['D:\\Mine']\n");
         let s: Settings = layer(defaults(), synced, local).try_into().unwrap();
         assert_eq!(s.search.index_folders, [r"D:\Mine"]);
         assert_eq!(s.search.max_results, 5);

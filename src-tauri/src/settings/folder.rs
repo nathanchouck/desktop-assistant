@@ -34,7 +34,7 @@ pub enum FolderError {
 }
 
 impl FolderError {
-    fn io(action: &'static str, path: &Path, source: io::Error) -> Self {
+    pub(super) fn io(action: &'static str, path: &Path, source: io::Error) -> Self {
         Self::Io {
             action,
             path: path.display().to_string(),

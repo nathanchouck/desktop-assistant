@@ -67,7 +67,8 @@ pub struct SettingsSaved {
 
 /// Saves settings from the settings menu and applies what can change live:
 /// the shortcut, the Windows key, starting at login. Claude and search
-/// options are read fresh each time, so they apply at once too.
+/// options are read fresh each time, so they apply at once too. This PC's
+/// own settings go to its local file, the rest to `settings.toml`.
 #[tauri::command]
 #[specta::specta]
 async fn settings_set(
@@ -77,35 +78,21 @@ async fn settings_set(
 ) -> Result<SettingsSaved, IpcError> {
     let old = state.settings();
     // The shortcut first: if it can't be registered, nothing is saved.
-    if settings.hotkeys.toggle != old.hotkeys.toggle {
+    let new_toggle = settings.hotkeys.toggle != old.hotkeys.toggle;
+    if new_toggle {
         hotkey::change_toggle(&app, &old.hotkeys.toggle, &settings.hotkeys.toggle).map_err(
             |e| IpcError {
                 message: e.to_string(),
             },
         )?;
     }
-    if settings.hotkeys.win_key_override != old.hotkeys.win_key_override {
-        hotkey::set_win_key(&app, settings.hotkeys.win_key_override);
-    }
-    if settings.general.launch_at_login != old.general.launch_at_login {
-        crate::sync_launch_at_login(&app, settings.general.launch_at_login);
-    }
-    crate::settings::save(&state.paths.settings_file(), &settings).map_err(|e| IpcError {
-        message: e.to_string(),
-    })?;
-    let claude_changed = settings.ai.claude.path != old.ai.claude.path
-        || settings.ai.claude.billing != old.ai.claude.billing;
-    let codex_changed = settings.ai.chatgpt.path != old.ai.chatgpt.path
-        || settings.ai.chatgpt.billing != old.ai.chatgpt.billing
-        || settings.ai.default_provider != old.ai.default_provider;
-    if let Ok(mut current) = state.settings.write() {
-        *current = settings.clone();
-    }
-    if claude_changed {
-        crate::check_claude_status(&app, true);
-    }
-    if codex_changed {
-        crate::check_codex_status(&app, true);
+    if let Err(e) = crate::settings::live::save(&app, &old, settings.clone()) {
+        if new_toggle {
+            let _ = hotkey::change_toggle(&app, &settings.hotkeys.toggle, &old.hotkeys.toggle);
+        }
+        return Err(IpcError {
+            message: e.to_string(),
+        });
     }
     let running = &state.startup_search;
     Ok(SettingsSaved {
@@ -462,6 +449,11 @@ pub fn builder() -> Builder<Wry> {
             // [integrations]
             // [ai_commands]
             // [appearance]
+            crate::settings::commands::settings_folder_get,
+            crate::settings::commands::settings_folder_check,
+            crate::settings::commands::settings_folder_move,
+            crate::settings::commands::settings_folder_reset,
+            crate::settings::commands::settings_local_open,
             // [google]
             // [polish]
         ])
@@ -480,6 +472,8 @@ pub fn builder() -> Builder<Wry> {
             // [updater]
             crate::features::updater::UpdateStatusChanged,
             // [ai_commands]
+            // [appearance]
+            crate::settings::live::SettingsChanged,
             // [google]
             // [polish]
         ])
