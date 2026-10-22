@@ -356,6 +356,37 @@ and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
 - **Settings:** `scripts.enabled`, `scripts.folder`, `scripts.timeout_secs`. The section lists each script (icon, what to type, file · language · mode) and each file that isn't a command, with why. Open folder and Reload call `scripts_open_folder` and `scripts_list(reload)`.
 - **Security:** scripts run with your own rights, like anything you start yourself. Only files directly in the chosen folder are run, and only when you pick one in the launcher; nothing runs at startup or when a file changes. The folder setting is the trust boundary, so point it only at a folder you control.
 
+#### Auto-update (`features/updater/`)
+
+- The Tauri updater plugin, driven from Rust (no JS plugin API): `manager.rs`
+  checks, downloads in the background and installs on request; the UI only
+  calls our own commands and hears `UpdateStatusChanged`.
+- **Key and endpoint** (`setup.rs`): release signatures are checked with a
+  public key fixed at build time: `TAURI_UPDATER_PUBKEY` (the release
+  workflow sets it from a repository variable), else
+  `plugins.updater.pubkey` in tauri.conf.json. The plugin's config section
+  is completed so it always starts. A build without a key (every dev and
+  `build.yml` build) is "not set up" and never checks, since it couldn't
+  tell a real update from a forged one. The endpoint is
+  `releases/latest/download/latest.json` on GitHub, and versions are signed
+  with the release, so an old release can't be offered as a new one.
+- **When:** a minute after start, then every 6 hours, while
+  `updates.check_automatically` is on (`schedule.rs`). A found update
+  downloads in the background, then a toast says it's ready. Installing
+  always waits for you: "Install Update and Restart" in search or the
+  settings menu (Claude Code and Codex are closed first). The last check and
+  a pending install are remembered in `updates.json` in the data folder;
+  after a restart the app notes whether the install worked.
+- **Search:** "Check for Updates" (a notice with the result) and "Install
+  Update and Restart" (only while one is downloaded).
+- **Releasing** (`.github/workflows/release.yml`, on a `v*` tag or by hand):
+  checks the version is the same in tauri.conf.json, Cargo.toml and
+  package.json, builds the NSIS installer, signs it with the
+  `TAURI_SIGNING_PRIVATE_KEY` secret and publishes a GitHub Release with
+  the installer, its signature and `latest.json`. Without the secrets it
+  still publishes the installer, with a warning and no update files.
+- Only Windows builds check for updates.
+
 ### Apps
 
 - `AppIndex` holds the Start menu's "All apps" (the AppsFolder) in memory:

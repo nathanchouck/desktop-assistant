@@ -129,7 +129,7 @@ Check on a real Windows machine:
 - [ ] Conversation history (SQLite) + `>history` to reopen
 - [ ] Copy last answer, paste answer into the previous app
 - [ ] Error toasts with "open log"
-- [ ] Auto-update from GitHub Releases (Tauri updater)
+- [x] Auto-update from GitHub Releases (Tauri updater; needs the signing key set up once, D-033)
 - [ ] Multi-monitor and DPI-change handling
 - [ ] Perf pass against budgets; idle memory check
 - [x] LaTeX math in answers (KaTeX, bundled; prices stay text)

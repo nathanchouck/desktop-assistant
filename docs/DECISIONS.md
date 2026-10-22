@@ -337,3 +337,17 @@ Considered:
 - Running every file in the folder without a header (helper files would show up as commands).
 - A Job object per script to stop it (more Windows code for the same effect as taskkill here).
 - Showing long output as result rows (a new UI mode for one feature).
+
+## D-033 Updates: Tauri's signed updater, set up per build
+The Tauri updater checks a signature on every download, so a hijacked
+release or a swapped file can't install itself. The catch is the key pair:
+the private key has to live in a GitHub secret that only the owner can
+add. So the public key is fixed at build time from a repository variable,
+and a build without one (dev builds, every `build.yml` build, a fork)
+simply says "Updates aren't set up for this build" and never checks. The
+plugin's config section is filled in at startup so a missing key can't
+stop the app. Downloads happen in the background, but installing always
+waits for the owner (it restarts the app and the AI sessions). Considered:
+checking the GitHub Releases API ourselves and running the installer
+(no signature check, or a hand-rolled one) and a Microsoft Store/winget
+listing (heavy for a personal app).
