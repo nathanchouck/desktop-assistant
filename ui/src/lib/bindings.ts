@@ -114,6 +114,8 @@ export type Action = "open" | "run_as_admin" | "reveal_in_explorer" | "copy_path
 "paste" | 
 /**  Remove the result (a clip, a conversation). */
 "delete" | 
+/**  End a running program (the process killer). */
+"end" | 
 /**  Pin or unpin the result. */
 "pin" | 
 /**  Ask the AI about this result (a file, a clip). */

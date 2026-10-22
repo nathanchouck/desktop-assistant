@@ -194,7 +194,7 @@ fn program_row(group: &Group) -> ResultItem {
     )
     .with_subtitle(subtitle)
     .with_icon(icon(group))
-    .with_actions([Action::Delete])
+    .with_actions([Action::End])
     .with_confirm(list::confirm(&group.exe, n));
     with_memory(row, group.memory())
 }
@@ -208,7 +208,7 @@ fn process_row(group: &Group, p: &Proc) -> ResultItem {
     )
     .with_subtitle(format!("{} · PID {}", group.exe, p.pid))
     .with_icon(icon(group))
-    .with_actions([Action::Delete])
+    .with_actions([Action::End])
     .with_confirm(format!("End this {} process (PID {})?", group.exe, p.pid));
     with_memory(row, p.memory)
 }
@@ -387,7 +387,7 @@ mod tests {
             chrome.confirm.as_deref(),
             Some("End all 2 chrome.exe processes?")
         );
-        assert_eq!(chrome.actions, [Action::Delete]);
+        assert_eq!(chrome.actions, [Action::End]);
         assert_eq!(chrome.icon.as_deref(), Some("glyph:process"));
     }
 
