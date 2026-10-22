@@ -176,6 +176,23 @@ describe("SearchStore", () => {
     expect(onSettings).toHaveBeenCalled();
   });
 
+  it("hands a reopened chat to the chat view and clears the search", async () => {
+    const onOpenChat = vi.fn();
+    commands.searchQuery.mockResolvedValueOnce({
+      status: "ok",
+      data: { seq: 1, items: [row("history:4", "conversation")] },
+    });
+    const store = new SearchStore({ onAsk: vi.fn(), onOpenChat });
+    await store.setQuery("history");
+    const chat = { conversation: 3, provider: "claude", model: "", entries: [{ kind: "user", text: "hi", context: null }] };
+    reply({ type: "open_chat", chat });
+    await store.activate();
+    expect(commands.itemActivate).toHaveBeenCalledWith("history:4", "open");
+    expect(onOpenChat).toHaveBeenCalledWith(chat);
+    expect(store.query).toBe("");
+    expect(store.items).toEqual([]);
+  });
+
   it("says a slow action is running, until it's done", async () => {
     vi.useFakeTimers();
     try {

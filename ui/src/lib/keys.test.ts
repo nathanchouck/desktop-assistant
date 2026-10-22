@@ -68,7 +68,15 @@ describe("chatIntentFor", () => {
   it("sends with Enter only", () => {
     expect(chatIntentFor(key("Enter"))).toEqual({ type: "send" });
     expect(chatIntentFor(key("Enter", { shift: true }))).toBeNull();
-    expect(chatIntentFor(key("Enter", { ctrl: true }))).toBeNull();
+  });
+
+  it("pastes the last answer with Ctrl+Enter and copies it with Ctrl+Shift+C", () => {
+    expect(chatIntentFor(key("Enter", { ctrl: true }))).toEqual({ type: "paste_answer" });
+    expect(chatIntentFor(key("Enter", { ctrl: true, shift: true }))).toBeNull();
+    expect(chatIntentFor(key("C", { ctrl: true, shift: true }))).toEqual({ type: "copy_answer" });
+    expect(chatIntentFor(key("c", { ctrl: true, shift: true }))).toEqual({ type: "copy_answer" });
+    // Plain Ctrl+C still copies the selection in the box.
+    expect(chatIntentFor(key("c", { ctrl: true }))).toBeNull();
   });
 
   it("approves and denies with Ctrl+Y / Ctrl+N", () => {
@@ -134,6 +142,22 @@ describe("hints", () => {
     expect(chatHints({ running: true, pending: true })[0]).toEqual(["Ctrl Y", "Approve"]);
     expect(chatHints({ running: true, pending: false })).toEqual([["Esc", "Stop"]]);
     expect(chatHints({ running: false, pending: false })[0]).toEqual(["↵", "Send"]);
+  });
+
+  it("offers paste and copy once there's a finished answer", () => {
+    expect(chatHints({ running: false, pending: false, answer: true })).toEqual([
+      ["↵", "Send"],
+      ["Ctrl ↵", "Paste"],
+      ["Ctrl ⇧ C", "Copy"],
+      ["Esc", "Close"],
+    ]);
+    expect(chatHints({ running: false, pending: false, answer: false })).toEqual([
+      ["↵", "Send"],
+      ["Esc", "Close"],
+    ]);
+    // Not while the next answer is coming or an approval waits.
+    expect(chatHints({ running: true, pending: false, answer: true })).toEqual([["Esc", "Stop"]]);
+    expect(chatHints({ running: true, pending: true, answer: true })[0]).toEqual(["Ctrl Y", "Approve"]);
   });
 });
 
