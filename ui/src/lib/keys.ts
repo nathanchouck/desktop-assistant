@@ -88,6 +88,7 @@ const enterLabels: Record<Action, string> = {
   copy: "Copy",
   paste: "Paste",
   delete: "Delete",
+  end: "End",
   pin: "Pin",
   ask_ai: "Ask",
   ask_about: "Ask",

@@ -61,7 +61,8 @@ pub enum Activation {
     /// Hide, then paste into the window you were in: this text, or
     /// whatever is on the clipboard already when `None`.
     Paste { text: Option<String> },
-    /// Open a web link (http or https only) in the browser, then hide.
+    /// Open a web link (http or https only) in the browser, or a Windows
+    /// Settings page (`ms-settings:display`), then hide.
     OpenUrl { url: String },
     /// Replace the search text and search again; the launcher stays open.
     SetQuery { query: String },

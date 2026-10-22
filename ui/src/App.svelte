@@ -169,6 +169,11 @@
       events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
       events.showSettings.listen(() => void openSettings()),
       events.toast.listen((e) => toasts.show(e.payload)),
+      // A color was picked: list recent colors, the new one first.
+      events.colorPicked.listen(() => {
+        if (settingsOpen || chat.active) return;
+        void search.setQuery("colors").then(() => bar?.focusAndSelect());
+      }),
     ];
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
     // Which AI is the default (for Tab, Shift+Tab and the chat footer).

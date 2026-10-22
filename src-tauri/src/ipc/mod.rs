@@ -487,6 +487,7 @@ pub fn builder() -> Builder<Wry> {
             // [history]
             // [clipboard]
             // [color]
+            crate::features::color::ColorPicked,
             // [updater]
             crate::features::updater::UpdateStatusChanged,
             // [ai_commands]
