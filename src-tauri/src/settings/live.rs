@@ -48,8 +48,8 @@ pub fn save(app: &AppHandle, old: &Settings, new: Settings) -> Result<(), Settin
 pub fn use_settings(app: &AppHandle, old: &Settings, new: Settings) {
     let win_key = new.hotkeys.win_key_override;
     let login = new.general.launch_at_login;
-    let claude_changed = new.ai.claude.path != old.ai.claude.path
-        || new.ai.claude.billing != old.ai.claude.billing;
+    let claude_changed =
+        new.ai.claude.path != old.ai.claude.path || new.ai.claude.billing != old.ai.claude.billing;
     let codex_changed = new.ai.chatgpt.path != old.ai.chatgpt.path
         || new.ai.chatgpt.billing != old.ai.chatgpt.billing
         || new.ai.default_provider != old.ai.default_provider;
@@ -207,12 +207,18 @@ mod tests {
 
     #[test]
     fn only_settings_files_count() {
-        let names = [OsString::from("settings.toml"), OsString::from("settings.local.toml")];
+        let names = [
+            OsString::from("settings.toml"),
+            OsString::from("settings.local.toml"),
+        ];
         let data = Path::new("/data/desktop-assistant");
         assert!(touches(&[data.join("settings.local.toml")], &names));
         // A save renames its temp file over the real one.
         assert!(touches(
-            &[data.join("settings.local.toml.tmp"), data.join("settings.local.toml")],
+            &[
+                data.join("settings.local.toml.tmp"),
+                data.join("settings.local.toml")
+            ],
             &names
         ));
         assert!(!touches(&[data.join("data.db-wal")], &names));

@@ -93,7 +93,11 @@ pub async fn settings_folder_move(
 #[tauri::command]
 #[specta::specta]
 pub async fn settings_folder_reset(app: AppHandle) -> Result<FolderMoved, IpcError> {
-    let target = app.state::<AppState>().paths.default_settings_dir().to_owned();
+    let target = app
+        .state::<AppState>()
+        .paths
+        .default_settings_dir()
+        .to_owned();
     move_to(app, target, true).await
 }
 

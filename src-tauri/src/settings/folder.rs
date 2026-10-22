@@ -204,9 +204,18 @@ mod tests {
         assert_eq!(parse_folder(&typed, None).unwrap(), full);
         let home = dir.path();
         assert_eq!(parse_folder("~/Sync", Some(home)).unwrap(), full);
-        assert!(matches!(parse_folder("Sync", Some(home)), Err(FolderError::NotAbsolute)));
-        assert!(matches!(parse_folder("  ", Some(home)), Err(FolderError::NotAbsolute)));
-        assert!(matches!(parse_folder("~/x", None), Err(FolderError::NotAbsolute)));
+        assert!(matches!(
+            parse_folder("Sync", Some(home)),
+            Err(FolderError::NotAbsolute)
+        ));
+        assert!(matches!(
+            parse_folder("  ", Some(home)),
+            Err(FolderError::NotAbsolute)
+        ));
+        assert!(matches!(
+            parse_folder("~/x", None),
+            Err(FolderError::NotAbsolute)
+        ));
     }
 
     #[test]
@@ -269,6 +278,9 @@ mod tests {
         fs::create_dir_all(&a).unwrap();
         assert!(same_folder(&a, &dir.path().join("x").join("..").join("x")));
         assert!(!same_folder(&a, dir.path()));
-        assert!(same_folder(Path::new("/not/there"), Path::new("/not/there")));
+        assert!(same_folder(
+            Path::new("/not/there"),
+            Path::new("/not/there")
+        ));
     }
 }

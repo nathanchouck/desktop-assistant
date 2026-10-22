@@ -187,7 +187,10 @@ mod tests {
             Some(PathBuf::from(r"C:\Users\me\OneDrive\desktop-assistant"))
         );
         let folder = Path::new("/home/me/OneDrive/desktop-assistant");
-        assert_eq!(parse_pointer(&pointer_text(folder)).as_deref(), Some(folder));
+        assert_eq!(
+            parse_pointer(&pointer_text(folder)).as_deref(),
+            Some(folder)
+        );
     }
 
     #[test]
@@ -229,7 +232,10 @@ mod tests {
         assert_eq!(paths.settings_file(), synced.join(SETTINGS_FILE));
         assert_eq!(
             paths.local_settings_file(),
-            dir.path().join("data").join(APP_DIR).join(LOCAL_SETTINGS_FILE)
+            dir.path()
+                .join("data")
+                .join(APP_DIR)
+                .join(LOCAL_SETTINGS_FILE)
         );
         // OneDrive gone (signed out on this PC): back to the default.
         std::fs::remove_dir(&synced).unwrap();

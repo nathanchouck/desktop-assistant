@@ -12,7 +12,8 @@ export const commands = {
 	/**
 	 *  Saves settings from the settings menu and applies what can change live:
 	 *  the shortcut, the Windows key, starting at login. Claude and search
-	 *  options are read fresh each time, so they apply at once too.
+	 *  options are read fresh each time, so they apply at once too. This PC's
+	 *  own settings go to its local file, the rest to `settings.toml`.
 	 */
 	settingsSet: (settings: Settings) => typedError<SettingsSaved, IpcError>(__TAURI_INVOKE("settings_set", { settings })),
 	appStatus: () => typedError<AppStatus, IpcError>(__TAURI_INVOKE("app_status")),
@@ -88,6 +89,22 @@ export const commands = {
 	 *  that couldn't happen.
 	 */
 	updateInstall: () => typedError<null, IpcError>(__TAURI_INVOKE("update_install")),
+	settingsFolderGet: () => typedError<SettingsFolder, IpcError>(__TAURI_INVOKE("settings_folder_get")),
+	/**  Checks a folder typed in the menu before moving there. */
+	settingsFolderCheck: (folder: string) => typedError<FolderCheck, IpcError>(__TAURI_INVOKE("settings_folder_check", { folder })),
+	/**
+	 *  Keeps settings in `folder` (OneDrive) from now on. If it has settings
+	 *  already they're used, unless `replace`: then this PC's are written
+	 *  there and the old file is kept as `settings.toml.bak`.
+	 */
+	settingsFolderMove: (folder: string, replace: boolean) => typedError<FolderMoved, IpcError>(__TAURI_INVOKE("settings_folder_move", { folder, replace })),
+	/**
+	 *  Back to `%APPDATA%\desktop-assistant`, with the settings in use now.
+	 *  The synced copy is left as it is for the other PCs.
+	 */
+	settingsFolderReset: () => typedError<FolderMoved, IpcError>(__TAURI_INVOKE("settings_folder_reset")),
+	/**  Opens this PC's own settings file for hand edits. */
+	settingsLocalOpen: () => typedError<null, IpcError>(__TAURI_INVOKE("settings_local_open")),
 };
 
 /** Events */
@@ -97,6 +114,7 @@ export const events = {
 	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
+	settingsChanged: makeEvent<SettingsChanged>("settings-changed"),
 	showSettings: makeEvent<ShowSettings>("show-settings"),
 	toast: makeEvent<Toast>("toast"),
 	updateStatusChanged: makeEvent<UpdateStatusChanged>("update-status-changed"),
@@ -213,8 +231,19 @@ export type AppStatus = {
 };
 
 export type AppearanceSettings = {
-	/**  Empty: the default look. */
+	/**
+	 *  Accent color: a preset ("blue", "purple", "pink", "red", "orange",
+	 *  "green", "teal", "graphite") or a custom "#rrggbb". Empty or
+	 *  unknown means blue.
+	 */
 	tint: string,
+	/**
+	 *  How much of the desktop shows through the window while the OS blur
+	 *  is on.
+	 */
+	glass: GlassStrength,
+	/**  How tall result rows are. */
+	density: Density,
 };
 
 /**  Who approves actions that change things (writing files, running commands). */
@@ -383,6 +412,10 @@ export type ColorSettings = {
 	show_after_pick: boolean,
 };
 
+export type Density = "comfortable" | 
+/**  Shorter rows and smaller icons. */
+"compact";
+
 export type EmojiSettings = {
 	enabled: boolean,
 	/**  For people and hands. */
@@ -397,9 +430,35 @@ export type FileIndexChanged = {
 	status: IndexStatus,
 };
 
+/**  A folder settings could move to. */
+export type FolderCheck = {
+	/**  The folder, written out in full. */
+	folder: string,
+	/**  It has settings already (saved by another PC). */
+	has_settings: boolean,
+};
+
+/**  What a move did. */
+export type FolderMoved = {
+	location: SettingsFolder,
+	/**
+	 *  The settings already there are used now (and the menu got them as
+	 *  `settings-changed`).
+	 */
+	adopted: boolean,
+	/**  Where the file that was replaced was copied. */
+	backup: string | null,
+};
+
 export type GeneralSettings = {
 	launch_at_login: boolean,
 };
+
+export type GlassStrength = 
+/**  Mostly solid: easiest to read over a busy wallpaper. */
+"subtle" | "normal" | 
+/**  Mostly see-through. */
+"strong";
 
 export type GoogleSettings = {
 	enabled: boolean,
@@ -615,6 +674,36 @@ export type Settings = {
 	google: GoogleSettings,
 	mcp: McpSettings,
 	appearance: AppearanceSettings,
+};
+
+/**  The settings changed outside the menu and the new ones are in use. */
+export type SettingsChanged = {
+	settings: Settings,
+};
+
+/**  Where settings are kept, for the Advanced section. */
+export type SettingsFolder = {
+	/**  The folder `settings.toml` is read from now. */
+	folder: string,
+	is_default: boolean,
+	default_folder: string,
+	/**  This PC's own settings (`settings.local.toml`). */
+	local_file: string,
+	/**
+	 *  A chosen folder that isn't there now; the default one is used
+	 *  until it is.
+	 */
+	missing: string | null,
+	/**
+	 *  `settings.toml` couldn't be read; only this PC's settings are saved
+	 *  until it can be.
+	 */
+	unreadable: string | null,
+	/**
+	 *  OneDrive's folder for the settings, when OneDrive is set up on this
+	 *  PC and it isn't the folder in use.
+	 */
+	suggestion: FolderCheck | null,
 };
 
 /**  The result of saving settings. */

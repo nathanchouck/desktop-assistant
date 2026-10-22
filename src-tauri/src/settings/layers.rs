@@ -198,7 +198,10 @@ mod tests {
             assert!(get(&synced, key).is_none(), "{key} in the synced file");
             assert!(get(&local, key).is_some(), "{key} not in the local file");
         }
-        assert_eq!(get(&synced, "hotkeys.toggle").unwrap().as_str(), Some("Alt+Space"));
+        assert_eq!(
+            get(&synced, "hotkeys.toggle").unwrap().as_str(),
+            Some("Alt+Space")
+        );
         assert!(get(&local, "hotkeys.toggle").is_none());
         assert_eq!(get(&synced, "version"), get(&local, "version"));
         // `general` only holds a machine key: no empty section left behind.
@@ -208,7 +211,8 @@ mod tests {
     #[test]
     fn split_then_layer_gives_the_same_settings() {
         let s = custom();
-        let (synced, local) = split_for_save(Table::try_from(&s).unwrap(), Table::new(), Table::new());
+        let (synced, local) =
+            split_for_save(Table::try_from(&s).unwrap(), Table::new(), Table::new());
         let back: Settings = layer(defaults(), synced, local).try_into().unwrap();
         assert_eq!(back, s);
     }
@@ -218,13 +222,21 @@ mod tests {
         // Before the split, everything was in settings.toml. Loading it
         // with no local file keeps every value...
         let old = Table::try_from(custom()).unwrap();
-        let loaded: Settings = layer(defaults(), old.clone(), Table::new()).try_into().unwrap();
+        let loaded: Settings = layer(defaults(), old.clone(), Table::new())
+            .try_into()
+            .unwrap();
         assert_eq!(loaded, custom());
         // ...and the first save moves this PC's values to the local file.
         let (synced, local) = split_for_save(Table::try_from(&loaded).unwrap(), old, Table::new());
         assert!(get(&synced, "search.index_folders").is_none());
-        assert_eq!(get(&local, "search.index_folders"), Some(&Value::Array(vec![r"D:\Projects".into()])));
-        assert_eq!(get(&synced, "search.max_results").unwrap().as_integer(), Some(6));
+        assert_eq!(
+            get(&local, "search.index_folders"),
+            Some(&Value::Array(vec![r"D:\Projects".into()]))
+        );
+        assert_eq!(
+            get(&synced, "search.max_results").unwrap().as_integer(),
+            Some(6)
+        );
     }
 
     #[test]
@@ -246,23 +258,40 @@ mod tests {
             .unwrap();
         assert_eq!(s.appearance.tint, "red");
         s.appearance.tint = "orange".into();
-        let (synced, local) = split_for_save(Table::try_from(&s).unwrap(), on_disk_synced, on_disk_local);
-        assert_eq!(get(&local, "appearance.tint").unwrap().as_str(), Some("orange"));
-        assert_eq!(get(&synced, "appearance.tint").unwrap().as_str(), Some("green"));
+        let (synced, local) =
+            split_for_save(Table::try_from(&s).unwrap(), on_disk_synced, on_disk_local);
+        assert_eq!(
+            get(&local, "appearance.tint").unwrap().as_str(),
+            Some("orange")
+        );
+        assert_eq!(
+            get(&synced, "appearance.tint").unwrap().as_str(),
+            Some("green")
+        );
     }
 
     #[test]
     fn unknown_keys_from_a_newer_version_survive_a_save() {
-        let on_disk_synced = table("future = 1\n[clipboard]\nnew_option = true\n[brand_new]\nx = 'y'\n");
+        let on_disk_synced =
+            table("future = 1\n[clipboard]\nnew_option = true\n[brand_new]\nx = 'y'\n");
         let on_disk_local = table("[hotkeys]\nfuture_local = 2\n");
         let full = Table::try_from(custom()).unwrap();
         let (synced, local) = split_for_save(full, on_disk_synced, on_disk_local);
         assert_eq!(get(&synced, "future").unwrap().as_integer(), Some(1));
-        assert_eq!(get(&synced, "clipboard.new_option").unwrap().as_bool(), Some(true));
+        assert_eq!(
+            get(&synced, "clipboard.new_option").unwrap().as_bool(),
+            Some(true)
+        );
         assert_eq!(get(&synced, "brand_new.x").unwrap().as_str(), Some("y"));
-        assert_eq!(get(&local, "hotkeys.future_local").unwrap().as_integer(), Some(2));
+        assert_eq!(
+            get(&local, "hotkeys.future_local").unwrap().as_integer(),
+            Some(2)
+        );
         // ...while known values are this PC's current ones.
-        assert_eq!(get(&synced, "clipboard.enabled").unwrap().as_bool(), Some(true));
+        assert_eq!(
+            get(&synced, "clipboard.enabled").unwrap().as_bool(),
+            Some(true)
+        );
     }
 
     #[test]
