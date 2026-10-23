@@ -1,6 +1,7 @@
 //! The launcher window: created hidden at startup and never destroyed, so
 //! showing it is just position + show + focus.
 
+mod idle;
 mod placement;
 pub mod tray;
 
@@ -37,11 +38,23 @@ const APPS_MAX_AGE: Duration = Duration::from_secs(30 * 60);
 /// once Windows and tao are done moving and resizing it.
 const REFIT_DELAY: Duration = Duration::from_millis(50);
 
+/// Whether the launcher is on screen, for background work that only
+/// matters while it is (see `is_shown`).
+static SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Whether the launcher is on screen. Background work that only feeds
+/// what it shows (the media watcher) rests while it's hidden.
+pub fn is_shown() -> bool {
+    SHOWN.load(Ordering::Relaxed)
+}
+
 /// Window facts other modules need.
 pub struct LauncherState {
     height: AtomicU32,
     glass: AtomicBool,
     last_hidden: Mutex<Option<Instant>>,
+    /// Hidden long enough to give memory back (see `idle`).
+    idle: idle::Idle,
 }
 
 impl Default for LauncherState {
@@ -50,6 +63,7 @@ impl Default for LauncherState {
             height: AtomicU32::new(DEFAULT_HEIGHT),
             glass: AtomicBool::new(false),
             last_hidden: Mutex::new(None),
+            idle: idle::Idle::default(),
         }
     }
 }
@@ -118,6 +132,9 @@ pub fn show(app: &AppHandle, started: Instant) {
         state.apps.refresh_if_stale(APPS_MAX_AGE);
         crate::check_ai_status(app, false);
     }
+    if let Some(state) = &state {
+        idle::on_show(&window, &state.launcher.idle);
+    }
     if let Err(e) = place_on_cursor_monitor(app, &window, height) {
         tracing::debug!("could not position launcher: {e}");
     }
@@ -125,6 +142,7 @@ pub fn show(app: &AppHandle, started: Instant) {
         tracing::warn!("could not show launcher: {e}");
         return;
     }
+    SHOWN.store(true, Ordering::Relaxed);
     if let Err(e) = LauncherShown.emit(app) {
         tracing::debug!("could not notify UI of show: {e}");
     }
@@ -143,8 +161,10 @@ pub fn hide(app: &AppHandle) {
         tracing::warn!("could not hide launcher: {e}");
         return;
     }
+    SHOWN.store(false, Ordering::Relaxed);
     if let Some(state) = app.try_state::<AppState>() {
         state.launcher.mark_hidden();
+        idle::on_hide(app, &state.launcher.idle);
     }
     if let Err(e) = LauncherHidden.emit(app) {
         tracing::debug!("could not notify UI of hide: {e}");

@@ -89,11 +89,12 @@ pub fn start(app: &AppHandle) {
 }
 
 /// Turns the keyboard hook on and off with the settings, and hands it new
-/// keywords. Settings have no change notification, so this looks once a
-/// second (a read lock and a small copy); the hook only runs while needed.
+/// keywords. Wakes only when settings change; the hook only runs while
+/// needed.
 #[cfg(windows)]
 async fn follow_settings(settings: crate::settings::SharedSettings) {
-    const EVERY: std::time::Duration = std::time::Duration::from_secs(1);
+    // Subscribed before the first look, so no change is missed.
+    let mut changes = crate::settings::changes();
     let mut running: Option<hook::Expander> = None;
     let mut current: Vec<Expansion> = Vec::new();
     loop {
@@ -102,7 +103,9 @@ async fn follow_settings(settings: crate::settings::SharedSettings) {
             running = hook::apply(running.take(), &wanted);
             current = wanted;
         }
-        tokio::time::sleep(EVERY).await;
+        if changes.changed().await.is_err() {
+            return;
+        }
     }
 }
 

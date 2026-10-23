@@ -874,6 +874,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "webview2-com",
  "window-vibrancy",
  "windows",
  "windows-core",

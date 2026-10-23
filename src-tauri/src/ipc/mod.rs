@@ -101,6 +101,7 @@ async fn settings_set(
     if let Ok(mut current) = state.settings.write() {
         *current = settings.clone();
     }
+    crate::settings::announce_change();
     if claude_changed {
         crate::check_claude_status(&app, true);
     }
