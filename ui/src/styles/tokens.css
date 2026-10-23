@@ -82,6 +82,10 @@
   --footer-height: 34px;
   --menu-width: 300px;
   --menu-row-height: 30px;
+  /* Attachment chips above the input, and the picture in the compose view. */
+  --chip-height: 24px;
+  --chip-icon: 16px;
+  --compose-preview-height: 200px;
 
   /* Type */
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;

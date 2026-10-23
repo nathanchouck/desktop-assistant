@@ -20,6 +20,7 @@ use tokio::sync::Mutex;
 use super::claude::{self, session::ClaudeSession};
 use super::codex::{self, session::CodexSession};
 use super::launch::Launch;
+use super::message::Message;
 use super::process::Process;
 use super::{locked, AiError, AiEvent, ProviderId};
 
@@ -109,10 +110,10 @@ impl Session {
         }
     }
 
-    async fn send_turn(&self, text: &str) -> Result<(), AiError> {
+    async fn send_turn(&self, message: &Message) -> Result<(), AiError> {
         match self {
-            Session::Claude(s) => s.send_turn(text).await,
-            Session::Codex(s) => s.send_turn(text).await,
+            Session::Claude(s) => s.send_turn(message).await,
+            Session::Codex(s) => s.send_turn(message).await,
         }
     }
 
@@ -210,7 +211,8 @@ impl Chat {
     }
 
     /// Starts a new conversation (ending any current one). Returns its id.
-    pub async fn start(&self, text: &str, setup: Setup) -> Result<u32, AiError> {
+    pub async fn start(&self, message: impl Into<Message>, setup: Setup) -> Result<u32, AiError> {
+        let message = message.into();
         self.close().await;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (session, resume) = match self.take_spare(&setup).await {
@@ -228,7 +230,7 @@ impl Chat {
                 (session, resume)
             }
         };
-        session.send_turn(text).await?;
+        session.send_turn(&message).await?;
         *self.current.lock().await = Some(Conversation {
             id,
             provider: setup.provider(),
@@ -245,9 +247,10 @@ impl Chat {
     /// setup for the conversation's provider, used only for a restart.
     pub async fn follow_up(
         &self,
-        text: &str,
+        message: impl Into<Message>,
         setup: impl FnOnce(ProviderId) -> Result<Setup, AiError>,
     ) -> Result<u32, AiError> {
+        let message = message.into();
         let mut current = self.current.lock().await;
         let conversation = current.as_mut().ok_or(AiError::NoConversation)?;
         let live = conversation
@@ -271,7 +274,7 @@ impl Chat {
                 session
             }
         };
-        session.send_turn(text).await?;
+        session.send_turn(&message).await?;
         conversation.last_used = Instant::now();
         Ok(conversation.id)
     }

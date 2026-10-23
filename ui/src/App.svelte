@@ -4,14 +4,17 @@
   import ResultList from "./components/ResultList.svelte";
   import ActionMenu from "./components/ActionMenu.svelte";
   import ChatPane from "./components/ChatPane.svelte";
+  import ComposePane from "./components/ComposePane.svelte";
   import SettingsPane from "./components/SettingsPane.svelte";
   import Footer from "./components/Footer.svelte";
-  import { commands, events, type IndexStatus, type ProviderId } from "./lib/bindings";
-  import { answeringLabel, forcedProvider, looksLikeAQuestion, PROVIDER_NAMES } from "./lib/chat";
+  import { commands, events, type Attachment, type IndexStatus, type ProviderId } from "./lib/bindings";
+  import { answeringLabel, forcedProvider, looksLikeAQuestion, otherProvider, PROVIDER_NAMES } from "./lib/chat";
+  import { composedQuestion, DEFAULT_QUESTION } from "./lib/compose";
   import { indexNotice } from "./lib/display";
-  import { chatHints, chatIntentFor, intentFor, searchHints } from "./lib/keys";
+  import { chatHints, chatIntentFor, composeHints, composeIntentFor, intentFor, searchHints } from "./lib/keys";
   import { ActionMenuStore } from "./lib/stores/actionMenu.svelte";
   import { ChatStore } from "./lib/stores/chat.svelte";
+  import { ComposeStore } from "./lib/stores/compose.svelte";
   import { launcher } from "./lib/stores/launcher.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
   import { SettingsStore } from "./lib/stores/settings.svelte";
@@ -23,6 +26,8 @@
   const CHAT_RESET_MS = 5 * 60 * 1000;
 
   const chat = new ChatStore();
+  /** A question with attachments (the selection, a file, a snip) being typed. */
+  const compose = new ComposeStore();
   const settings = new SettingsStore();
   /** The AI that Tab and the "Ask" row use (loaded at start, kept current by the menu). */
   const defaultProvider = (): ProviderId => settings.settings?.ai.default_provider ?? "claude";
@@ -33,6 +38,7 @@
     },
     onSettings: () => void openSettings(),
     onOpenChat: (saved) => chat.reopen(saved),
+    onCompose: (attachments) => void startCompose(attachments),
     defaultProvider,
   });
   const toasts = new ToastStore();
@@ -52,6 +58,12 @@
   let indexStatus = $state<IndexStatus | null>(null);
   /** The AI was started early for the query being typed. */
   let warmed = false;
+  /** The same for a question with attachments. */
+  let composeWarmed = false;
+  /** Attachments, no chat: the input takes the question about them. */
+  const composing = $derived(compose.active && !chat.active);
+  /** The AI that Enter asks while composing (a `c `/`g ` prefix picks one). */
+  const composeAi = $derived(forcedProvider(compose.draft)?.provider ?? defaultProvider());
 
   // A question is being typed: start the AI it's for now so it answers sooner.
   $effect(() => {
@@ -62,19 +74,30 @@
     }
   });
 
+  // Attachments came in: start the AI now, the question is on its way.
+  $effect(() => {
+    if (!composing) composeWarmed = false;
+    else if (!composeWarmed) {
+      composeWarmed = true;
+      void commands.aiWarm(null);
+    }
+  });
+
   // The look from Settings → Appearance, applied as soon as it changes.
   $effect(() => {
     const appearance = settings.settings?.appearance;
     if (appearance) applyTheme(document.documentElement, themeFor(appearance));
   });
 
-  const expanded = $derived(settingsOpen || chat.active || search.expanded || toasts.current !== null);
+  const expanded = $derived(settingsOpen || chat.active || composing || search.expanded || toasts.current !== null);
   const notice = $derived(
     settingsOpen
       ? "Changes are saved as you make them"
       : chat.active
         ? answeringLabel(chat.provider ?? defaultProvider(), chat.transcript.model)
-        : (search.notice ?? indexNotice(indexStatus)),
+        : composing
+          ? null
+          : (search.notice ?? indexNotice(indexStatus)),
   );
   const hints = $derived(
     settingsOpen
@@ -90,7 +113,9 @@
             pending: chat.pending !== undefined,
             answer: chat.finishedAnswer !== null,
           })
-        : searchHints(search.current?.actions ?? [], PROVIDER_NAMES[search.otherProvider()]),
+        : composing
+          ? composeHints(PROVIDER_NAMES[composeAi], PROVIDER_NAMES[otherProvider(composeAi)], !compose.draft)
+          : searchHints(search.current?.actions ?? [], PROVIDER_NAMES[search.otherProvider()]),
   );
 
   async function openSettings() {
@@ -141,6 +166,53 @@
     }
   }
 
+  /**
+   * Starts a question with `attachments`: the launcher shows them as chips
+   * and the input takes the question. A finished chat is put away first
+   * (it's in history); a running one keeps going, and they go with its
+   * next follow-up.
+   */
+  async function startCompose(attachments: Attachment[]) {
+    if (attachments.length === 0) return;
+    settingsOpen = false;
+    if (chat.active && !chat.transcript.running && !chat.pending) await chat.close();
+    search.clear();
+    compose.add(attachments);
+    await tick();
+    bar?.focus();
+  }
+
+  /** Asks about the attachments: the default AI (or a prefix's), or the other one. */
+  function askComposed(other: boolean) {
+    const { text, provider } = composedQuestion(compose.draft);
+    const target = other ? otherProvider(provider ?? defaultProvider()) : provider;
+    void chat.ask(text, target, compose.take());
+  }
+
+  function onComposeKey(e: KeyboardEvent) {
+    const intent = composeIntentFor(e, !compose.draft);
+    if (!intent) return;
+    e.preventDefault();
+    switch (intent.type) {
+      case "ask":
+        askComposed(intent.other === true);
+        break;
+      case "remove_last":
+        compose.removeLast();
+        break;
+      case "escape":
+        compose.clear();
+        break;
+    }
+  }
+
+  /** The mic button: Windows voice typing into the box. */
+  async function dictate() {
+    bar?.focus();
+    const res = await commands.aiDictate();
+    if (res.status === "error") showError(res.error.message);
+  }
+
   /** Runs the action menu's entry `index` on the row it was opened for. */
   function chooseAction(index: number) {
     const item = menu.item;
@@ -159,12 +231,20 @@
   }
 
   function onChatKey(e: KeyboardEvent) {
+    // Backspace in an empty box drops the last attachment.
+    if (compose.active && composeIntentFor(e, !chat.draft)?.type === "remove_last") {
+      e.preventDefault();
+      compose.removeLast();
+      return;
+    }
     const intent = chatIntentFor(e);
     if (!intent) return;
     e.preventDefault();
     switch (intent.type) {
       case "send":
-        void chat.followUp();
+        if (chat.transcript.running) break;
+        if (compose.active && !chat.draft.trim()) chat.draft = DEFAULT_QUESTION;
+        void chat.followUp(compose.active ? compose.take() : []);
         break;
       case "approve":
         void chat.answer(intent.allow);
@@ -182,10 +262,12 @@
         pane?.scroll(intent.delta, intent.pages);
         break;
       case "escape":
-        // Each Esc backs out one step: deny, stop, clear the draft, close.
+        // Each Esc backs out one step: deny, stop, clear the draft, drop
+        // the attachments, close.
         if (chat.pending) void chat.answer(false);
         else if (chat.transcript.running) void chat.stop();
         else if (chat.draft) chat.draft = "";
+        else if (compose.active) compose.clear();
         else void chat.close();
         break;
     }
@@ -201,6 +283,7 @@
     toasts.shown();
     const idle = Date.now() - hiddenAt > CHAT_RESET_MS;
     if (chat.active && idle && !chat.transcript.running && !chat.pending) void chat.close();
+    if (idle) compose.clear();
     if (settingsOpen) settingsPane?.focus();
     else bar?.focusAndSelect();
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
@@ -233,6 +316,8 @@
       // Another PC changed the synced settings (or the file was edited).
       events.settingsChanged.listen((e) => settings.changed(e.payload.settings)),
       events.toast.listen((e) => toasts.show(e.payload)),
+      // The selection shortcut or a snip: ask about what came with it.
+      events.composeRequested.listen((e) => void startCompose(e.payload.attachments)),
       // A color was picked: list recent colors, the new one first.
       events.colorPicked.listen(() => {
         if (settingsOpen || chat.active) return;
@@ -273,10 +358,13 @@
       <SearchBar
         bind:this={bar}
         chat={chat.active}
-        value={chat.active ? chat.draft : search.query}
-        activeIndex={!chat.active && search.items.length > 0 ? search.selected : null}
-        oninput={(v) => (chat.active ? (chat.draft = v) : search.setQuery(v))}
-        onkeydown={(e) => (chat.active ? onChatKey(e) : onSearchKey(e))}
+        attachments={compose.attachments}
+        value={chat.active ? chat.draft : composing ? compose.draft : search.query}
+        activeIndex={!chat.active && !composing && search.items.length > 0 ? search.selected : null}
+        oninput={(v) => (chat.active ? (chat.draft = v) : composing ? (compose.draft = v) : search.setQuery(v))}
+        onkeydown={(e) => (chat.active ? onChatKey(e) : composing ? onComposeKey(e) : onSearchKey(e))}
+        onremove={(i) => compose.remove(i)}
+        ondictate={() => void dictate()}
       />
     {/if}
     {#if expanded}
@@ -284,6 +372,8 @@
         <SettingsPane bind:this={settingsPane} store={settings} onclose={() => void closeSettings()} />
       {:else if chat.active}
         <ChatPane bind:this={pane} transcript={chat.transcript} onanswer={(allow) => chat.answer(allow)} />
+      {:else if composing}
+        <ComposePane attachments={compose.attachments} ai={PROVIDER_NAMES[composeAi]} />
       {:else}
         <div class="results">
           <ResultList

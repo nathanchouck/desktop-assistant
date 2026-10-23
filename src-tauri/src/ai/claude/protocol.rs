@@ -5,8 +5,10 @@
 //!
 //! Recorded real output lives in `tests/fixtures/claude/`.
 
+use base64::Engine;
 use serde_json::{json, Value};
 
+use crate::ai::message::Message;
 use crate::ai::AiEvent;
 
 /// One stdout line, understood.
@@ -227,11 +229,33 @@ pub(crate) fn truncate(text: &str, max_chars: usize) -> String {
     format!("{cut}…")
 }
 
-/// A user message line for stdin.
-pub fn user_message(text: &str) -> String {
+/// A user message line for stdin. Text alone is a plain string; with
+/// pictures it's a list of content blocks, the PNGs first (inline, base64)
+/// and the text after them, as the Messages API recommends.
+pub fn user_message(message: &Message) -> String {
+    let content = if message.images.is_empty() {
+        json!(message.text)
+    } else {
+        let mut blocks: Vec<Value> = message
+            .images
+            .iter()
+            .map(|image| {
+                json!({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": base64::engine::general_purpose::STANDARD.encode(&image.png),
+                    },
+                })
+            })
+            .collect();
+        blocks.push(json!({ "type": "text", "text": message.text }));
+        json!(blocks)
+    };
     json!({
         "type": "user",
-        "message": { "role": "user", "content": text },
+        "message": { "role": "user", "content": content },
         "parent_tool_use_id": null,
     })
     .to_string()
@@ -399,7 +423,7 @@ mod tests {
 
     #[test]
     fn builds_outgoing_lines() {
-        let msg: Value = serde_json::from_str(&user_message("hi")).unwrap();
+        let msg: Value = serde_json::from_str(&user_message(&"hi".into())).unwrap();
         assert_eq!(msg["type"], "user");
         assert_eq!(msg["message"]["content"], "hi");
 
@@ -449,5 +473,25 @@ mod tests {
             "morning"
         );
         assert!(summarize("Bash", &json!({"command": "x".repeat(200)})).ends_with('…'));
+    }
+
+    #[test]
+    fn pictures_go_inline_before_the_text() {
+        use crate::ai::message::ImageInput;
+        let message = Message::new(
+            "what's this?",
+            vec![ImageInput {
+                path: "a.png".into(),
+                png: vec![0x89, b'P', b'N', b'G'],
+            }],
+        );
+        let msg: Value = serde_json::from_str(&user_message(&message)).unwrap();
+        let content = &msg["message"]["content"];
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(content[0]["source"]["type"], "base64");
+        assert_eq!(content[0]["source"]["media_type"], "image/png");
+        assert_eq!(content[0]["source"]["data"], "iVBORw==");
+        assert_eq!(content[1], json!({"type": "text", "text": "what's this?"}));
+        assert_eq!(content.as_array().map(Vec::len), Some(2));
     }
 }

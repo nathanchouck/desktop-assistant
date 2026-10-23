@@ -15,8 +15,8 @@ use crate::actions;
 use crate::ai::claude::ClaudeStatus;
 use crate::ai::codex::CodexStatus;
 use crate::ai::{self, AiError, AiEvent, ProviderId};
-use crate::desktop::{self, DesktopContext};
 use crate::error::IpcError;
+use crate::features::ai_commands::{self, Attachment};
 use crate::file_index::IndexStatus;
 use crate::hotkey;
 use crate::search::{self, Action, Activation, Frecency, ResultItem};
@@ -86,9 +86,27 @@ async fn settings_set(
             },
         )?;
     }
+    // [ai_commands] The "ask about the selection" shortcut, the same way.
+    let (old_grab, new_grab) = (
+        &old.ai_commands.selection_shortcut,
+        &settings.ai_commands.selection_shortcut,
+    );
+    if new_grab != old_grab {
+        if let Err(e) = ai_commands::shortcut::change(&app, old_grab, new_grab) {
+            if new_toggle {
+                let _ = hotkey::change_toggle(&app, &settings.hotkeys.toggle, &old.hotkeys.toggle);
+            }
+            return Err(IpcError {
+                message: e.to_string(),
+            });
+        }
+    }
     if let Err(e) = crate::settings::live::save(&app, &old, settings.clone()) {
         if new_toggle {
             let _ = hotkey::change_toggle(&app, &settings.hotkeys.toggle, &old.hotkeys.toggle);
+        }
+        if new_grab != old_grab {
+            let _ = ai_commands::shortcut::change(&app, new_grab, old_grab);
         }
         return Err(IpcError {
             message: e.to_string(),
@@ -270,20 +288,22 @@ async fn ai_warm(state: State<'_, AppState>, provider: Option<ProviderId>) -> Re
 }
 
 /// Asks `provider` (else the default AI), starting a new conversation in
-/// the folder File Explorer showed (else your home folder).
+/// the folder File Explorer showed (else your home folder). `attachments`
+/// (selected text, a file, a picture) go in front of the question.
 #[tauri::command]
 #[specta::specta]
 async fn ai_ask(
     state: State<'_, AppState>,
     text: String,
     provider: Option<ProviderId>,
+    attachments: Vec<Attachment>,
 ) -> Result<AskReply, IpcError> {
     let provider = provider.unwrap_or(state.settings().ai.default_provider);
     let context = chat::context_to_send(&state, provider, true).await;
     let setup = chat::new_conversation(&state, provider, context.as_ref()).map_err(ai_err)?;
-    let message = desktop::with_context(&text, context.as_ref());
-    let conversation = state.chat.start(&message, setup).await.map_err(ai_err)?;
-    let context = context.as_ref().and_then(DesktopContext::summary);
+    let message = chat::message(&state, &text, &attachments, context.as_ref()).await?;
+    let conversation = state.chat.start(message, setup).await.map_err(ai_err)?;
+    let context = chat::caption(&attachments, context.as_ref());
     crate::features::history::asked(&state.chat, conversation, &text, context.as_deref(), true)
         .await;
     Ok(AskReply {
@@ -294,23 +314,28 @@ async fn ai_ask(
 }
 
 /// Sends a follow-up in the current conversation (to the AI it started
-/// with), with the desktop context if it changed since the last message.
+/// with), with the desktop context if it changed since the last message,
+/// and any attachments.
 #[tauri::command]
 #[specta::specta]
-async fn ai_follow_up(state: State<'_, AppState>, text: String) -> Result<AskReply, IpcError> {
+async fn ai_follow_up(
+    state: State<'_, AppState>,
+    text: String,
+    attachments: Vec<Attachment>,
+) -> Result<AskReply, IpcError> {
     let provider = state
         .chat
         .provider()
         .await
         .ok_or_else(|| ai_err(AiError::NoConversation))?;
     let context = chat::context_to_send(&state, provider, false).await;
-    let message = desktop::with_context(&text, context.as_ref());
+    let message = chat::message(&state, &text, &attachments, context.as_ref()).await?;
     let conversation = state
         .chat
-        .follow_up(&message, |provider| chat::setup_for(&state, provider))
+        .follow_up(message, |provider| chat::setup_for(&state, provider))
         .await
         .map_err(ai_err)?;
-    let context = context.as_ref().and_then(DesktopContext::summary);
+    let context = chat::caption(&attachments, context.as_ref());
     crate::features::history::asked(&state.chat, conversation, &text, context.as_deref(), false)
         .await;
     Ok(AskReply {
@@ -464,6 +489,8 @@ pub fn builder() -> Builder<Wry> {
             crate::integrations::commands::mcp_server_save,
             crate::integrations::commands::mcp_server_remove,
             // [ai_commands]
+            crate::features::ai_commands::commands::ai_dictate,
+            crate::features::ai_commands::commands::ai_selection_shortcut_pause,
             // [appearance]
             crate::settings::commands::settings_folder_get,
             crate::settings::commands::settings_folder_check,
@@ -493,6 +520,7 @@ pub fn builder() -> Builder<Wry> {
             // [updater]
             crate::features::updater::UpdateStatusChanged,
             // [ai_commands]
+            crate::features::ai_commands::ComposeRequested,
             // [appearance]
             crate::settings::live::SettingsChanged,
             // [google]
