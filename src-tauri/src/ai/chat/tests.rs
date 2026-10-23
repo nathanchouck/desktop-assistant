@@ -33,10 +33,12 @@ fn options(dir: &Path) -> claude::Options {
         model: "haiku".into(),
         approvals: Approvals::Ask,
         billing: BillingMode::Subscription,
+        api_key: None,
         cwd: dir.to_path_buf(),
         resume: None,
         system_prompt: String::new(),
         mcp_config: None,
+        mcp_servers: Vec::new(),
         settings: None,
     }
 }
@@ -400,6 +402,7 @@ fn codex_options(dir: &Path) -> codex::Options {
         resume: None,
         instructions: "be brief".into(),
         mcp: None,
+        servers: Vec::new(),
         screen_tools: true,
         windows_sandbox: false,
     }
@@ -672,7 +675,7 @@ async fn codex_api_key_goes_over_stdin_only() {
         launch.clone(),
         codex::Options {
             billing: BillingMode::ApiKey,
-            api_key: Some(codex::ApiKey::new("sk-test-launcher")),
+            api_key: Some(crate::secrets::Secret::new("sk-test-launcher")),
             ..codex_options(dir.path())
         },
     );

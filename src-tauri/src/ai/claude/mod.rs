@@ -15,6 +15,8 @@ use super::launch::{find_node, has_extension, path_dirs, shim_target};
 use super::status::Readiness;
 pub use super::status::StatusCache;
 use super::{AiError, Approvals, BillingMode};
+use crate::integrations::ResolvedServer;
+use crate::secrets::{self, Secret};
 use crate::settings::ClaudeSettings;
 
 /// How messages name it.
@@ -122,12 +124,18 @@ pub struct Options {
     pub model: String,
     pub approvals: Approvals,
     pub billing: BillingMode,
+    /// API key mode: the key, given to Claude Code as `ANTHROPIC_API_KEY`.
+    pub api_key: Option<Secret>,
     pub cwd: PathBuf,
     /// Continue an earlier session (after the idle process was shut down).
     pub resume: Option<String>,
     pub system_prompt: String,
-    /// The launcher's own MCP server (`--mcp-config`), added to the user's.
+    /// The launcher's own MCP server and the registry's (`--mcp-config`),
+    /// added to the user's.
     pub mcp_config: Option<PathBuf>,
+    /// The registry's servers written into that file. Kept here too, so a
+    /// warm process started with other servers isn't reused.
+    pub mcp_servers: Vec<ResolvedServer>,
     /// Extra settings (`--settings`): approvals for the launcher's tools.
     pub settings: Option<PathBuf>,
 }
@@ -177,23 +185,26 @@ pub fn args(options: &Options) -> Vec<String> {
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
+/// The variable Claude Code reads an API key from.
+const KEY_ENV: &str = "ANTHROPIC_API_KEY";
+
 /// `claude` with API key variables removed in subscription mode, so the
-/// plan pays. `window_flags` are Windows process creation flags.
+/// plan pays, and `api_key` given to it in API key mode. `window_flags`
+/// are Windows process creation flags.
 fn base_command(
     launch: &Launch,
     billing: BillingMode,
+    api_key: Option<&Secret>,
     window_flags: u32,
 ) -> Result<tokio::process::Command, AiError> {
     let mut cmd = launch.command();
     match billing {
         BillingMode::Subscription => {
-            cmd.env_remove("ANTHROPIC_API_KEY")
-                .env_remove("ANTHROPIC_AUTH_TOKEN");
+            cmd.env_remove(KEY_ENV).env_remove("ANTHROPIC_AUTH_TOKEN");
         }
         BillingMode::ApiKey => {
-            if std::env::var_os("ANTHROPIC_API_KEY").is_none() {
-                return Err(AiError::MissingApiKey);
-            }
+            let key = api_key.ok_or(AiError::MissingApiKey)?;
+            cmd.env(KEY_ENV, key.expose());
         }
     }
     #[cfg(windows)]
@@ -206,7 +217,12 @@ fn base_command(
 /// The ready-to-spawn conversation process: pipes, working folder, no
 /// console window.
 pub fn command(launch: &Launch, options: &Options) -> Result<tokio::process::Command, AiError> {
-    let mut cmd = base_command(launch, options.billing, CREATE_NO_WINDOW)?;
+    let mut cmd = base_command(
+        launch,
+        options.billing,
+        options.api_key.as_ref(),
+        CREATE_NO_WINDOW,
+    )?;
     cmd.args(args(options))
         .current_dir(&options.cwd)
         .stdin(Stdio::piped())
@@ -248,7 +264,7 @@ pub async fn check_status(settings: &ClaudeSettings) -> ClaudeStatus {
         // An API key needs no sign-in; a missing key is reported on asking.
         return ClaudeStatus::Ready;
     }
-    let Ok(mut cmd) = base_command(&launch, settings.billing, CREATE_NO_WINDOW) else {
+    let Ok(mut cmd) = base_command(&launch, settings.billing, None, CREATE_NO_WINDOW) else {
         return ClaudeStatus::Unknown;
     };
     cmd.args(["auth", "status", "--json"])
@@ -273,7 +289,12 @@ pub async fn check_status(settings: &ClaudeSettings) -> ClaudeStatus {
 /// browser to sign in. Returns the running process.
 pub fn sign_in(settings: &ClaudeSettings) -> Result<tokio::process::Child, AiError> {
     let launch = locate(&settings.path).ok_or(AiError::NotInstalled)?;
-    let mut cmd = base_command(&launch, BillingMode::Subscription, CREATE_NEW_CONSOLE)?;
+    let mut cmd = base_command(
+        &launch,
+        BillingMode::Subscription,
+        None,
+        CREATE_NEW_CONSOLE,
+    )?;
     cmd.args(["auth", "login", "--claudeai"]);
     cmd.spawn().map_err(|e| AiError::Spawn(NAME, e.to_string()))
 }
@@ -288,18 +309,47 @@ impl Readiness for ClaudeStatus {
 /// Where Claude Code is and how to start it, from the settings.
 pub fn prepare(settings: &ClaudeSettings) -> Result<(Launch, Options), AiError> {
     let launch = locate(&settings.path).ok_or(AiError::NotInstalled)?;
+    let api_key = match settings.billing {
+        BillingMode::ApiKey => Some(api_key().ok_or(AiError::MissingApiKey)?),
+        BillingMode::Subscription => None,
+    };
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let options = Options {
         model: settings.model.clone(),
         approvals: settings.approvals,
         billing: settings.billing,
+        api_key,
         system_prompt: system_prompt(&home),
         cwd: home,
         resume: None,
         mcp_config: None,
+        mcp_servers: Vec::new(),
         settings: None,
     };
     Ok((launch, options))
+}
+
+/// The API key for API key mode: the one saved in the settings menu
+/// (Credential Manager), else the `ANTHROPIC_API_KEY` environment variable.
+pub fn api_key() -> Option<Secret> {
+    pick_key(secrets::read(secrets::ANTHROPIC_API_KEY), || {
+        std::env::var(KEY_ENV).ok()
+    })
+}
+
+/// A saved key wins; a blank one (in either place) counts as none.
+pub(crate) fn pick_key(
+    saved: Option<Secret>,
+    from_env: impl FnOnce() -> Option<String>,
+) -> Option<Secret> {
+    saved
+        .filter(|k| !k.expose().trim().is_empty())
+        .or_else(|| {
+            from_env()
+                .map(|v| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+                .map(Secret::new)
+        })
 }
 
 /// Tells Claude where it's running and how to answer.
@@ -330,12 +380,81 @@ mod tests {
             model: "sonnet".into(),
             approvals: Approvals::Ask,
             billing: BillingMode::Subscription,
+            api_key: None,
             cwd: PathBuf::from("."),
             resume: None,
             system_prompt: String::new(),
             mcp_config: None,
+            mcp_servers: Vec::new(),
             settings: None,
         }
+    }
+
+    /// What `cmd` does to a variable: `None` if it leaves it alone,
+    /// `Some(None)` if it removes it, `Some(Some(value))` if it sets it.
+    fn env_of(cmd: &tokio::process::Command, name: &str) -> Option<Option<String>> {
+        cmd.as_std()
+            .get_envs()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn subscription_mode_strips_api_keys() {
+        let launch = Launch::Exe(PathBuf::from("claude"));
+        // Even with a key at hand, the plan pays.
+        let cmd = command(
+            &launch,
+            &Options {
+                api_key: Some(Secret::new("sk-ant-saved")),
+                ..options()
+            },
+        )
+        .unwrap();
+        assert_eq!(env_of(&cmd, "ANTHROPIC_API_KEY"), Some(None));
+        assert_eq!(env_of(&cmd, "ANTHROPIC_AUTH_TOKEN"), Some(None));
+        let status_check = base_command(&launch, BillingMode::Subscription, None, 0).unwrap();
+        assert_eq!(env_of(&status_check, "ANTHROPIC_API_KEY"), Some(None));
+    }
+
+    #[test]
+    fn api_key_mode_gives_claude_the_key() {
+        let launch = Launch::Exe(PathBuf::from("claude"));
+        let with_key = Options {
+            billing: BillingMode::ApiKey,
+            api_key: Some(Secret::new("sk-ant-saved")),
+            ..options()
+        };
+        let cmd = command(&launch, &with_key).unwrap();
+        assert_eq!(
+            env_of(&cmd, "ANTHROPIC_API_KEY"),
+            Some(Some("sk-ant-saved".into()))
+        );
+        assert!(!args(&with_key).iter().any(|a| a.contains("sk-ant")));
+        assert!(!format!("{with_key:?}").contains("sk-ant-saved"));
+        let without = Options {
+            billing: BillingMode::ApiKey,
+            ..options()
+        };
+        assert!(matches!(
+            command(&launch, &without),
+            Err(AiError::MissingApiKey)
+        ));
+    }
+
+    #[test]
+    fn a_saved_key_wins_over_the_environment() {
+        let env = || Some(" sk-ant-env ".to_owned());
+        assert_eq!(
+            pick_key(Some(Secret::new("sk-ant-saved")), env).map(|k| k.expose().to_owned()),
+            Some("sk-ant-saved".into())
+        );
+        assert_eq!(
+            pick_key(None, env).map(|k| k.expose().to_owned()),
+            Some("sk-ant-env".into())
+        );
+        assert_eq!(pick_key(Some(Secret::new(" ")), || Some(String::new())), None);
+        assert_eq!(pick_key(None, || None), None);
     }
 
     #[test]
