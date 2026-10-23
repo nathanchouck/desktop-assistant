@@ -1,0 +1,26 @@
+{
+ "id": "19a1f2e3d4c5b6a7",
+ "historyId": "998877",
+ "messages": [
+  {
+   "labelIds": ["INBOX", "CATEGORY_PERSONAL"],
+   "payload": {
+    "headers": [
+     { "name": "From", "value": "Bob Jones <bob@example.com>" },
+     { "name": "Subject", "value": "Lunch on Friday?" }
+    ]
+   },
+   "internalDate": "1792681200000"
+  },
+  {
+   "labelIds": ["UNREAD", "IMPORTANT", "CATEGORY_PERSONAL", "INBOX"],
+   "payload": {
+    "headers": [
+     { "name": "Subject", "value": "Re: Lunch on Friday?" },
+     { "name": "From", "value": "\"Ana Silva\" <ana@example.com>" }
+    ]
+   },
+   "internalDate": "1792738800000"
+  }
+ ]
+}

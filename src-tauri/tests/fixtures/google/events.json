@@ -1,0 +1,105 @@
+{
+ "items": [
+  {
+   "id": "offsite2026",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=b2Zmc2l0ZQ",
+   "summary": "Company offsite",
+   "start": { "date": "2026-10-21" },
+   "end": { "date": "2026-10-26" },
+   "eventType": "default"
+  },
+  {
+   "id": "breakfast1",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=YnJlYWtmYXN0",
+   "summary": "Breakfast",
+   "start": { "dateTime": "2026-10-23T08:00:00+02:00", "timeZone": "Europe/Berlin" },
+   "end": { "dateTime": "2026-10-23T09:00:00+02:00", "timeZone": "Europe/Berlin" },
+   "eventType": "default"
+  },
+  {
+   "id": "abc123_20261023T083000Z",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=c3RhbmR1cA",
+   "summary": "Standup",
+   "start": { "dateTime": "2026-10-23T10:30:00+02:00", "timeZone": "Europe/Berlin" },
+   "end": { "dateTime": "2026-10-23T10:45:00+02:00", "timeZone": "Europe/Berlin" },
+   "hangoutLink": "https://meet.google.com/abc-defg-hij",
+   "conferenceData": {
+    "entryPoints": [
+     { "entryPointType": "video", "uri": "https://meet.google.com/abc-defg-hij" },
+     { "entryPointType": "phone", "uri": "tel:+49-30-555-0100" },
+     { "entryPointType": "more", "uri": "https://tel.meet/abc-defg-hij?pin=1234" }
+    ]
+   },
+   "attendees": [
+    { "self": true, "responseStatus": "accepted" },
+    { "responseStatus": "needsAction" }
+   ],
+   "eventType": "default"
+  },
+  {
+   "id": "cancelled1",
+   "status": "cancelled",
+   "summary": "Moved meeting",
+   "start": { "dateTime": "2026-10-23T11:00:00+02:00" },
+   "end": { "dateTime": "2026-10-23T12:00:00+02:00" }
+  },
+  {
+   "id": "review7",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=cmV2aWV3",
+   "summary": "Design review",
+   "location": "Room 4",
+   "description": "Agenda:<br>1. Mockups<br><br>Join Zoom Meeting<br><a href=\"https://us02web.zoom.us/j/81234567890?pwd=QWxhZGRpbg&amp;from=addon\">https://us02web.zoom.us/j/81234567890?pwd=QWxhZGRpbg&amp;from=addon</a>",
+   "start": { "dateTime": "2026-10-23T14:00:00+02:00", "timeZone": "Europe/Berlin" },
+   "end": { "dateTime": "2026-10-23T15:00:00+02:00", "timeZone": "Europe/Berlin" },
+   "eventType": "default"
+  },
+  {
+   "id": "declined3",
+   "status": "confirmed",
+   "summary": "All-hands rehearsal",
+   "start": { "dateTime": "2026-10-23T15:00:00+02:00" },
+   "end": { "dateTime": "2026-10-23T16:00:00+02:00" },
+   "attendees": [{ "self": true, "responseStatus": "declined" }]
+  },
+  {
+   "id": "untitled9",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=dW50aXRsZWQ",
+   "start": { "dateTime": "2026-10-23T16:00:00+02:00" },
+   "end": { "dateTime": "2026-10-23T16:30:00+02:00" },
+   "eventType": "default"
+  },
+  {
+   "id": "workloc",
+   "status": "confirmed",
+   "summary": "Home",
+   "start": { "date": "2026-10-24" },
+   "end": { "date": "2026-10-25" },
+   "eventType": "workingLocation"
+  },
+  {
+   "id": "dinner",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=ZGlubmVy",
+   "summary": "Dinner with Ana",
+   "location": "Trattoria Roma",
+   "start": { "dateTime": "2026-10-24T19:30:00+02:00", "timeZone": "Europe/Berlin" },
+   "end": { "dateTime": "2026-10-24T21:00:00+02:00", "timeZone": "Europe/Berlin" },
+   "eventType": "default"
+  },
+  {
+   "id": "planning",
+   "status": "tentative",
+   "htmlLink": "https://www.google.com/calendar/event?eid=cGxhbm5pbmc",
+   "summary": "Planning",
+   "location": "https://teams.microsoft.com/l/meetup-join/19%3ameeting_NjQ%40thread.v2/0",
+   "start": { "dateTime": "2026-10-24T19:30:00Z", "timeZone": "UTC" },
+   "end": { "dateTime": "2026-10-24T20:00:00Z", "timeZone": "UTC" },
+   "eventType": "default"
+  }
+ ]
+}

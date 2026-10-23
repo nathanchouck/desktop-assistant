@@ -14,6 +14,7 @@ pub mod integrations;
 pub mod ipc;
 pub mod logging;
 pub mod mcp;
+pub mod net;
 pub mod paths;
 pub mod platform;
 pub mod search;

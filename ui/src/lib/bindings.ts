@@ -151,6 +151,16 @@ export const commands = {
 	settingsFolderReset: () => typedError<FolderMoved, IpcError>(__TAURI_INVOKE("settings_folder_reset")),
 	/**  Opens this PC's own settings file for hand edits. */
 	settingsLocalOpen: () => typedError<null, IpcError>(__TAURI_INVOKE("settings_local_open")),
+	googleStatus: () => typedError<GoogleStatus, IpcError>(__TAURI_INVOKE("google_status")),
+	/**  Saves the OAuth client's secret in Credential Manager. */
+	googleSecretSet: (value: string) => typedError<GoogleStatus, IpcError>(__TAURI_INVOKE("google_secret_set", { value })),
+	/**  Opens Google's consent page; the outcome follows as `GoogleStatusChanged`. */
+	googleConnect: () => typedError<GoogleStatus, IpcError>(__TAURI_INVOKE("google_connect")),
+	/**
+	 *  Revokes the sign-in and removes the refresh token and the client
+	 *  secret from this PC.
+	 */
+	googleDisconnect: () => typedError<GoogleStatus, IpcError>(__TAURI_INVOKE("google_disconnect")),
 	/**  Toasts sent before the UI listened (see `recent`). */
 	toastRecent: () => __TAURI_INVOKE<RecentToast[]>("toast_recent"),
 };
@@ -161,6 +171,7 @@ export const events = {
 	colorPicked: makeEvent<ColorPicked>("color-picked"),
 	composeRequested: makeEvent<ComposeRequested>("compose-requested"),
 	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
+	googleStatusChanged: makeEvent<GoogleStatusChanged>("google-status-changed"),
 	launcherHidden: makeEvent<LauncherHidden>("launcher-hidden"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
@@ -604,7 +615,40 @@ export type GlassStrength =
 "strong";
 
 export type GoogleSettings = {
+	/**  `cal`, `mail` and Drive results (once connected). */
 	enabled: boolean,
+	/**
+	 *  Your OAuth client ("Desktop app") from Google Cloud Console. Not a
+	 *  secret, so it may sync; the client secret stays in Credential Manager.
+	 */
+	client_id: string,
+	/**  Drive files in normal search (what you type goes to Drive). */
+	drive_in_search: boolean,
+	/**  Days `cal` covers, today included (1–7). */
+	calendar_days: number,
+};
+
+/**  What Settings → Google shows. */
+export type GoogleStatus = {
+	/**  The client secret is saved on this PC. */
+	secret_saved: boolean,
+	/**  Waiting for you to approve in the browser. */
+	connecting: boolean,
+	connected: boolean,
+	email: string | null,
+	/**
+	 *  The last thing that went wrong (connecting, or reading calendar,
+	 *  mail or Drive), if it still stands.
+	 */
+	problem: string | null,
+};
+
+/**
+ *  The connection changed: connecting finished or failed, a refresh hit
+ *  a problem or recovered.
+ */
+export type GoogleStatusChanged = {
+	status: GoogleStatus,
 };
 
 /**  What the settings menu shows. */

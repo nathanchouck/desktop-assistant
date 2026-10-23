@@ -210,23 +210,11 @@ pub async fn keep_fresh(rates: Arc<ExchangeRates>, settings: SharedSettings) {
     }
 }
 
+/// Only the Windows build downloads; elsewhere the saved file is used.
 fn download() -> Result<RateTable, String> {
-    let body = fetch()?;
+    let body = crate::net::https_get(HOST, PATH)?;
     let text = String::from_utf8(body).map_err(|_| "the rates file isn't text".to_owned())?;
     parse_ecb(&text, unix_now())
-}
-
-#[cfg(windows)]
-fn fetch() -> Result<Vec<u8>, String> {
-    super::win::https_get(HOST, PATH)
-}
-
-/// Only the Windows build downloads; elsewhere the saved file is used.
-#[cfg(not(windows))]
-fn fetch() -> Result<Vec<u8>, String> {
-    Err(format!(
-        "downloading from {HOST}{PATH} is only built for Windows"
-    ))
 }
 
 fn unix_now() -> i64 {
