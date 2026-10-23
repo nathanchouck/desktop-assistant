@@ -147,11 +147,11 @@ Productivity
 - [x] Color picker
 
 AI power features
-- [ ] Ask about selected text (hotkey grabs selection, opens with it as context)
-- [ ] Ask about a file (file result action: "Ask Claude about this")
-- [ ] Screenshot region → ask AI
-- [ ] Voice input (push-to-talk)
-- [ ] Saved AI commands (prompt templates: "fix grammar", "summarize clipboard")
+- [x] Ask about selected text (hotkey grabs selection, opens with it as context)
+- [x] Ask about a file (file result action: "Ask Claude about this")
+- [x] Screenshot region → ask AI
+- [x] Voice input (Windows voice typing, Win+H)
+- [x] Saved AI commands (prompt templates: "fix grammar", "summarize clipboard")
 - [ ] Side-by-side: same prompt to Claude and ChatGPT
 
 Integrations without AI (needs Google OAuth, D-008)
