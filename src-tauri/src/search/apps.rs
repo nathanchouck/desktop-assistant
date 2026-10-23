@@ -106,7 +106,7 @@ impl AppIndex {
         let index = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
             if let Err(e) = index.refresh().await {
-                tracing::warn!("could not index apps: {e}");
+                crate::toast::report(format!("Couldn't list your apps: {e}"));
             }
         });
     }
@@ -240,7 +240,11 @@ pub fn watch_start_menu(index: Arc<AppIndex>) -> Option<notify::RecommendedWatch
             let _ = tx.send(());
         }
     })
-    .map_err(|e| tracing::warn!("could not watch the Start Menu: {e}"))
+    .map_err(|e| {
+        crate::toast::report(format!(
+            "New apps show up only after \"Reindex Apps\": can't watch the Start Menu: {e}"
+        ))
+    })
     .ok()?;
     for dir in &dirs {
         if let Err(e) = watcher.watch(dir, RecursiveMode::Recursive) {
@@ -260,7 +264,7 @@ pub fn watch_start_menu(index: Arc<AppIndex>) -> Option<notify::RecommendedWatch
             }
             tracing::debug!("start menu changed; re-indexing");
             if let Err(e) = index.refresh().await {
-                tracing::warn!("could not re-index apps: {e}");
+                crate::toast::report(format!("Couldn't list your apps again: {e}"));
             }
         }
     });

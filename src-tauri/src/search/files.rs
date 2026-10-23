@@ -41,6 +41,19 @@ pub fn path_from_id(id: &str) -> Option<&str> {
     id.strip_prefix(ID_PREFIX)
 }
 
+/// What a file or folder row offers. Enter opens; the rest have keys or
+/// the action menu (Ctrl+K). "Open with" means nothing for a folder.
+/// Ctrl+Shift+A starts a question about it.
+pub fn file_actions(is_folder: bool) -> Vec<Action> {
+    let mut actions = vec![Action::Open, Action::RevealInExplorer, Action::CopyPath];
+    if !is_folder {
+        actions.push(Action::OpenWith);
+    }
+    actions.push(Action::AskAbout);
+    actions.push(Action::Trash);
+    actions
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KindFilter {
     Any,
@@ -211,12 +224,7 @@ impl FileProvider {
                     title: hit.name,
                     icon: Some(icon_key),
                     score,
-                    actions: vec![
-                        Action::Open,
-                        Action::RevealInExplorer,
-                        Action::CopyPath,
-                        Action::AskAbout,
-                    ],
+                    actions: file_actions(hit.is_folder),
                     accessory: None,
                     confirm: None,
                 }
@@ -490,5 +498,36 @@ mod tests {
     fn ids_round_trip() {
         assert_eq!(path_from_id(r"file:C:\a b\c.txt"), Some(r"C:\a b\c.txt"));
         assert_eq!(path_from_id("app:x"), None);
+    }
+
+    #[test]
+    fn files_and_folders_offer_their_actions() {
+        let (_dir, provider) = provider();
+        let items = provider.to_items(
+            vec![
+                hit(r"C:\x\notes.txt", false, None),
+                hit(r"C:\x\notes", true, None),
+            ],
+            "notes",
+            8,
+        );
+        let file = items.iter().find(|i| i.kind == ItemKind::File).unwrap();
+        let folder = items.iter().find(|i| i.kind == ItemKind::Folder).unwrap();
+        assert_eq!(
+            file.actions,
+            [
+                Action::Open,
+                Action::RevealInExplorer,
+                Action::CopyPath,
+                Action::OpenWith,
+                Action::AskAbout,
+                Action::Trash
+            ]
+        );
+        // Enter still opens; a folder has no "Open with".
+        assert_eq!(folder.actions[0], Action::Open);
+        assert!(!folder.actions.contains(&Action::OpenWith));
+        assert!(folder.actions.contains(&Action::AskAbout));
+        assert!(folder.actions.contains(&Action::Trash));
     }
 }

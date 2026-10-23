@@ -72,7 +72,7 @@ pub fn press_after_hide(key: MediaKey) -> Result<(), String> {
         .spawn(move || {
             std::thread::sleep(HIDE_DELAY);
             if let Err(e) = os::press(key.vk()) {
-                tracing::warn!("could not press {key:?}: {e}");
+                crate::toast::report(format!("Couldn't press {key:?}: {e}"));
             }
         })
         .map(|_| ())

@@ -83,11 +83,11 @@ impl SettingsFiles {
     pub fn load(paths: AppPaths) -> (Self, Settings) {
         let dir = paths.settings_dir();
         if let Some(missing) = &dir.missing {
-            tracing::warn!(
-                "settings folder {} isn't there; using {} for now",
+            crate::toast::report(format!(
+                "Your settings folder {} isn't there; using {} for now",
                 missing.display(),
                 dir.folder.display()
-            );
+            ));
         }
         let files = Files::in_folder(&dir.folder, &paths);
         let loaded = disk::load(&files);

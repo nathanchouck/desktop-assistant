@@ -21,7 +21,9 @@ use crate::platform::INJECTED_TAG;
 
 pub const SUPPORTED: bool = true;
 
-/// Between looks when nobody asks sooner.
+/// Between looks when nobody asks sooner, while the launcher is showing.
+/// While it's hidden there's no periodic look (a cross-process call): a
+/// search asks for a fresh one when what it has is a few seconds old.
 const POLL: Duration = Duration::from_secs(5);
 /// Before trying again when Windows' media controls aren't available.
 const RETRY: Duration = Duration::from_secs(60);
@@ -80,7 +82,12 @@ pub fn watch(now: Arc<NowPlaying>, wake: Receiver<()>) {
         }
         let track = manager.as_ref().and_then(read);
         now.set(track);
-        if wait(&wake, POLL).is_err() {
+        let next = if crate::window::is_shown() {
+            wait(&wake, POLL)
+        } else {
+            wait_for_search(&wake)
+        };
+        if next.is_err() {
             return;
         }
     }
@@ -90,12 +97,23 @@ pub fn watch(now: Arc<NowPlaying>, wake: Receiver<()>) {
 fn wait(wake: &Receiver<()>, timeout: Duration) -> Result<(), ()> {
     match wake.recv_timeout(timeout) {
         Ok(()) | Err(RecvTimeoutError::Timeout) => {
-            // Several searches may have asked at once: one look is enough.
-            while wake.try_recv().is_ok() {}
+            drain(wake);
             Ok(())
         }
         Err(RecvTimeoutError::Disconnected) => Err(()),
     }
+}
+
+/// Waits until a search asks for a look.
+fn wait_for_search(wake: &Receiver<()>) -> Result<(), ()> {
+    wake.recv().map_err(|_| ())?;
+    drain(wake);
+    Ok(())
+}
+
+/// Several searches may have asked at once: one look is enough.
+fn drain(wake: &Receiver<()>) {
+    while wake.try_recv().is_ok() {}
 }
 
 /// The current session's track, if one has a title.

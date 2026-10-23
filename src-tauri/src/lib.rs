@@ -34,6 +34,7 @@ use crate::paths::AppPaths;
 use crate::state::AppState;
 
 pub fn run() {
+    let started = Instant::now();
     // Without a home directory there is nowhere to keep settings or logs.
     let paths = AppPaths::resolve().expect("could not resolve app directories");
     let _log_guard = logging::init(&paths.log_dir());
@@ -50,6 +51,11 @@ pub fn run() {
     }
 
     let state = AppState::new(paths, settings.clone());
+    // Opens the databases and builds every search provider (emoji index...).
+    tracing::info!(
+        "app state built {} ms after start",
+        started.elapsed().as_millis()
+    );
     // The updater's config section is completed before the app is built.
     let mut context = tauri::generate_context!();
     let updater = features::updater::plugin(context.config_mut());
@@ -89,6 +95,7 @@ pub fn run() {
             app.manage(state);
             app.manage(settings_files);
             let handle = app.handle();
+            toast::init(handle);
 
             let glass = window::apply_glass(handle);
             tracing::info!("glass effect {}", if glass { "on" } else { "off" });
@@ -111,6 +118,9 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 window::show(handle, Instant::now());
             }
+            // Indexes and status checks carry on in the background and log
+            // their own times.
+            tracing::info!("ready {} ms after start", started.elapsed().as_millis());
             Ok(())
         })
         .on_window_event(window::on_window_event)
@@ -190,10 +200,15 @@ fn start_launcher_tools(app: &AppHandle) {
                             .tool_files
                             .set(state::ToolFiles { settings, endpoint });
                     }
-                    Err(e) => tracing::warn!("could not write the launcher tools config: {e}"),
+                    Err(e) => toast::report(format!(
+                        "The launcher's tools for Claude are off: couldn't write their \
+                         config: {e}"
+                    )),
                 }
             }
-            Err(e) => tracing::warn!("launcher tools for Claude are off: {e}"),
+            Err(e) => toast::report(format!(
+                "The launcher's tools for Claude and ChatGPT are off: {e}"
+            )),
         }
         // The registry's servers go to Claude even without the launcher's.
         integrations::refresh_claude_config(&state);
@@ -291,6 +306,6 @@ pub(crate) fn sync_launch_at_login(app: &AppHandle, enabled: bool) {
         Err(e) => Err(e),
     };
     if let Err(e) = result {
-        tracing::warn!("could not update launch at login: {e}");
+        toast::report(format!("Couldn't change starting at login: {e}"));
     }
 }

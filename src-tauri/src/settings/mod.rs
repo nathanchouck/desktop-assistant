@@ -25,7 +25,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +62,22 @@ pub enum SettingsError {
 /// Settings shared between the app and anything that reads them later
 /// (search providers): always the current ones.
 pub type SharedSettings = Arc<RwLock<Settings>>;
+
+/// Bumped each time the shared settings change, so background work that
+/// follows a setting (snippet expansion, the scripts folder) waits for a
+/// change instead of checking every second.
+static CHANGES: LazyLock<tokio::sync::watch::Sender<u64>> =
+    LazyLock::new(|| tokio::sync::watch::channel(0).0);
+
+/// Wakes when settings change (`changed().await`); see `announce_change`.
+pub fn changes() -> tokio::sync::watch::Receiver<u64> {
+    CHANGES.subscribe()
+}
+
+/// Call after writing new values into the shared settings.
+pub fn announce_change() {
+    CHANGES.send_modify(|n| *n = n.wrapping_add(1));
+}
 
 /// A copy of the current settings. A poisoned lock (a panic while writing)
 /// falls back to the last value rather than failing.

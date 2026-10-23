@@ -60,7 +60,7 @@ Check on a real Windows machine:
 - [x] Merge file/folder results with apps; files rank below equally good app matches
 - [x] Exclusions (`node_modules`, `.git`, `AppData` temp, `$Recycle.Bin`) in settings
 - [x] File actions: Open, Show in folder (Ctrl+Enter), Copy path (Ctrl+Shift+C)
-- [ ] File actions: Open with…, Delete to Recycle Bin (needs an action menu; M7)
+- [x] File actions: Open with…, Delete to Recycle Bin (needs an action menu; M7)
 - [x] Filters: `f ` files only, `d ` folders only, `ext:pdf` (plus any Everything syntax when it's running)
 - [x] Query-sequence handling so stale results never flash (UI) and stale searches skip (worker)
 - [x] Windows CI installs Everything and runs a real search test
@@ -119,8 +119,8 @@ Check on a real Windows machine:
 - [x] Apply settings live (index folders and exclusions offer a restart instead)
 - [x] Hotkey recorder control
 - [x] Default provider and ChatGPT billing in the menu (with M5)
-- [ ] API keys stored in Credential Manager
-- [ ] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs
+- [x] API keys stored in Credential Manager
+- [x] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs
 - [x] Status lines in settings: Claude Code sign-in, index count or Everything, Windows key hook
 - [x] Codex health (with M5)
 - [x] Settings file in a synced folder (OneDrive) option
@@ -128,10 +128,10 @@ Check on a real Windows machine:
 ## M7 Polish & reliability
 - [x] Conversation history (SQLite) + `>history` to reopen
 - [x] Copy last answer, paste answer into the previous app
-- [ ] Error toasts with "open log"
+- [x] Error toasts with "open log"
 - [x] Auto-update from GitHub Releases (Tauri updater; needs the signing key set up once, D-033)
-- [ ] Multi-monitor and DPI-change handling
-- [ ] Perf pass against budgets; idle memory check
+- [x] Multi-monitor and DPI-change handling
+- [x] Perf pass against budgets; idle memory check
 - [x] LaTeX math in answers (KaTeX, bundled; prices stay text)
 
 ## M8 Later horizon

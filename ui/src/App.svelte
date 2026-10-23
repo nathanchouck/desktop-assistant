@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import SearchBar from "./components/SearchBar.svelte";
   import ResultList from "./components/ResultList.svelte";
+  import ActionMenu from "./components/ActionMenu.svelte";
   import ChatPane from "./components/ChatPane.svelte";
   import ComposePane from "./components/ComposePane.svelte";
   import SettingsPane from "./components/SettingsPane.svelte";
@@ -11,8 +12,10 @@
   import { composedQuestion, DEFAULT_QUESTION } from "./lib/compose";
   import { indexNotice } from "./lib/display";
   import { chatHints, chatIntentFor, composeHints, composeIntentFor, intentFor, searchHints } from "./lib/keys";
+  import { ActionMenuStore } from "./lib/stores/actionMenu.svelte";
   import { ChatStore } from "./lib/stores/chat.svelte";
   import { ComposeStore } from "./lib/stores/compose.svelte";
+  import { launcher } from "./lib/stores/launcher.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
   import { SettingsStore } from "./lib/stores/settings.svelte";
   import { ToastStore } from "./lib/stores/toast.svelte";
@@ -39,6 +42,8 @@
     defaultProvider,
   });
   const toasts = new ToastStore();
+  /** Ctrl+K: the selected result's actions. */
+  const menu = new ActionMenuStore();
   /** Shows why copying or pasting an answer failed. */
   const showError = (message: string | null) => {
     if (message) toasts.show({ level: "error", message });
@@ -97,6 +102,11 @@
   const hints = $derived(
     settingsOpen
       ? ([["Esc", "Close"]] as [string, string][])
+      : menu.open
+        ? ([
+            ["↵", "Run"],
+            ["Esc", "Back"],
+          ] as [string, string][])
       : chat.active
         ? chatHints({
             running: chat.transcript.running,
@@ -144,6 +154,9 @@
         break;
       case "settings":
         void openSettings();
+        break;
+      case "menu":
+        if (search.current) menu.show(search.current);
         break;
       case "escape":
         // First Esc clears the query; the next one hides the launcher.
@@ -200,6 +213,23 @@
     if (res.status === "error") showError(res.error.message);
   }
 
+  /** Runs the action menu's entry `index` on the row it was opened for. */
+  function chooseAction(index: number) {
+    const item = menu.item;
+    const action = menu.choose(index);
+    bar?.focus();
+    if (!item || !action) return;
+    // Late results may have moved the row since the menu opened.
+    const row = search.items.findIndex((i) => i.id === item.id);
+    if (row >= 0) void search.activate(row, [action]);
+  }
+
+  function closeMenu() {
+    if (!menu.open) return;
+    menu.close();
+    bar?.focus();
+  }
+
   function onChatKey(e: KeyboardEvent) {
     // Backspace in an empty box drops the last attachment.
     if (compose.active && composeIntentFor(e, !chat.draft)?.type === "remove_last") {
@@ -243,7 +273,14 @@
     }
   }
 
+  function onHidden() {
+    launcher.visible = false;
+    toasts.hidden();
+  }
+
   function onShown() {
+    launcher.visible = true;
+    toasts.shown();
     const idle = Date.now() - hiddenAt > CHAT_RESET_MS;
     if (chat.active && idle && !chat.transcript.running && !chat.pending) void chat.close();
     if (idle) compose.clear();
@@ -267,8 +304,11 @@
 
     const onBlur = () => (hiddenAt = Date.now());
     window.addEventListener("blur", onBlur);
+    // Release builds start hidden in the tray; toasts wait for the first open.
+    if (!document.hasFocus()) onHidden();
     const unlisten = [
       events.launcherShown.listen(onShown),
+      events.launcherHidden.listen(onHidden),
       events.aiStream.listen((e) => chat.onEvent(e.payload)),
       events.fileIndexChanged.listen((e) => (indexStatus = e.payload.status)),
       events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
@@ -285,6 +325,10 @@
       }),
     ];
     void commands.fileIndexStatus().then((s) => (indexStatus = s));
+    // Problems from before the UI listened (startup), oldest first.
+    void commands.toastRecent().then((recent) => {
+      for (const { toast, age_ms } of recent) toasts.show(toast, Date.now() - age_ms);
+    });
     // Which AI is the default (for Tab, Shift+Tab and the chat footer).
     void settings.load();
 
@@ -331,12 +375,17 @@
       {:else if composing}
         <ComposePane attachments={compose.attachments} ai={PROVIDER_NAMES[composeAi]} />
       {:else}
-        <ResultList
-          items={search.items}
-          selected={search.selected}
-          onselect={(i) => (search.selected = i)}
-          onactivate={(i) => search.activate(i)}
-        />
+        <div class="results">
+          <ResultList
+            items={search.items}
+            selected={search.selected}
+            onselect={(i) => (search.selected = i)}
+            onactivate={(i) => search.activate(i)}
+          />
+          {#if menu.open}
+            <ActionMenu {menu} onchoose={chooseAction} onclose={closeMenu} />
+          {/if}
+        </div>
       {/if}
       <Footer {notice} {hints} toast={toasts.current} ondismiss={() => toasts.dismiss()} />
     {/if}
@@ -357,6 +406,9 @@
   .content {
     display: flex;
     flex-direction: column;
+  }
+  .results {
+    position: relative;
   }
   .settings-head {
     display: flex;

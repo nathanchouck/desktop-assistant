@@ -69,10 +69,10 @@ fn open(paths: &AppPaths, settings: &SharedSettings) -> Option<Arc<ChatHistory>>
         .get_or_init(|| {
             let store = store::ConversationStore::open(&paths.data_dir.join("history.db"))
                 .or_else(|e| {
-                    tracing::error!("{e}; chats won't be saved this session");
+                    crate::toast::report(format!("Chats won't be saved this session: {e}"));
                     store::ConversationStore::in_memory()
                 })
-                .map_err(|e| tracing::error!("chat history is off: {e}"))
+                .map_err(|e| crate::toast::report(format!("Chat history is off: {e}")))
                 .ok()?;
             Some(ChatHistory::new(store, Arc::clone(settings)))
         })

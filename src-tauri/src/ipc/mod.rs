@@ -499,6 +499,7 @@ pub fn builder() -> Builder<Wry> {
             crate::settings::commands::settings_local_open,
             // [google]
             // [polish]
+            crate::toast::toast_recent,
         ])
         .events(collect_events![
             LauncherShown,
@@ -520,6 +521,7 @@ pub fn builder() -> Builder<Wry> {
             crate::settings::live::SettingsChanged,
             // [google]
             // [polish]
+            crate::window::LauncherHidden,
         ])
 }
 

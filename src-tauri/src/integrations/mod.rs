@@ -45,7 +45,7 @@ pub fn claude_config_file(
     match mcp_config::write_claude_config(dir, launcher, servers) {
         Ok(path) => path,
         Err(e) => {
-            tracing::warn!("could not update Claude's MCP config: {e}");
+            crate::toast::report(format!("Couldn't update Claude's MCP server list: {e}"));
             // An older file still beats none.
             Some(dir.join(mcp_config::CLAUDE_CONFIG_FILE)).filter(|p| p.is_file())
         }

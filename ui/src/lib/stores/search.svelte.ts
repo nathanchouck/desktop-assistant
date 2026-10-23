@@ -8,6 +8,7 @@ import {
   type ResultItem,
   type SearchUpdated,
 } from "../bindings";
+import { confirmQuestion } from "../actions";
 import { forcedProvider, otherProvider } from "../chat";
 import { LatestOnly } from "../latest";
 
@@ -49,8 +50,8 @@ export class SearchStore {
 
   #latest = new LatestOnly();
   #hooks: Required<SearchHooks>;
-  /** A command waiting for Enter again (see `ResultItem.confirm`). */
-  #armed: { id: string; until: number } | null = null;
+  /** An action waiting for Enter again (see `confirmQuestion`). */
+  #armed: { id: string; action: Action; until: number } | null = null;
 
   constructor(hooks: SearchHooks) {
     this.#hooks = {
@@ -143,21 +144,28 @@ export class SearchStore {
 
   /**
    * Runs an action on row `index`: the first of `actions` the row offers,
-   * or its default action. A row with `confirm` asks first.
+   * or its default action. A risky action asks first; Enter (or its own
+   * key) again within `CONFIRM_MS` runs it.
    */
   async activate(index = this.selected, actions?: Action[]): Promise<void> {
     const item = this.items[index];
     if (!item) return;
     if (item.kind === "ask_ai") return this.ask();
-    const chosen = actions ? actions.find((a) => item.actions.includes(a)) : item.actions[0];
+    const armed = this.#takeArmed(item.id);
+    // Enter confirms whatever is waiting, even if it isn't the default.
+    const chosen = actions
+      ? actions.find((a) => item.actions.includes(a))
+      : (armed ?? item.actions[0]);
     if (!chosen) {
       this.notice = `That doesn't apply to ${item.title}.`;
       return;
     }
-    if (item.confirm && chosen === item.actions[0] && !this.#confirmed(item.id)) {
+    const question = confirmQuestion(item, chosen);
+    if (question && armed !== chosen) {
       this.selected = index;
-      this.#armed = { id: item.id, until: Date.now() + CONFIRM_MS };
-      this.notice = `${item.confirm} Press Enter again to confirm.`;
+      this.#armed = { id: item.id, action: chosen, until: Date.now() + CONFIRM_MS };
+      const again = chosen === item.actions[0] ? "Press Enter again" : "Press Enter";
+      this.notice = `${question} ${again} to confirm.`;
       return;
     }
     // Most actions are instant; a script that copies its output can take
@@ -169,11 +177,11 @@ export class SearchStore {
     const res = await commands.itemActivate(item.id, chosen);
     clearTimeout(slow);
     if (res.status === "error") this.notice = res.error.message;
-    else this.#follow(res.data);
+    else this.#follow(res.data, item.id);
   }
 
-  /** Does what's left after Rust ran the action. */
-  #follow(activation: Activation): void {
+  /** Does what's left after Rust ran the action on row `id`. */
+  #follow(activation: Activation, id: string): void {
     switch (activation.type) {
       case "hide":
       case "copy":
@@ -194,6 +202,10 @@ export class SearchStore {
       case "refresh":
         void this.setQuery(this.query, true);
         break;
+      case "removed":
+        this.#remove(id);
+        this.notice = activation.message;
+        break;
       case "open_settings":
         this.clear();
         this.#hooks.onSettings();
@@ -209,11 +221,21 @@ export class SearchStore {
     }
   }
 
-  /** Whether `id` was armed and Enter came again in time. */
-  #confirmed(id: string): boolean {
+  /** The action armed on row `id`, if it's still waiting; disarms. */
+  #takeArmed(id: string): Action | null {
     const armed = this.#armed;
     this.#armed = null;
-    return armed !== null && armed.id === id && Date.now() <= armed.until;
+    return armed !== null && armed.id === id && Date.now() <= armed.until ? armed.action : null;
+  }
+
+  /** Takes row `id` out of the list, keeping the highlight in place. */
+  #remove(id: string): void {
+    const at = this.items.findIndex((item) => item.id === id);
+    if (at < 0) return;
+    this.items = this.items.filter((_, i) => i !== at);
+    if (this.selected > at || this.selected >= this.items.length) {
+      this.selected = Math.max(0, this.selected - 1);
+    }
   }
 
   #disarm(): void {

@@ -1,14 +1,17 @@
 //! The launcher window: created hidden at startup and never destroyed, so
 //! showing it is just position + show + focus.
 
+mod idle;
+mod placement;
 pub mod tray;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow, Window, WindowEvent,
+    AppHandle, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewWindow, Window, WindowEvent,
 };
 use tauri_specta::Event;
 
@@ -30,12 +33,27 @@ const REOPEN_GUARD: Duration = Duration::from_millis(250);
 /// Opening the launcher re-reads the app list if it's older than this, to
 /// catch Store installs (which don't touch the watched Start Menu folders).
 const APPS_MAX_AGE: Duration = Duration::from_secs(30 * 60);
+/// After the window's scale changes, it's fitted again this much later,
+/// once Windows and tao are done moving and resizing it.
+const REFIT_DELAY: Duration = Duration::from_millis(50);
+
+/// Whether the launcher is on screen, for background work that only
+/// matters while it is (see `is_shown`).
+static SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Whether the launcher is on screen. Background work that only feeds
+/// what it shows (the media watcher) rests while it's hidden.
+pub fn is_shown() -> bool {
+    SHOWN.load(Ordering::Relaxed)
+}
 
 /// Window facts other modules need.
 pub struct LauncherState {
     height: AtomicU32,
     glass: AtomicBool,
     last_hidden: Mutex<Option<Instant>>,
+    /// Hidden long enough to give memory back (see `idle`).
+    idle: idle::Idle,
 }
 
 impl Default for LauncherState {
@@ -44,6 +62,7 @@ impl Default for LauncherState {
             height: AtomicU32::new(DEFAULT_HEIGHT),
             glass: AtomicBool::new(false),
             last_hidden: Mutex::new(None),
+            idle: idle::Idle::default(),
         }
     }
 }
@@ -112,6 +131,9 @@ pub fn show(app: &AppHandle, started: Instant) {
         state.apps.refresh_if_stale(APPS_MAX_AGE);
         crate::check_ai_status(app, false);
     }
+    if let Some(state) = &state {
+        idle::on_show(&window, &state.launcher.idle);
+    }
     if let Err(e) = place_on_cursor_monitor(app, &window, height) {
         tracing::debug!("could not position launcher: {e}");
     }
@@ -119,6 +141,7 @@ pub fn show(app: &AppHandle, started: Instant) {
         tracing::warn!("could not show launcher: {e}");
         return;
     }
+    SHOWN.store(true, Ordering::Relaxed);
     if let Err(e) = LauncherShown.emit(app) {
         tracing::debug!("could not notify UI of show: {e}");
     }
@@ -137,12 +160,23 @@ pub fn hide(app: &AppHandle) {
         tracing::warn!("could not hide launcher: {e}");
         return;
     }
+    SHOWN.store(false, Ordering::Relaxed);
     if let Some(state) = app.try_state::<AppState>() {
         state.launcher.mark_hidden();
+        idle::on_hide(app, &state.launcher.idle);
+    }
+    if let Err(e) = LauncherHidden.emit(app) {
+        tracing::debug!("could not notify UI of hide: {e}");
     }
 }
 
-/// Resizes to `height` logical pixels (clamped), keeping the top edge fixed.
+/// Sent each time the launcher hides, so the UI can hold toasts for the
+/// next open and stop anything that only matters while it's on screen.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+pub struct LauncherHidden;
+
+/// Resizes to `height` logical pixels (clamped), keeping the top edge
+/// fixed unless the bottom would leave the screen (see `placement`).
 pub fn set_height(app: &AppHandle, height: u32) {
     tracing::debug!("launcher height requested: {height}");
     let height = height.clamp(MIN_HEIGHT, MAX_HEIGHT);
@@ -150,10 +184,82 @@ pub fn set_height(app: &AppHandle, height: u32) {
         state.launcher.height.store(height, Ordering::Relaxed);
     }
     if let Some(window) = launcher(app) {
-        if let Err(e) = window.set_size(LogicalSize::new(WIDTH, f64::from(height))) {
+        if let Err(e) = fit_on_current_monitor(&window, height) {
             tracing::warn!("could not resize launcher: {e}");
         }
     }
+}
+
+/// Fits the window to its own monitor again at `height`: centered, at its
+/// usual top edge or higher if needed. Moves only when the top edge has
+/// to change, and in the order that never pokes past the work area.
+fn fit_on_current_monitor(window: &WebviewWindow, height: u32) -> tauri::Result<()> {
+    let size = LogicalSize::new(WIDTH, f64::from(height));
+    let Some(monitor) = window.current_monitor()? else {
+        return window.set_size(size);
+    };
+    let frame = frame_on(&monitor, height);
+    let target = PhysicalPosition::new(frame.x, frame.y);
+    let now = window.outer_position()?;
+    let size = logical_size(&frame, monitor.scale_factor());
+    if now == target {
+        window.set_size(size)
+    } else if target.y < now.y {
+        // Growing near the bottom: up first, then taller.
+        window.set_position(target)?;
+        window.set_size(size)
+    } else {
+        window.set_size(size)?;
+        window.set_position(target)
+    }
+}
+
+/// The window's frame on `monitor` at `height` logical pixels.
+fn frame_on(monitor: &Monitor, height: u32) -> placement::Rect {
+    let area = monitor.work_area();
+    placement::frame(
+        placement::Rect {
+            x: area.position.x,
+            y: area.position.y,
+            width: area.size.width,
+            height: area.size.height,
+        },
+        monitor.scale_factor(),
+        (WIDTH, f64::from(height)),
+        TOP_FRACTION,
+    )
+}
+
+/// `frame`'s size in logical pixels. Sizes are set logically on purpose:
+/// tao converts with the scale it knows for the window, which is the new
+/// one if Windows already said the scale changed, and otherwise gets
+/// rescaled when it does. A physical size would be scaled twice then.
+fn logical_size(frame: &placement::Rect, scale: f64) -> LogicalSize<f64> {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    LogicalSize::new(
+        f64::from(frame.width) / scale,
+        f64::from(frame.height) / scale,
+    )
+}
+
+/// After a scale change (the window moved to a monitor with another
+/// scale, or the display settings changed): fit it again once things
+/// settle, if it's showing. A hidden one is placed afresh when it opens.
+fn refit_soon(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(REFIT_DELAY).await;
+        let Some(window) = launcher(&app) else { return };
+        if !window.is_visible().unwrap_or(false) {
+            return;
+        }
+        let height = app
+            .try_state::<AppState>()
+            .map_or(DEFAULT_HEIGHT, |s| s.launcher.height());
+        if let Err(e) = fit_on_current_monitor(&window, height) {
+            tracing::debug!("could not fit the launcher after a scale change: {e}");
+        }
+    });
 }
 
 /// Turns on the Acrylic blur behind the window (Windows 10 1809+ / 11).
@@ -194,6 +300,10 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
             api.prevent_close();
             hide(window.app_handle());
         }
+        WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            tracing::info!("launcher scale is now {:.0}%", scale_factor * 100.0);
+            refit_soon(window.app_handle());
+        }
         _ => {}
     }
 }
@@ -216,26 +326,17 @@ fn place_on_cursor_monitor(
             None => return Ok(()),
         },
     };
-    let area = monitor.work_area();
-    let (x, y) = placement(
-        (area.position.x, area.position.y),
-        (area.size.width, area.size.height),
-        monitor.scale_factor(),
-    );
-    window.set_position(PhysicalPosition::new(x, y))?;
-    // Re-apply the logical size: moving to a monitor with a different scale
-    // factor would otherwise leave the physical size from the old one.
-    window.set_size(LogicalSize::new(WIDTH, f64::from(height)))?;
+    let frame = frame_on(&monitor, height);
+    let target = PhysicalPosition::new(frame.x, frame.y);
+    // The window is hidden here, so the extra moves don't show. Moving to a
+    // monitor with another scale makes Windows rescale (and may shift) the
+    // window during the first move; the size is then set for the new
+    // monitor and the position set again. If Windows only tells the window
+    // later (when it shows), `refit_soon` fixes it up.
+    window.set_position(target)?;
+    window.set_size(logical_size(&frame, monitor.scale_factor()))?;
+    window.set_position(target)?;
     Ok(())
-}
-
-/// Top-left corner in physical pixels: centered horizontally in the work
-/// area, `TOP_FRACTION` of the way down.
-fn placement(area_pos: (i32, i32), area_size: (u32, u32), scale: f64) -> (i32, i32) {
-    let width = (WIDTH * scale).round() as i64;
-    let x = i64::from(area_pos.0) + (i64::from(area_size.0) - width) / 2;
-    let y = i64::from(area_pos.1) + (f64::from(area_size.1) * TOP_FRACTION).round() as i64;
-    (x as i32, y as i32)
 }
 
 #[cfg(test)]
@@ -252,19 +353,14 @@ mod tests {
     }
 
     #[test]
-    fn centers_on_primary_1080p() {
-        assert_eq!(placement((0, 0), (1920, 1040), 1.0), (600, 229));
-    }
-
-    #[test]
-    fn accounts_for_scale() {
-        // 4K at 150%: the window is 1080 physical pixels wide.
-        assert_eq!(placement((0, 0), (3840, 2100), 1.5), (1380, 462));
-    }
-
-    #[test]
-    fn respects_monitor_offset() {
-        // A second monitor to the left of the primary.
-        assert_eq!(placement((-1920, 0), (1920, 1080), 1.0), (-1320, 238));
+    fn logical_size_undoes_the_scale() {
+        let frame = placement::Rect {
+            x: 0,
+            y: 0,
+            width: 1080,
+            height: 96,
+        };
+        assert_eq!(logical_size(&frame, 1.5), LogicalSize::new(720.0, 64.0));
+        assert_eq!(logical_size(&frame, 0.0), LogicalSize::new(1080.0, 96.0));
     }
 }

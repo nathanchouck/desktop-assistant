@@ -62,6 +62,7 @@ pub fn use_settings(app: &AppHandle, old: &Settings, new: Settings) {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *current = new;
     }
+    super::announce_change();
     if mcp_changed {
         crate::integrations::refresh_claude_config(&app.state::<AppState>());
     }

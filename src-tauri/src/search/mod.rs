@@ -4,6 +4,8 @@ pub mod apps;
 pub mod commands;
 pub mod files;
 pub mod item;
+#[cfg(test)]
+mod latency_tests;
 pub mod rank;
 
 use std::sync::Arc;
@@ -76,6 +78,10 @@ pub enum Activation {
     /// Stay open and run the same search again (the result changed, e.g.
     /// it was pinned or deleted).
     Refresh,
+    /// Stay open, take the row away and show this in the footer: the
+    /// thing is gone, though the search may not know it yet (a file moved
+    /// to the Recycle Bin, before the index notices).
+    Removed { message: String },
     /// Show the settings menu.
     OpenSettings,
     /// Show this saved conversation in the chat view; it's already the
@@ -185,35 +191,49 @@ impl Aggregator {
         } else {
             claimed
         };
-        let runs: Vec<(&'static str, JoinHandle<Vec<ResultItem>>)> = providers
+        let started = Instant::now();
+        let runs: Vec<Run> = providers
             .into_iter()
             .map(|p| {
                 let name = p.name();
                 let p = Arc::clone(p);
                 let q = query.clone();
                 let run = tokio::spawn(async move {
-                    p.query(&q, pool).await.unwrap_or_else(|e| {
+                    let started = Instant::now();
+                    let items = p.query(&q, pool).await.unwrap_or_else(|e| {
                         tracing::warn!("{e}");
                         Vec::new()
-                    })
+                    });
+                    (items, started.elapsed())
                 });
                 (name, run)
             })
             .collect();
 
-        let deadline = Instant::now() + self.budget;
-        let (found, pending) = collect_until(runs, deadline).await;
+        let deadline = started + self.budget;
+        let (found, timings, pending) = collect_until(runs, deadline).await;
         let items = finish(found.clone(), &query, limit, ai, &*frecency);
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            let late: Vec<&str> = pending.iter().map(|(name, _)| *name).collect();
+            tracing::debug!(
+                "search: {}",
+                describe_timings(started.elapsed(), &timings, &late)
+            );
+        }
         let complete = if pending.is_empty() {
             None
         } else {
-            for (name, _) in &pending {
-                tracing::debug!("{name} missed the {:?} budget; results follow", self.budget);
-            }
             let late_limit = self.late_limit;
             Some(
                 async move {
-                    let (late, gave_up) = collect_until(pending, Instant::now() + late_limit).await;
+                    let (late, timings, gave_up) =
+                        collect_until(pending, Instant::now() + late_limit).await;
+                    if tracing::enabled!(tracing::Level::DEBUG) {
+                        tracing::debug!(
+                            "late results: {}",
+                            describe_timings(started.elapsed(), &timings, &[])
+                        );
+                    }
                     for (name, run) in gave_up {
                         tracing::warn!("{name} took over {late_limit:?}; giving up");
                         run.abort();
@@ -229,21 +249,53 @@ impl Aggregator {
     }
 }
 
-type Run = (&'static str, JoinHandle<Vec<ResultItem>>);
+/// A provider's search: its results and how long it took.
+type Run = (&'static str, JoinHandle<(Vec<ResultItem>, Duration)>);
+/// How long each provider that answered took.
+type Timings = Vec<(&'static str, Duration)>;
 
-/// Waits for each run until `deadline`: returns the results that came in and
-/// the runs still going.
-async fn collect_until(runs: Vec<Run>, deadline: Instant) -> (Vec<ResultItem>, Vec<Run>) {
+/// Waits for each run until `deadline`: returns the results that came in,
+/// how long each took, and the runs still going.
+async fn collect_until(runs: Vec<Run>, deadline: Instant) -> (Vec<ResultItem>, Timings, Vec<Run>) {
     let mut found = Vec::new();
+    let mut timings = Vec::new();
     let mut pending = Vec::new();
     for (name, mut run) in runs {
         match tokio::time::timeout_at(deadline, &mut run).await {
-            Ok(Ok(items)) => found.extend(items),
+            Ok(Ok((items, took))) => {
+                found.extend(items);
+                timings.push((name, took));
+            }
             Ok(Err(e)) => tracing::warn!("{name} search task failed: {e}"),
             Err(_) => pending.push((name, run)),
         }
     }
-    (found, pending)
+    (found, timings, pending)
+}
+
+/// One log line for a search: the total, then the providers slowest
+/// first ("4.2 ms: files 3.1, apps 0.6, calc 0.2 (+9 under 0.1 ms); still
+/// running: index"). Queries are never logged.
+fn describe_timings(total: Duration, timings: &[(&str, Duration)], running: &[&str]) -> String {
+    let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+    let mut sorted: Vec<&(&str, Duration)> = timings.iter().collect();
+    sorted.sort_by_key(|(_, took)| std::cmp::Reverse(*took));
+    let (shown, quick): (Vec<_>, Vec<_>) = sorted.into_iter().partition(|(_, d)| ms(*d) >= 0.1);
+    let mut line = format!("{:.1} ms", ms(total));
+    if !shown.is_empty() {
+        let parts: Vec<String> = shown
+            .iter()
+            .map(|(name, d)| format!("{name} {:.1}", ms(*d)))
+            .collect();
+        line.push_str(&format!(": {}", parts.join(", ")));
+    }
+    if !quick.is_empty() {
+        line.push_str(&format!(" (+{} under 0.1 ms)", quick.len()));
+    }
+    if !running.is_empty() {
+        line.push_str(&format!("; still running: {}", running.join(", ")));
+    }
+    line
 }
 
 /// Ranks, trims to `limit`, and adds the "Ask" row.
@@ -376,6 +428,26 @@ mod tests {
 
     fn ids(items: &[ResultItem]) -> Vec<&str> {
         items.iter().map(|i| i.id.as_str()).collect()
+    }
+
+    #[test]
+    fn timings_read_slowest_first() {
+        let ms = Duration::from_micros;
+        let line = describe_timings(
+            ms(4_200),
+            &[
+                ("apps", ms(600)),
+                ("files", ms(3_100)),
+                ("calc", ms(20)),
+                ("emoji", ms(5)),
+            ],
+            &["index"],
+        );
+        assert_eq!(
+            line,
+            "4.2 ms: files 3.1, apps 0.6 (+2 under 0.1 ms); still running: index"
+        );
+        assert_eq!(describe_timings(ms(50), &[], &[]), "0.1 ms");
     }
 
     #[tokio::test]

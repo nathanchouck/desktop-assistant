@@ -46,7 +46,10 @@
     input.select();
   }
 
-  /** Puts the caret back in the box (after a click elsewhere in the bar). */
+  /**
+   * Back from a popup (the action menu), or after a click elsewhere in the
+   * bar: carry on typing where you were.
+   */
   export function focus(): void {
     input.focus();
   }

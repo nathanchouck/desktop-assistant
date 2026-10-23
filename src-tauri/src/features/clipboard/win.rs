@@ -92,12 +92,12 @@ pub fn start(history: Arc<History>, settings: SharedSettings) {
                 let options = settings::current(&recorder_settings).clipboard;
                 // Errors never carry the copied content, so they're safe to log.
                 if let Err(e) = recorder::record(&history, capture, &options, now_ms()) {
-                    tracing::warn!("could not keep a copy: {e}");
+                    crate::toast::report(format!("Clipboard history couldn't keep a copy: {e}"));
                 }
             }
         });
     if let Err(e) = recorder {
-        tracing::warn!("clipboard history is off: {e}");
+        crate::toast::report(format!("Clipboard history is off: {e}"));
         return;
     }
     let listener = Listener { captures, settings };
@@ -105,7 +105,7 @@ pub fn start(history: Arc<History>, settings: SharedSettings) {
         .name("clipboard-listener".into())
         .spawn(move || run(listener))
     {
-        tracing::warn!("clipboard history is off: {e}");
+        crate::toast::report(format!("Clipboard history is off: {e}"));
     }
 }
 
@@ -129,7 +129,7 @@ fn run(listener: Listener) {
     match create_window() {
         Ok(_) => tracing::info!("clipboard history is listening"),
         Err(e) => {
-            tracing::warn!("clipboard history is off: {e}");
+            crate::toast::report(format!("Clipboard history is off: {e}"));
             return;
         }
     }

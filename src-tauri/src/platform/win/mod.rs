@@ -4,6 +4,7 @@ mod apps;
 mod capture;
 pub mod desktop;
 pub mod everything;
+pub mod file_ops;
 mod icon;
 pub mod input;
 mod launch;

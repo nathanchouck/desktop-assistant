@@ -69,7 +69,9 @@ pub struct AppState {
 impl AppState {
     pub fn new(paths: AppPaths, settings: Settings) -> Self {
         let store = Store::open(&paths.database_file()).unwrap_or_else(|e| {
-            tracing::error!("{e}; history won't be saved this session");
+            crate::toast::report(format!(
+                "What you open won't count toward ranking this session: {e}"
+            ));
             Store::in_memory()
         });
         let shell = Arc::new(Shell::new());
