@@ -165,7 +165,9 @@ mod tests {
         .unwrap();
         let attached = [Attachment::Text { text: "teh".into() }, saved];
         let message = message(dir.path(), "fix", &attached, None).await.unwrap();
-        assert!(message.text.starts_with("<selected_text>\nteh\n</selected_text>"));
+        assert!(message
+            .text
+            .starts_with("<selected_text>\nteh\n</selected_text>"));
         assert!(message.text.ends_with("\n\nfix"));
         assert_eq!(message.images.len(), 1);
         assert!(message.images[0].png.starts_with(b"\x89PNG"));
@@ -181,7 +183,9 @@ mod tests {
             width: 1,
             height: 1,
         };
-        assert!(message_err(dir.path(), sneaky).await.contains("isn't one of ours"));
+        assert!(message_err(dir.path(), sneaky)
+            .await
+            .contains("isn't one of ours"));
     }
 
     async fn message_err(dir: &Path, attachment: Attachment) -> String {

@@ -130,8 +130,7 @@ mod tests {
     #[test]
     fn default_shortcut_parses_and_differs_from_the_launchers() {
         let ours = shortcut::parse(&AiCommandSettings::default().selection_shortcut).unwrap();
-        let toggle =
-            shortcut::parse(&crate::settings::HotkeySettings::default().toggle).unwrap();
+        let toggle = shortcut::parse(&crate::settings::HotkeySettings::default().toggle).unwrap();
         assert_ne!(ours, toggle);
         assert_eq!(ours, shortcut::parse("ctrl+shift+space").unwrap());
     }

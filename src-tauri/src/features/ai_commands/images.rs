@@ -60,7 +60,8 @@ pub fn save(image: Image, dir: &Path, thumbs: &Path) -> Result<Attachment, Strin
     let id = new_id();
     let image = fit_within(image, MAX_SIDE);
     let png = encode_png(&image).map_err(|e| e.to_string())?;
-    let preview = encode_png(&fit_within(image.clone(), PREVIEW_SIDE)).map_err(|e| e.to_string())?;
+    let preview =
+        encode_png(&fit_within(image.clone(), PREVIEW_SIDE)).map_err(|e| e.to_string())?;
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     fs::create_dir_all(thumbs).map_err(|e| e.to_string())?;
     fs::write(dir.join(format!("{id}.png")), png).map_err(|e| e.to_string())?;
@@ -80,9 +81,7 @@ pub fn from_clipboard(captured: &Captured) -> Option<Image> {
         Captured::Png(bytes) => decode_png(bytes).ok(),
         Captured::Dib(bytes) => decode_dib(bytes).ok(),
         Captured::Files(paths) => match paths.as_slice() {
-            [one] if one.to_lowercase().ends_with(".png") => {
-                decode_png(&fs::read(one).ok()?).ok()
-            }
+            [one] if one.to_lowercase().ends_with(".png") => decode_png(&fs::read(one).ok()?).ok(),
             _ => None,
         },
         Captured::Text(_) => None,
@@ -144,7 +143,10 @@ mod tests {
         assert!(!valid_id("ABC"));
         assert!(!valid_id(&"a".repeat(33)));
         assert_eq!(path(Path::new("/d"), "..\\x"), None);
-        assert_eq!(path(Path::new("/d"), "1f"), Some(Path::new("/d").join("1f.png")));
+        assert_eq!(
+            path(Path::new("/d"), "1f"),
+            Some(Path::new("/d").join("1f.png"))
+        );
     }
 
     #[test]
@@ -183,7 +185,10 @@ mod tests {
     #[test]
     fn reads_pictures_from_the_clipboard() {
         let png = encode_png(&picture(2, 3)).unwrap();
-        assert_eq!(from_clipboard(&Captured::Png(png.clone())).map(|i| i.height), Some(3));
+        assert_eq!(
+            from_clipboard(&Captured::Png(png.clone())).map(|i| i.height),
+            Some(3)
+        );
         assert_eq!(from_clipboard(&Captured::Text("x".into())), None);
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("Screenshot.PNG");

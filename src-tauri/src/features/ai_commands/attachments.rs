@@ -52,7 +52,10 @@ fn block(attachment: &Attachment) -> String {
             };
             format!("<selected_text>\n{text}{note}\n</selected_text>")
         }
-        Attachment::Path { path, folder: false } => {
+        Attachment::Path {
+            path,
+            folder: false,
+        } => {
             format!("<attached_file>{path}</attached_file>")
         }
         Attachment::Path { path, folder: true } => {

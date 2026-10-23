@@ -206,7 +206,11 @@ pub fn typing_prompt(command: &AiCommand) -> String {
 }
 
 fn preview(text: &str) -> String {
-    let line = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
     if line.chars().count() <= PREVIEW_CHARS {
         return line.to_owned();
     }
@@ -220,11 +224,15 @@ fn row(command: &AiCommand, default: ProviderId, score: f32, text: Option<&str>)
         Some(text) => format!("Ask {ai} · “{}”", preview(text)),
         None => format!("Ask {ai} · {}", preview(&command.prompt)),
     };
-    let item = ResultItem::new(command_id(&command.name, text), ItemKind::Command, &command.name)
-        .with_subtitle(subtitle)
-        .with_icon(icon(command, default))
-        .with_score(score)
-        .with_actions([Action::AskAi]);
+    let item = ResultItem::new(
+        command_id(&command.name, text),
+        ItemKind::Command,
+        &command.name,
+    )
+    .with_subtitle(subtitle)
+    .with_icon(icon(command, default))
+    .with_score(score)
+    .with_actions([Action::AskAi]);
     if text.is_none() && template::requires_text(&command.prompt) {
         item.with_accessory("‹text›")
     } else {
@@ -335,13 +343,19 @@ mod tests {
         assert!(found[0].subtitle.starts_with("Ask Claude · What's on my"));
         let found = rows(&all, "summ", ProviderId::Chatgpt);
         assert_eq!(ids(&found)[0], "ai-cmd:Summarize Clipboard");
-        assert_eq!(found[0].subtitle, "Ask ChatGPT · Summarize this in a few short bullet points:");
+        assert_eq!(
+            found[0].subtitle,
+            "Ask ChatGPT · Summarize this in a few short bullet points:"
+        );
         assert_eq!(found[0].icon.as_deref(), Some("glyph:chatgpt"));
         let found = rows(&all, "drive", ProviderId::Claude);
         assert_eq!(found[0].id, "ai-cmd:Search Drive");
         assert_eq!(found[0].accessory.as_deref(), Some("‹text›"));
         assert_eq!(found[0].actions, [Action::AskAi]);
-        assert!(rows(&all, "f", ProviderId::Claude).is_empty(), "one letter is too short");
+        assert!(
+            rows(&all, "f", ProviderId::Claude).is_empty(),
+            "one letter is too short"
+        );
         assert!(rows(&all, "notepad", ProviderId::Claude).is_empty());
     }
 

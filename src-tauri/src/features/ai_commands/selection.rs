@@ -78,7 +78,10 @@ pub async fn grab(shell: &Shell, restore: bool) -> Result<Option<Captured>, Stri
 /// The selection in the window the launcher was opened from: the launcher
 /// hides and that window comes back to the front first. The caller shows
 /// the launcher again.
-pub async fn grab_behind_launcher(app: &AppHandle, restore: bool) -> Result<Option<Captured>, String> {
+pub async fn grab_behind_launcher(
+    app: &AppHandle,
+    restore: bool,
+) -> Result<Option<Captured>, String> {
     let state = app.try_state::<AppState>().ok_or("the app isn't ready")?;
     let target = state
         .desktop
@@ -162,7 +165,12 @@ mod tests {
         assert!(changed);
         assert_eq!(calls.get(), 4);
         let started = Instant::now();
-        assert!(!wait_for_change(7, || 7, Duration::from_millis(30), Duration::from_millis(5)));
+        assert!(!wait_for_change(
+            7,
+            || 7,
+            Duration::from_millis(30),
+            Duration::from_millis(5)
+        ));
         assert!(started.elapsed() >= Duration::from_millis(30));
     }
 
@@ -181,13 +189,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let thumbs = dir.path().join("thumbnails");
         let text = to_attachments(Captured::Text("teh cat".into()), dir.path(), &thumbs).await;
-        assert_eq!(text, [Attachment::Text { text: "teh cat".into() }]);
-        assert!(to_attachments(Captured::Text(" \n".into()), dir.path(), &thumbs)
-            .await
-            .is_empty());
+        assert_eq!(
+            text,
+            [Attachment::Text {
+                text: "teh cat".into()
+            }]
+        );
+        assert!(
+            to_attachments(Captured::Text(" \n".into()), dir.path(), &thumbs)
+                .await
+                .is_empty()
+        );
         let folder = dir.path().display().to_string();
-        let files = to_attachments(Captured::Files(vec![folder.clone()]), dir.path(), &thumbs).await;
-        assert_eq!(files, [Attachment::Path { path: folder, folder: true }]);
+        let files =
+            to_attachments(Captured::Files(vec![folder.clone()]), dir.path(), &thumbs).await;
+        assert_eq!(
+            files,
+            [Attachment::Path {
+                path: folder,
+                folder: true
+            }]
+        );
         let png = crate::icons::encode_png(&crate::platform::Image {
             width: 2,
             height: 2,
@@ -196,11 +218,20 @@ mod tests {
         .unwrap();
         let picture = to_attachments(Captured::Png(png), dir.path(), &thumbs).await;
         assert!(
-            matches!(&picture[..], [Attachment::Image { width: 2, height: 2, .. }]),
+            matches!(
+                &picture[..],
+                [Attachment::Image {
+                    width: 2,
+                    height: 2,
+                    ..
+                }]
+            ),
             "{picture:?}"
         );
-        assert!(to_attachments(Captured::Dib(vec![0; 3]), dir.path(), &thumbs)
-            .await
-            .is_empty());
+        assert!(
+            to_attachments(Captured::Dib(vec![0; 3]), dir.path(), &thumbs)
+                .await
+                .is_empty()
+        );
     }
 }

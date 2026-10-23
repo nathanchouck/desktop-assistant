@@ -132,9 +132,9 @@ pub fn needs(template: &str, typed: bool) -> Needs {
 /// Whether the template can't do without typed text: a placeholder takes
 /// nothing but `{text}` ("Search Drive {text}").
 pub fn requires_text(template: &str) -> bool {
-    pieces(template).into_iter().any(|piece| {
-        matches!(piece, Err(parts) if parts.iter().all(|p| *p == Part::From(Source::Text)))
-    })
+    pieces(template).into_iter().any(
+        |piece| matches!(piece, Err(parts) if parts.iter().all(|p| *p == Part::From(Source::Text))),
+    )
 }
 
 /// Fills in the placeholders, or says which one had nothing to use.
@@ -204,20 +204,32 @@ mod tests {
     fn fills_each_placeholder() {
         let v = values(Some("sel"), Some("clip"), Some("typed"));
         assert_eq!(
-            fill("{selection} {clipboard} {text} {date} {time} {datetime}", &v),
+            fill(
+                "{selection} {clipboard} {text} {date} {time} {datetime}",
+                &v
+            ),
             Ok("sel clip typed 2026-10-23 09:05 2026-10-23 09:05".into())
         );
         // Values are trimmed: a copied line keeps no trailing newline.
         let v = values(None, Some("  line\n"), None);
-        assert_eq!(fill("Explain: {clipboard}.", &v), Ok("Explain: line.".into()));
+        assert_eq!(
+            fill("Explain: {clipboard}.", &v),
+            Ok("Explain: line.".into())
+        );
     }
 
     #[test]
     fn alternatives_take_the_first_non_empty() {
         let typed = values(None, Some("clip"), Some("typed"));
-        assert_eq!(fill("Fix: {text|clipboard}", &typed), Ok("Fix: typed".into()));
+        assert_eq!(
+            fill("Fix: {text|clipboard}", &typed),
+            Ok("Fix: typed".into())
+        );
         let not_typed = values(None, Some("clip"), Some("  "));
-        assert_eq!(fill("Fix: {text | clipboard}", &not_typed), Ok("Fix: clip".into()));
+        assert_eq!(
+            fill("Fix: {text | clipboard}", &not_typed),
+            Ok("Fix: clip".into())
+        );
         let nothing = values(None, Some(""), None);
         assert_eq!(
             fill("Fix: {text|clipboard}", &nothing),

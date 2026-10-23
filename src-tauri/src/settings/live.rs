@@ -108,7 +108,9 @@ fn reloaded(app: &AppHandle, mut new: Settings) {
         if let Err(e) = crate::features::ai_commands::shortcut::change(app, old_grab, new_grab) {
             toast::error(
                 app,
-                format!("Settings changed, but {new_grab} can't be used here, so {old_grab} stays: {e}"),
+                format!(
+                    "Settings changed, but {new_grab} can't be used here, so {old_grab} stays: {e}"
+                ),
             );
             new.ai_commands.selection_shortcut = old_grab.clone();
         }

@@ -31,14 +31,26 @@ const INPUTS: [(&str, &str, &str, &str, &[&str]); 2] = [
         "Ask About Screen Region",
         "Snip part of the screen and ask the AI about it",
         "screenshot",
-        &["screenshot", "snip", "screen capture", "ask screen", "region"],
+        &[
+            "screenshot",
+            "snip",
+            "screen capture",
+            "ask screen",
+            "region",
+        ],
     ),
     (
         DICTATE_ID,
         "Dictate",
         "Windows voice typing in the search box (Win+H)",
         "mic",
-        &["voice typing", "voice input", "speech", "talk", "microphone"],
+        &[
+            "voice typing",
+            "voice input",
+            "speech",
+            "talk",
+            "microphone",
+        ],
     ),
 ];
 
@@ -74,7 +86,8 @@ impl AiCommandProvider {
         };
         let picked = match (needs.selection, app) {
             (true, Some(app)) => {
-                let grabbed = selection::grab_behind_launcher(app, settings.restore_clipboard).await;
+                let grabbed =
+                    selection::grab_behind_launcher(app, settings.restore_clipboard).await;
                 // Back to the launcher, where the answer shows.
                 window::show(app, Instant::now());
                 match grabbed {
@@ -118,7 +131,11 @@ fn missing_activation(command: &AiCommand, Missing(sources): &Missing) -> Activa
         };
     }
     let wants = |s| sources.contains(&s);
-    let message = match (wants(Source::Selection), wants(Source::Clipboard), wants(Source::Text)) {
+    let message = match (
+        wants(Source::Selection),
+        wants(Source::Clipboard),
+        wants(Source::Text),
+    ) {
         (true, true, _) => "Nothing is selected, and the clipboard has no text.",
         (true, false, _) => "Nothing is selected in the window you came from.",
         (false, true, true) => "Type the text after the command's name, or copy some first.",
@@ -268,18 +285,29 @@ mod tests {
         let Activation::Ask { prompt, provider } = activation else {
             panic!("{activation:?}");
         };
-        assert!(prompt.starts_with("Search my Google Drive for: budget 2026\n"), "{prompt}");
+        assert!(
+            prompt.starts_with("Search my Google Drive for: budget 2026\n"),
+            "{prompt}"
+        );
         assert_eq!(provider, Some(crate::ai::ProviderId::Claude));
         // Calendar needs nothing fetched.
-        let activation = p.activate("ai-cmd:Today's Calendar", Action::AskAi).await.unwrap();
-        assert!(matches!(activation, Activation::Ask { .. }), "{activation:?}");
+        let activation = p
+            .activate("ai-cmd:Today's Calendar", Action::AskAi)
+            .await
+            .unwrap();
+        assert!(
+            matches!(activation, Activation::Ask { .. }),
+            "{activation:?}"
+        );
     }
 
     #[tokio::test]
     async fn missing_text_lets_you_type_it() {
         let p = provider();
         assert_eq!(
-            p.activate("ai-cmd:Search Drive", Action::AskAi).await.unwrap(),
+            p.activate("ai-cmd:Search Drive", Action::AskAi)
+                .await
+                .unwrap(),
             Activation::SetQuery {
                 query: "drive ".into()
             }

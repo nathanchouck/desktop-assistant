@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::ai::chat::Setup;
 use crate::ai::claude::ClaudeStatus;
-use crate::ai::message::Message;
 use crate::ai::codex::{self, CodexStatus};
+use crate::ai::message::Message;
 use crate::ai::{claude, AiError, ProviderId};
 use crate::desktop::DesktopContext;
 use crate::error::IpcError;
