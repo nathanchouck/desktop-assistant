@@ -119,8 +119,8 @@ Check on a real Windows machine:
 - [x] Apply settings live (index folders and exclusions offer a restart instead)
 - [x] Hotkey recorder control
 - [x] Default provider and ChatGPT billing in the menu (with M5)
-- [ ] API keys stored in Credential Manager
-- [ ] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs
+- [x] API keys stored in Credential Manager
+- [x] **MCP registry**: add/remove MCP servers once; writes Claude + Codex configs
 - [x] Status lines in settings: Claude Code sign-in, index count or Everything, Windows key hook
 - [x] Codex health (with M5)
 - [x] Settings file in a synced folder (OneDrive) option
