@@ -103,6 +103,26 @@ export const commands = {
 	 *  that couldn't happen.
 	 */
 	updateInstall: () => typedError<null, IpcError>(__TAURI_INVOKE("update_install")),
+	/**
+	 *  Which of `names` are saved on this PC. One that can't be read (a name
+	 *  from a hand-edited settings file that isn't valid) counts as not saved,
+	 *  so the others still show.
+	 */
+	secretStatus: (names: string[]) => typedError<SecretStatus[], IpcError>(__TAURI_INVOKE("secret_status", { names })),
+	/**  Saves an API key in Credential Manager (replacing any saved one). */
+	secretSet: (name: string, value: string) => typedError<SecretStatus, IpcError>(__TAURI_INVOKE("secret_set", { name, value })),
+	/**  Forgets an API key. */
+	secretDelete: (name: string) => typedError<SecretStatus, IpcError>(__TAURI_INVOKE("secret_delete", { name })),
+	/**
+	 *  Adds or changes a server: checks it, saves its secrets in Credential
+	 *  Manager and the rest in the settings. Returns the settings now in use.
+	 */
+	mcpServerSave: (edit: McpServerEdit) => typedError<Settings, IpcError>(__TAURI_INVOKE("mcp_server_save", { edit })),
+	/**
+	 *  Removes a server and forgets its secrets. Returns the settings now in
+	 *  use.
+	 */
+	mcpServerRemove: (name: string) => typedError<Settings, IpcError>(__TAURI_INVOKE("mcp_server_remove", { name })),
 	settingsFolderGet: () => typedError<SettingsFolder, IpcError>(__TAURI_INVOKE("settings_folder_get")),
 	/**  Checks a folder typed in the menu before moving there. */
 	settingsFolderCheck: (folder: string) => typedError<FolderCheck, IpcError>(__TAURI_INVOKE("settings_folder_check", { folder })),
@@ -311,8 +331,9 @@ export type BillingMode =
  */
 "subscription" | 
 /**
- *  Use the API key from the environment (`ANTHROPIC_API_KEY` for
- *  Claude, `OPENAI_API_KEY` for ChatGPT).
+ *  Use the API key saved in the settings menu (Credential Manager),
+ *  else the one in the environment (`ANTHROPIC_API_KEY` for Claude,
+ *  `OPENAI_API_KEY` for ChatGPT).
  */
 "api_key";
 
@@ -338,7 +359,8 @@ export type ChatEntry =
 export type ChatGptSettings = {
 	/**
 	 *  "subscription": your ChatGPT plan through Codex's sign-in.
-	 *  "api_key": the OPENAI_API_KEY environment variable, per token.
+	 *  "api_key": the OpenAI API key saved in the settings menu (else the
+	 *  OPENAI_API_KEY environment variable), per token.
 	 */
 	billing: BillingMode,
 	/**
@@ -583,8 +605,59 @@ export type LauncherHidden = null;
 /**  Sent each time the launcher appears, so the UI can focus the search box. */
 export type LauncherShown = null;
 
-export type McpSettings = {
+/**
+ *  One MCP server. A stdio server is a program the AI starts (`command`,
+ *  `args`, `env`); an HTTP server is an address (`url`, `headers`). The
+ *  other transport's fields stay empty.
+ */
+export type McpServer = {
+	/**
+	 *  What the AIs call it (their tools are `mcp__<name>__<tool>`):
+	 *  lowercase letters, digits, `-` and `_`.
+	 */
+	name: string,
 	enabled: boolean,
+	transport: McpTransport,
+	/**  The program that starts the server ("npx", "uvx", a full path). */
+	command: string,
+	args: string[],
+	/**  Environment variables for the program. */
+	env: McpValue[],
+	/**  The server's address (http:// or https://). */
+	url: string,
+	/**  Headers sent with each request (an API key, `Authorization`). */
+	headers: McpValue[],
+};
+
+/**  A server added or changed in the menu. */
+export type McpServerEdit = {
+	/**  Its name before this edit; `None` for a new server. */
+	previous: string | null,
+	/**
+	 *  A secret entry's `value` is the new value to save, or empty to keep
+	 *  the saved one.
+	 */
+	server: McpServer,
+};
+
+export type McpSettings = {
+	/**  Give Claude and ChatGPT the servers below. */
+	enabled: boolean,
+	servers: McpServer[],
+};
+
+export type McpTransport = "stdio" | "http";
+
+/**
+ *  An environment variable or a header. A secret's value lives in
+ *  Credential Manager: here it's always empty (it is blanked whenever
+ *  settings are written), except in an edit coming from the settings menu,
+ *  where it is the new value to save.
+ */
+export type McpValue = {
+	name: string,
+	value: string,
+	secret: boolean,
 };
 
 /**
@@ -738,6 +811,14 @@ export type SearchSettings = {
 export type SearchUpdated = {
 	seq: number,
 	items: ResultItem[],
+};
+
+/**  Whether a secret is saved on this PC. */
+export type SecretStatus = {
+	name: string,
+	saved: boolean,
+	/**  The last four characters of a long value, to tell keys apart. */
+	last4: string | null,
 };
 
 export type Settings = {

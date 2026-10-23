@@ -458,6 +458,11 @@ pub fn builder() -> Builder<Wry> {
             crate::features::updater::commands::update_check,
             crate::features::updater::commands::update_install,
             // [integrations]
+            crate::integrations::commands::secret_status,
+            crate::integrations::commands::secret_set,
+            crate::integrations::commands::secret_delete,
+            crate::integrations::commands::mcp_server_save,
+            crate::integrations::commands::mcp_server_remove,
             // [ai_commands]
             // [appearance]
             crate::settings::commands::settings_folder_get,

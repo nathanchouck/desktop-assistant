@@ -13,10 +13,11 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::parser::{Incoming, Parser};
 use super::protocol::{self, ApprovalKind};
-use super::{command, ApiKey, Launch, Options, NAME};
+use super::{command, Launch, Options, NAME};
 use crate::ai::locked as lock_or_recover;
 use crate::ai::process::{self, EventSink, Process};
 use crate::ai::{AiError, AiEvent, BillingMode};
+use crate::secrets::Secret;
 
 /// Starting a 300 MB exe the first time (with a virus scan) can be slow.
 const START_TIMEOUT: Duration = Duration::from_secs(60);
@@ -175,7 +176,7 @@ impl CodexSession {
     async fn drive(
         this: Weak<Self>,
         options: Options,
-        key: Option<ApiKey>,
+        key: Option<Secret>,
         mut queued: mpsc::UnboundedReceiver<String>,
     ) {
         {
@@ -202,7 +203,7 @@ impl CodexSession {
     }
 
     /// `initialize`, then the sign-in check (or the API key).
-    async fn handshake(&self, key: Option<ApiKey>) -> Result<(), String> {
+    async fn handshake(&self, key: Option<Secret>) -> Result<(), String> {
         let init = self
             .request(protocol::initialize, START_TIMEOUT)
             .await

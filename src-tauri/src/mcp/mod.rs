@@ -12,7 +12,6 @@ pub mod tools;
 
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use http_body_util::{BodyExt, Full, Limited};
@@ -30,10 +29,20 @@ const MAX_BODY: usize = 1024 * 1024;
 const PATH: &str = "/mcp";
 
 /// Where the running server is, for Claude Code's `--mcp-config`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Endpoint {
     pub port: u16,
     pub token: String,
+}
+
+/// Never shows the token.
+impl std::fmt::Debug for Endpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Endpoint")
+            .field("port", &self.port)
+            .field("token", &"***")
+            .finish()
+    }
 }
 
 impl Endpoint {
@@ -52,15 +61,6 @@ impl Endpoint {
                 }
             }
         })
-    }
-
-    /// Writes the config next to the app's data, readable only by this
-    /// user's processes like the rest of it. Returns its path.
-    pub fn write_config(&self, dir: &Path) -> std::io::Result<PathBuf> {
-        std::fs::create_dir_all(dir)?;
-        let path = dir.join("mcp-config.json");
-        std::fs::write(&path, self.config().to_string())?;
-        Ok(path)
     }
 }
 
@@ -292,5 +292,6 @@ mod tests {
         assert_eq!(server["type"], "http");
         assert_eq!(server["url"], "http://127.0.0.1:4321/mcp");
         assert_eq!(server["headers"]["Authorization"], "Bearer abc");
+        assert!(!format!("{endpoint:?}").contains("abc"), "token hidden");
     }
 }

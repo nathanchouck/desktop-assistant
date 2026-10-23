@@ -19,6 +19,8 @@ use std::process::Stdio;
 
 pub use super::launch::Launch;
 use super::{AiError, Approvals, BillingMode};
+use crate::integrations::ResolvedServer;
+use crate::secrets::{self, Secret};
 use crate::settings::ChatGptSettings;
 pub use locate::locate;
 pub use status::{check_status, parse_login_status, sign_in, CodexStatus};
@@ -31,34 +33,14 @@ pub const NAME: &str = "Codex";
 /// environment; in API key mode the key goes over stdin instead.
 pub const SECRET_ENV: [&str; 3] = ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"];
 
-/// Where API key mode reads the key from, in order.
+/// Where API key mode reads the key from when none is saved, in order.
 const KEY_ENV: [&str; 2] = ["OPENAI_API_KEY", "CODEX_API_KEY"];
-
-/// An OpenAI API key. Its `Debug` never shows it, so it can't end up in a log.
-#[derive(Clone, PartialEq, Eq)]
-pub struct ApiKey(String);
-
-impl ApiKey {
-    pub fn new(key: impl Into<String>) -> Self {
-        Self(key.into())
-    }
-
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for ApiKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ApiKey(hidden)")
-    }
-}
 
 /// The MCP server the launcher runs, for Codex's per-thread config.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpServer {
     pub url: String,
-    pub token: String,
+    pub token: Secret,
 }
 
 /// Everything that decides how a conversation's process and thread start.
@@ -69,7 +51,7 @@ pub struct Options {
     pub approvals: Approvals,
     pub billing: BillingMode,
     /// API key mode: the key, sent over stdin once Codex starts.
-    pub api_key: Option<ApiKey>,
+    pub api_key: Option<Secret>,
     pub cwd: PathBuf,
     /// The user's home folder: auto mode never makes it writable as a whole.
     pub home: PathBuf,
@@ -78,6 +60,9 @@ pub struct Options {
     pub instructions: String,
     /// The launcher's own tools, when its MCP server is running.
     pub mcp: Option<McpServer>,
+    /// The MCP registry's servers, added to the thread's config like the
+    /// launcher's.
+    pub servers: Vec<ResolvedServer>,
     /// Desktop context is on: the screen tools are offered.
     pub screen_tools: bool,
     /// Ask for Codex's Windows sandbox (no admin needed) because the user's
@@ -162,14 +147,16 @@ pub fn command(launch: &Launch, options: &Options) -> tokio::process::Command {
     cmd
 }
 
-/// The API key for API key mode, from the environment.
-pub fn api_key() -> Option<ApiKey> {
-    KEY_ENV
-        .iter()
-        .filter_map(std::env::var_os)
-        .map(|v| v.to_string_lossy().trim().to_owned())
-        .find(|v| !v.is_empty())
-        .map(ApiKey)
+/// The API key for API key mode: the one saved in the settings menu
+/// (Credential Manager), else the environment.
+pub fn api_key() -> Option<Secret> {
+    crate::ai::claude::pick_key(secrets::read(secrets::OPENAI_API_KEY), || {
+        KEY_ENV
+            .iter()
+            .filter_map(std::env::var_os)
+            .map(|v| v.to_string_lossy().trim().to_owned())
+            .find(|v| !v.is_empty())
+    })
 }
 
 /// Codex's own folder: `CODEX_HOME`, else `~/.codex`.
@@ -218,6 +205,7 @@ pub fn prepare(settings: &ChatGptSettings) -> Result<(Launch, Options), AiError>
         home,
         resume: None,
         mcp: None,
+        servers: Vec::new(),
         screen_tools: settings.desktop_context,
         windows_sandbox: wants_windows_sandbox(),
     };
@@ -262,8 +250,32 @@ mod tests {
             resume: None,
             instructions: String::new(),
             mcp: None,
+            servers: Vec::new(),
             screen_tools: true,
             windows_sandbox: false,
+        }
+    }
+
+    #[test]
+    fn keys_never_reach_codex_through_its_environment() {
+        let launch = Launch::Exe(PathBuf::from("codex"));
+        for billing in [BillingMode::Subscription, BillingMode::ApiKey] {
+            let cmd = command(
+                &launch,
+                &Options {
+                    billing,
+                    api_key: Some(Secret::new("sk-proj-saved")),
+                    ..options()
+                },
+            );
+            for var in SECRET_ENV {
+                let set = cmd.as_std().get_envs().find(|(k, _)| *k == var);
+                assert_eq!(set.map(|(_, v)| v), Some(None), "{var} is removed");
+            }
+            assert!(!cmd
+                .as_std()
+                .get_args()
+                .any(|a| a.to_string_lossy().contains("sk-proj")));
         }
     }
 
@@ -290,7 +302,7 @@ mod tests {
     #[test]
     fn never_shows_the_key() {
         let options = Options {
-            api_key: Some(ApiKey::new("sk-secret")),
+            api_key: Some(Secret::new("sk-secret")),
             ..options()
         };
         assert!(!format!("{options:?}").contains("sk-secret"));

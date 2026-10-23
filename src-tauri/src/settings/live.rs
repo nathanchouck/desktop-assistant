@@ -42,9 +42,9 @@ pub fn save(app: &AppHandle, old: &Settings, new: Settings) -> Result<(), Settin
 }
 
 /// Makes `new` the settings in use and applies what takes more than
-/// reading the new value: the Windows key hook, starting at login, and a
-/// fresh check of an AI whose location or billing changed. Everything else
-/// is read fresh where it's used.
+/// reading the new value: the Windows key hook, starting at login, a fresh
+/// check of an AI whose location or billing changed, and Claude Code's MCP
+/// config file. Everything else is read fresh where it's used.
 pub fn use_settings(app: &AppHandle, old: &Settings, new: Settings) {
     let win_key = new.hotkeys.win_key_override;
     let login = new.general.launch_at_login;
@@ -53,6 +53,7 @@ pub fn use_settings(app: &AppHandle, old: &Settings, new: Settings) {
     let codex_changed = new.ai.chatgpt.path != old.ai.chatgpt.path
         || new.ai.chatgpt.billing != old.ai.chatgpt.billing
         || new.ai.default_provider != old.ai.default_provider;
+    let mcp_changed = new.mcp != old.mcp;
     {
         let state = app.state::<AppState>();
         let mut current = state
@@ -62,6 +63,9 @@ pub fn use_settings(app: &AppHandle, old: &Settings, new: Settings) {
         *current = new;
     }
     super::announce_change();
+    if mcp_changed {
+        crate::integrations::refresh_claude_config(&app.state::<AppState>());
+    }
     if win_key != old.hotkeys.win_key_override {
         hotkey::set_win_key(app, win_key);
     }
