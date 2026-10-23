@@ -1,0 +1,23 @@
+{
+ "files": [
+  {
+   "id": "1AbC",
+   "name": "Budget 2026",
+   "mimeType": "application/vnd.google-apps.spreadsheet",
+   "webViewLink": "https://docs.google.com/spreadsheets/d/1AbC/edit?usp=drivesdk",
+   "modifiedTime": "2026-10-23T07:00:00.000Z"
+  },
+  {
+   "id": "1DeF",
+   "name": "Budget notes",
+   "mimeType": "application/vnd.google-apps.document",
+   "webViewLink": "https://docs.google.com/document/d/1DeF/edit?usp=drivesdk",
+   "modifiedTime": "2026-09-20T12:30:15.123Z"
+  },
+  {
+   "id": "1GhI",
+   "name": "Q3 numbers (budgeted)",
+   "mimeType": "application/pdf"
+  }
+ ]
+}

@@ -271,7 +271,9 @@ impl SearchProvider for FileProvider {
     }
 }
 
-fn file_score(name_score: f32, modified: Option<i64>, now: i64) -> f32 {
+/// A file's score from its name match and age (Unix seconds); shared with
+/// Google Drive results, which rank just under an equal local file.
+pub fn file_score(name_score: f32, modified: Option<i64>, now: i64) -> f32 {
     let recency = modified.map_or(0.0, |m| recency(now - m));
     FILE_WEIGHT * name_score * (1.0 - RECENCY_SHARE + RECENCY_SHARE * recency)
 }
