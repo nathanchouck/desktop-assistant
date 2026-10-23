@@ -16,6 +16,7 @@
   import { SearchStore } from "./lib/stores/search.svelte";
   import { SettingsStore } from "./lib/stores/settings.svelte";
   import { ToastStore } from "./lib/stores/toast.svelte";
+  import { applyTheme, themeFor } from "./lib/theme";
   import { tick } from "svelte";
 
   /** A finished chat is put away if the launcher stayed hidden this long. */
@@ -59,6 +60,12 @@
       warmed = true;
       void commands.aiWarm(forcedProvider(search.query)?.provider ?? null);
     }
+  });
+
+  // The look from Settings → Appearance, applied as soon as it changes.
+  $effect(() => {
+    const appearance = settings.settings?.appearance;
+    if (appearance) applyTheme(document.documentElement, themeFor(appearance));
   });
 
   const expanded = $derived(settingsOpen || chat.active || search.expanded || toasts.current !== null);
@@ -223,6 +230,8 @@
       events.fileIndexChanged.listen((e) => (indexStatus = e.payload.status)),
       events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
       events.showSettings.listen(() => void openSettings()),
+      // Another PC changed the synced settings (or the file was edited).
+      events.settingsChanged.listen((e) => settings.changed(e.payload.settings)),
       events.toast.listen((e) => toasts.show(e.payload)),
       // A color was picked: list recent colors, the new one first.
       events.colorPicked.listen(() => {

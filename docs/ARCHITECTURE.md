@@ -196,6 +196,7 @@ pub trait SearchProvider: Send + Sync {
 pub enum Activation {
     Hide, Copy { text }, Paste { text: Option<String> }, OpenUrl { url },
     SetQuery { query }, Ask { prompt, provider }, Notice { message }, Refresh, OpenSettings,
+    OpenChat { chat },  // a saved conversation, reopened (history)
 }
 
 // ai/mod.rs: what the UI hears about a conversation, in order.
@@ -418,6 +419,20 @@ and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
   - `colors` claims the query and lists recent colors with swatches (Enter copies, Ctrl+Enter pastes, Ctrl+D forgets). `color` lists them alongside other results.
   - A typed `#ff8800`, `#f80`, `rgb(255, 136, 0)` or `hsl(32, 100%, 50%)` shows answer rows with the other formats.
 - **Media.** Play / Pause, Next Track and Previous Track press the media keys with `SendInput` (tagged `INJECTED_TAG`) 150 ms after the launcher hides, because the focused web view keeps media keys for itself. A watcher thread reads the current session from WinRT's `GlobalSystemMediaTransportControlsSessionManager` every 5 s, or at once when a search finds the last look over 2 s old, so search only reads memory. "Now Playing" shows "Title — Artist" over "Playing · Spotify" (Enter copies), and Play / Pause shows the track in its subtitle. When nothing is playing there is no Now Playing row.
+
+#### Conversation history (`features/history/`)
+- **Recording:** `ai_ask` / `ai_follow_up` report each question (your text without the `<desktop_context>` block, plus the "Sees: …" caption) and the chat event loop reports each `AiEvent`. `transcript.rs` builds the chat as the pane shows it: messages, answer Markdown, tool lines, approvals with their verdicts, errors and notes. `recorder.rs` saves when you ask, when a turn ends and when the chat closes, so a crash loses at most the answer in progress. Nothing is recorded while `history.enabled` is off; saved chats stay until cleared.
+- **Storage:** `history.db` in the data folder, its own SQLite file. Each chat has its provider, model, Claude session or Codex thread id, folder, title (the first question, on one line), times, messages, pin and transcript (JSON). One writer thread runs every save, read and delete in order, so streaming never waits and a delete can't be undone by a queued save. Summaries (with up to 8,000 characters of lowercase text) live in memory for search. `max_conversations` (500) counts unpinned chats, oldest dropped first; `forget_after_days` (0 = never) drops unpinned chats unused that long.
+- **Search:** `history`, `>history` or `chats` (alone or followed by text) claims the query and lists chats pinned first, then newest ("Claude · 3 h ago", "N messages"). Text filters by fuzzy title or every word anywhere in what was said. Enter reopens, Ctrl+D deletes, Ctrl+Shift+P pins. Commands: Chat History, Resume Last Chat, Clear Chat History (asks; keeps pinned). The ranker keeps conversation rows in the provider's order.
+- **Reopening:** `Activation::OpenChat` carries the saved transcript. `Chat::adopt` makes the chat the current, idle conversation, so the next follow-up resumes it like after an idle shutdown (Claude Code `--resume` in its original folder, Codex `thread/resume`), with today's desktop context. If the folder is gone, or Claude Code has deleted the session (30 days by default), Claude starts over and the chat says so.
+- **Last answer:** in the chat, Ctrl+Shift+C copies the last answer's Markdown, and Ctrl+Enter pastes it into the window you came from (`actions::paste`; the launcher hides). The footer offers both once an answer is finished.
+
+#### Synced settings and theme (`settings/`, `lib/theme.ts`)
+
+- **Two files.** `settings.toml` is shared and lives either in the config folder or in a folder chosen under Settings → Advanced (OneDrive is suggested from `%OneDrive%`, `%OneDriveConsumer%` or `%OneDriveCommercial%`). The choice is a one-line `settings-folder.txt` in the local data folder, so each PC picks its own. `settings.local.toml` in `%LOCALAPPDATA%` holds this PC's values: `MACHINE_KEYS` (index folders, exclusions, the Claude Code and Codex locations, the scripts folder, start at login, the Windows key and closing Start) plus any key added there by hand. Loading layers defaults → shared → local (`layers.rs`). Saving splits the settings again, keeps keys a newer version wrote, and leaves unchanged files alone, so changing a per-PC value never touches the shared file. The first start after the split moves an old single file's per-PC values out at once.
+- **Moving.** "Move settings here" uses the settings already in the folder ("Use the settings there") or writes this PC's ("Replace with this PC's", keeping the old file as `settings.toml.bak`). "Back to default" writes the settings in use back to `%APPDATA%` and leaves the synced copy for the other PCs. A chosen folder that's missing at startup falls back to the default; one that vanishes while running keeps the settings in use, and the next save recreates it.
+- **Following changes.** `SettingsFiles` remembers each file's text as last read or written, so our own saves (and a sync rewriting identical text) aren't changes. notify watches both folders (only the two file names; 500 ms quiet) and the files are also checked every 30 s. A change made elsewhere is applied like a menu change (shortcut, Windows key, start at login, AI checks) and sent to the UI as `settings-changed`. A file with a mistake is reported once; the settings in use stay.
+- **Theme.** `appearance.tint` (blue, purple, pink, red, orange, green, teal, graphite, or `#rrggbb`), `glass` (subtle/normal/strong surface alpha while Acrylic is on) and `density` (compact: 32 px rows, 20 px icons). `lib/theme.ts` sets `data-tint`, `data-glass-strength` and `data-density` on `<html>`, and `tokens.css` holds the values, with presets in light and dark. A custom color gets a light version darkened to 3.5:1 against white and a dark version lifted to 4.5:1 on the dark surface.
 
 ### Apps
 
@@ -677,8 +692,9 @@ it events and carries out its verdicts. (D-022)
 
 | What | Where |
 |---|---|
-| Settings | `%APPDATA%\desktop-assistant\settings.toml` |
-| History, frecency | `%LOCALAPPDATA%\desktop-assistant\data.db` |
+| Settings | `settings.toml` in `%APPDATA%\desktop-assistant` or a chosen synced folder; `settings.local.toml` in `%LOCALAPPDATA%\desktop-assistant` (this PC's values) |
+| Frecency | `%LOCALAPPDATA%\desktop-assistant\data.db` |
+| Chat history | `%LOCALAPPDATA%\desktop-assistant\history.db` |
 | Logs | `%LOCALAPPDATA%\desktop-assistant\logs\` (7 days kept) |
 | API keys | Windows Credential Manager, service `desktop-assistant` |
 
@@ -714,7 +730,7 @@ running index, so the menu offers a restart for them (`app_restart` closes
 Claude Code first). The shortcut recorder pauses the current shortcut while
 it listens. `app_status` feeds the status lines: Claude Code's sign-in, the
 index or Everything, and the Windows key hook. "Open Settings File" is still
-there for hand edits (read at startup).
+there for hand edits (followed live).
 
 The ChatGPT section shows Codex's status (Install / Sign in) and the Default AI choice (Claude / ChatGPT), plus model ("Default" follows Codex's config), approvals, screen context, start early, billing and the Codex location. Each AI has its own screen-context switch; the launcher's screen tools follow the switch of the AI answering.
 
