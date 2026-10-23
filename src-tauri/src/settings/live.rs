@@ -99,6 +99,20 @@ fn reloaded(app: &AppHandle, mut new: Settings) {
             new.hotkeys.toggle = old.hotkeys.toggle.clone();
         }
     }
+    // [ai_commands] The same for the "ask about the selection" shortcut.
+    let (old_grab, new_grab) = (
+        &old.ai_commands.selection_shortcut,
+        &new.ai_commands.selection_shortcut,
+    );
+    if new_grab != old_grab {
+        if let Err(e) = crate::features::ai_commands::shortcut::change(app, old_grab, new_grab) {
+            toast::error(
+                app,
+                format!("Settings changed, but {new_grab} can't be used here, so {old_grab} stays: {e}"),
+            );
+            new.ai_commands.selection_shortcut = old_grab.clone();
+        }
+    }
     tracing::info!("settings changed on disk; using them");
     use_settings(app, &old, new.clone());
     if let Err(e) = (SettingsChanged { settings: new }).emit(app) {

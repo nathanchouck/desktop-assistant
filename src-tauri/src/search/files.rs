@@ -211,7 +211,12 @@ impl FileProvider {
                     title: hit.name,
                     icon: Some(icon_key),
                     score,
-                    actions: vec![Action::Open, Action::RevealInExplorer, Action::CopyPath],
+                    actions: vec![
+                        Action::Open,
+                        Action::RevealInExplorer,
+                        Action::CopyPath,
+                        Action::AskAbout,
+                    ],
                     accessory: None,
                     confirm: None,
                 }
@@ -445,6 +450,8 @@ mod tests {
         assert_eq!(items[0].title, "report.docx");
         assert_eq!(items[0].id, r"file:C:\x\report.docx");
         assert_eq!(items[0].actions[0], Action::Open);
+        // Ctrl+Shift+A starts a question about it.
+        assert!(items[0].actions.contains(&Action::AskAbout));
         assert!(items.iter().all(|i| i.score <= FILE_WEIGHT));
     }
 

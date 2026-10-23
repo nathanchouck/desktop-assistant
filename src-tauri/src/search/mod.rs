@@ -83,6 +83,11 @@ pub enum Activation {
     OpenChat {
         chat: crate::features::history::OpenedChat,
     },
+    /// Stay open and start a question with these attached (a file, the
+    /// selection); you type the question.
+    Compose {
+        attachments: Vec<crate::features::ai_commands::Attachment>,
+    },
 }
 
 #[async_trait]

@@ -49,14 +49,16 @@ export const commands = {
 	aiWarm: (provider: "claude" | "chatgpt" | null) => typedError<null, IpcError>(__TAURI_INVOKE("ai_warm", { provider })),
 	/**
 	 *  Asks `provider` (else the default AI), starting a new conversation in
-	 *  the folder File Explorer showed (else your home folder).
+	 *  the folder File Explorer showed (else your home folder). `attachments`
+	 *  (selected text, a file, a picture) go in front of the question.
 	 */
-	aiAsk: (text: string, provider: "claude" | "chatgpt" | null) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_ask", { text, provider })),
+	aiAsk: (text: string, provider: "claude" | "chatgpt" | null, attachments: Attachment[]) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_ask", { text, provider, attachments })),
 	/**
 	 *  Sends a follow-up in the current conversation (to the AI it started
-	 *  with), with the desktop context if it changed since the last message.
+	 *  with), with the desktop context if it changed since the last message,
+	 *  and any attachments.
 	 */
-	aiFollowUp: (text: string) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_follow_up", { text })),
+	aiFollowUp: (text: string, attachments: Attachment[]) => typedError<AskReply, IpcError>(__TAURI_INVOKE("ai_follow_up", { text, attachments })),
 	/**  Approves or denies a pending action. */
 	aiApprove: (id: string, allow: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("ai_approve", { id, allow })),
 	/**  Stops the current answer; the conversation stays open. */
@@ -123,6 +125,16 @@ export const commands = {
 	 *  use.
 	 */
 	mcpServerRemove: (name: string) => typedError<Settings, IpcError>(__TAURI_INVOKE("mcp_server_remove", { name })),
+	/**
+	 *  Starts Windows voice typing (Win+H) into the search box, which the UI
+	 *  focuses first. Voice typing writes what you say there, like typing.
+	 */
+	aiDictate: () => typedError<null, IpcError>(__TAURI_INVOKE("ai_dictate")),
+	/**
+	 *  Pauses the "ask about the selection" shortcut while the settings menu
+	 *  records a new one, so pressing the current one doesn't grab anything.
+	 */
+	aiSelectionShortcutPause: (paused: boolean) => __TAURI_INVOKE<void>("ai_selection_shortcut_pause", { paused }),
 	settingsFolderGet: () => typedError<SettingsFolder, IpcError>(__TAURI_INVOKE("settings_folder_get")),
 	/**  Checks a folder typed in the menu before moving there. */
 	settingsFolderCheck: (folder: string) => typedError<FolderCheck, IpcError>(__TAURI_INVOKE("settings_folder_check", { folder })),
@@ -145,6 +157,7 @@ export const commands = {
 export const events = {
 	aiStream: makeEvent<AiStream>("ai-stream"),
 	colorPicked: makeEvent<ColorPicked>("color-picked"),
+	composeRequested: makeEvent<ComposeRequested>("compose-requested"),
 	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
@@ -210,10 +223,45 @@ export type Activation =
  *  Show this saved conversation in the chat view; it's already the
  *  current one, so a follow-up carries it on.
  */
-{ type: "open_chat"; chat: OpenedChat };
+{ type: "open_chat"; chat: OpenedChat } | 
+/**
+ *  Stay open and start a question with these attached (a file, the
+ *  selection); you type the question.
+ */
+{ type: "compose"; attachments: Attachment[] };
+
+export type AiCommand = {
+	/**
+	 *  What you type to find it ("Fix Grammar"); also its id, so keep
+	 *  names unique.
+	 */
+	name: string,
+	/**  A short word that finds it too ("fix"). May be empty. */
+	keyword: string,
+	/**
+	 *  What's sent, with placeholders: {selection}, {clipboard}, {text},
+	 *  {date}, {time}; {text|clipboard} takes the first that isn't empty.
+	 */
+	prompt: string,
+	provider: CommandAi,
+	/**
+	 *  A glyph name (sparkle, calendar, mail, drive, ...) or an emoji.
+	 *  Empty: the AI's own symbol.
+	 */
+	icon: string,
+};
 
 export type AiCommandSettings = {
+	/**  Saved AI commands, "Ask About Screen Region" and "Dictate" in search. */
 	enabled: boolean,
+	/**
+	 *  Global shortcut that copies what's selected in the window in front
+	 *  and opens the launcher to ask about it. Empty: off.
+	 */
+	selection_shortcut: string,
+	/**  After copying the selection, put back what was on the clipboard. */
+	restore_clipboard: boolean,
+	commands: AiCommand[],
 };
 
 /**  What the UI hears about a conversation, in order. */
@@ -309,6 +357,20 @@ export type AskReply = {
 	/**  Who answers this conversation (fixed when it starts). */
 	provider: ProviderId,
 };
+
+export type Attachment = 
+/**  Text you selected in another app. */
+{ type: "text"; text: string } | 
+/**
+ *  A file or folder on disk, by path (the AI reads it with its own
+ *  tools if it needs to).
+ */
+{ type: "path"; path: string; folder: boolean } | 
+/**
+ *  A PNG the launcher saved (a screen region, a copied picture), by id;
+ *  its preview is the `thumb/attach-<id>` icon.
+ */
+{ type: "image"; id: string; width: number; height: number };
 
 /**  How a provider is paid for. */
 export type BillingMode = 
@@ -465,6 +527,19 @@ export type ColorSettings = {
 	 *  first). Off: the color is only copied.
 	 */
 	show_after_pick: boolean,
+};
+
+/**  Which AI answers a saved command. */
+export type CommandAi = 
+/**  The default AI (Settings → ChatGPT → Default AI). */
+"default" | "claude" | "chatgpt";
+
+/**
+ *  Open the launcher with these attached to the next question (the
+ *  selection, a snip). The UI shows them as chips above the input.
+ */
+export type ComposeRequested = {
+	attachments: Attachment[],
 };
 
 export type Density = "comfortable" | 

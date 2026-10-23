@@ -6,9 +6,12 @@ use std::time::Duration;
 
 use crate::ai::chat::Setup;
 use crate::ai::claude::ClaudeStatus;
+use crate::ai::message::Message;
 use crate::ai::codex::{self, CodexStatus};
 use crate::ai::{claude, AiError, ProviderId};
 use crate::desktop::DesktopContext;
+use crate::error::IpcError;
+use crate::features::ai_commands::{self, Attachment};
 use crate::integrations;
 use crate::search::AskRow;
 use crate::secrets::Secret;
@@ -115,4 +118,26 @@ pub(super) fn ask_row(state: &AppState, provider: ProviderId) -> AskRow {
             _ => AskRow::Ask(provider),
         },
     }
+}
+
+/// A question's message: the desktop context, the attachments' blocks,
+/// the question, and the attached pictures.
+pub(super) async fn message(
+    state: &AppState,
+    text: &str,
+    attachments: &[Attachment],
+    context: Option<&DesktopContext>,
+) -> Result<Message, IpcError> {
+    ai_commands::message(&state.paths.data_dir, text, attachments, context)
+        .await
+        .map_err(|message| IpcError { message })
+}
+
+/// The "Sees: …" line under the question: the attachments, then the screen.
+pub(super) fn caption(
+    attachments: &[Attachment],
+    context: Option<&DesktopContext>,
+) -> Option<String> {
+    let screen = context.and_then(DesktopContext::summary);
+    ai_commands::attachments::caption(attachments, screen.as_deref())
 }
