@@ -1,11 +1,13 @@
 use super::*;
-use crate::ai::{Approvals, BillingMode};
+use crate::ai::launch::Launch;
+use crate::ai::{claude, codex, Approvals, BillingMode};
+use std::path::Path;
 use tokio::sync::mpsc;
 
 /// A stand-in CLI. Run by `sh` rather than exec'd itself: exec'ing a file
 /// just written fails now and then ("text file busy") while another test
 /// thread is starting a process.
-fn script(dir: &Path, name: &str, body: &str) -> Launch {
+pub(super) fn script(dir: &Path, name: &str, body: &str) -> Launch {
     let path = dir.join(name);
     std::fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
     Launch::Node {
@@ -16,7 +18,7 @@ fn script(dir: &Path, name: &str, body: &str) -> Launch {
 
 /// A stand-in `claude` that ignores its arguments, prints a recorded
 /// session, then waits on stdin like the real one.
-fn fake_claude(dir: &Path, fixture: &str) -> Launch {
+pub(super) fn fake_claude(dir: &Path, fixture: &str) -> Launch {
     let fixture = format!(
         "{}/tests/fixtures/claude/{fixture}.jsonl",
         env!("CARGO_MANIFEST_DIR")
@@ -28,7 +30,7 @@ fn fake_claude(dir: &Path, fixture: &str) -> Launch {
     )
 }
 
-fn options(dir: &Path) -> claude::Options {
+pub(super) fn options(dir: &Path) -> claude::Options {
     claude::Options {
         model: "haiku".into(),
         approvals: Approvals::Ask,
@@ -43,11 +45,11 @@ fn options(dir: &Path) -> claude::Options {
     }
 }
 
-fn claude_setup(launch: &Launch, dir: &Path) -> Setup {
+pub(super) fn claude_setup(launch: &Launch, dir: &Path) -> Setup {
     Setup::Claude(launch.clone(), options(dir))
 }
 
-async fn collect_until_done(rx: &mut mpsc::UnboundedReceiver<(u32, AiEvent)>) -> Vec<AiEvent> {
+pub(super) async fn collect_until_done(rx: &mut mpsc::UnboundedReceiver<(u32, AiEvent)>) -> Vec<AiEvent> {
     let mut events = Vec::new();
     while let Ok(Some((_, event))) = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await
     {
@@ -133,7 +135,7 @@ async fn resumes_after_an_idle_shutdown() {
         .await
         .unwrap();
     assert_eq!(again, id, "same conversation");
-    let cwd = chat.current.lock().await.as_ref().unwrap().cwd.clone();
+    let cwd = chat.current.lock().await.first().unwrap().cwd.clone();
     assert_eq!(cwd, dir.path());
     let events = collect_until_done(&mut rx).await;
     assert!(events.contains(&AiEvent::TextDelta {
@@ -261,7 +263,7 @@ async fn a_stopped_turn_reads_as_stopped() {
 }
 
 /// A stand-in `claude` that notes each start in `starts.log`.
-fn counting_claude(dir: &Path) -> Launch {
+pub(super) fn counting_claude(dir: &Path) -> Launch {
     let fixture = format!(
         "{}/tests/fixtures/claude/text_reply.jsonl",
         env!("CARGO_MANIFEST_DIR")
@@ -277,7 +279,7 @@ fn counting_claude(dir: &Path) -> Launch {
     )
 }
 
-fn starts(dir: &Path) -> usize {
+pub(super) fn starts(dir: &Path) -> usize {
     std::fs::read_to_string(dir.join("starts.log"))
         .map(|s| s.lines().count())
         .unwrap_or(0)
@@ -328,11 +330,11 @@ async fn a_spare_for_another_folder_is_replaced() {
         .unwrap();
     collect_until_done(&mut rx).await;
     assert_eq!(starts(dir.path()), 2);
-    assert!(chat.spare.lock().await.is_none());
+    assert!(chat.spare.lock().await.is_empty());
 
     chat.warm(claude_setup(&launch, dir.path())).await.unwrap();
     chat.drop_stale_spare(Duration::ZERO).await;
-    assert!(chat.spare.lock().await.is_none(), "an old spare is closed");
+    assert!(chat.spare.lock().await.is_empty(), "an old spare is closed");
 }
 
 // --- Codex -----------------------------------------------------------------
@@ -342,7 +344,7 @@ async fn a_spare_for_another_folder_is_replaced() {
 /// `args.log`. "RUN" asks to approve a command; "SLOW" waits for an
 /// interrupt. `auth` is what `getAuthStatus` reports. With a `gone` file
 /// in `dir`, resuming fails like a deleted thread.
-fn fake_codex(dir: &Path, auth: &str) -> Launch {
+pub(super) fn fake_codex(dir: &Path, auth: &str) -> Launch {
     let log = dir.join("in.log");
     let body = format!(
         r#"echo "$*" >> '{args}'
@@ -391,7 +393,7 @@ done
     script(dir, "codex", &body)
 }
 
-fn codex_options(dir: &Path) -> codex::Options {
+pub(super) fn codex_options(dir: &Path) -> codex::Options {
     codex::Options {
         model: String::new(),
         approvals: Approvals::Ask,
@@ -408,13 +410,13 @@ fn codex_options(dir: &Path) -> codex::Options {
     }
 }
 
-fn codex_setup(launch: &Launch, dir: &Path) -> Setup {
+pub(super) fn codex_setup(launch: &Launch, dir: &Path) -> Setup {
     Setup::Codex(launch.clone(), codex_options(dir))
 }
 
-const SIGNED_IN: &str = r#"{"authMethod":"chatgpt","requiresOpenaiAuth":true}"#;
+pub(super) const SIGNED_IN: &str = r#"{"authMethod":"chatgpt","requiresOpenaiAuth":true}"#;
 
-fn received(dir: &Path) -> String {
+pub(super) fn received(dir: &Path) -> String {
     std::fs::read_to_string(dir.join("in.log")).unwrap_or_default()
 }
 
@@ -573,7 +575,7 @@ async fn a_closed_codex_session_is_freed() {
         .await
         .unwrap();
     collect_until_done(&mut rx).await;
-    let session = match chat.current.lock().await.as_ref().unwrap().session.as_ref() {
+    let session = match chat.current.lock().await.first().unwrap().session.as_ref() {
         Some(Session::Codex(session)) => Arc::downgrade(session),
         _ => panic!("a Codex session"),
     };
