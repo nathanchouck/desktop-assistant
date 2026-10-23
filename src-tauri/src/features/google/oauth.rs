@@ -251,7 +251,7 @@ impl TokenError {
 fn describe_refusal(error: &str, description: Option<&str>) -> String {
     match error {
         "invalid_grant" => {
-            "the sign-in expired or was revoked. Connect again (in testing mode Google ends it after 7 days)".into()
+            "the sign-in expired or was revoked (in Testing mode Google ends it after 7 days). Connect again in Settings → Google".into()
         }
         "invalid_client" | "unauthorized_client" => {
             "the client ID or secret is wrong. Check them in Settings → Google".into()

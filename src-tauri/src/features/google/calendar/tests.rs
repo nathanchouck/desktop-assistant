@@ -184,6 +184,8 @@ fn rows_skip_whats_over_and_follow_the_filter() {
     let dinner = &rows[4];
     assert_eq!(dinner.subtitle, "Tomorrow 19:30–21:00 · Trattoria Roma");
     assert_eq!(dinner.actions, [Action::Open]);
+    // A location that's only the call's address isn't repeated.
+    assert_eq!(rows[5].subtitle, "Tomorrow 21:30–22:00 · Teams");
     assert!(
         rows.windows(2).all(|w| w[0].score > w[1].score),
         "time order"

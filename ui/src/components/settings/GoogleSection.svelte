@@ -91,8 +91,9 @@
           {confirming ? "Disconnect?" : "Disconnect"}
         </Button>
       {:else}
-        <Button primary disabled={busy || blocker !== null || status?.connecting} onclick={() => void run(() => commands.googleConnect())}>
-          {status?.connecting ? "Waiting…" : "Connect Google account"}
+        <!-- While waiting, pressing again opens a fresh consent page (a closed tab). -->
+        <Button primary disabled={busy || blocker !== null} onclick={() => void run(() => commands.googleConnect())}>
+          {status?.connecting ? "Open again" : "Connect Google account"}
         </Button>
       {/if}
     </Status>

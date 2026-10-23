@@ -14,7 +14,7 @@ use super::api::ApiError;
 use super::oauth::{self, Granted, Tokens};
 use crate::net::{self, Request};
 use crate::secrets::{self, Secret};
-use crate::settings::{self, SharedSettings};
+use crate::settings::SharedSettings;
 
 /// Credential Manager names (`desktop-assistant:` goes in front).
 pub const CLIENT_SECRET: &str = "google-client-secret";
@@ -103,11 +103,11 @@ impl Account {
 
     /// The client ID from the settings.
     pub fn client_id(&self) -> String {
-        settings::current(&self.settings)
-            .google
-            .client_id
-            .trim()
-            .to_owned()
+        // Read in place: this runs on every keystroke.
+        match self.settings.read() {
+            Ok(s) => s.google.client_id.trim().to_owned(),
+            Err(poisoned) => poisoned.into_inner().google.client_id.trim().to_owned(),
+        }
     }
 
     /// The connection, if it's for the client in the settings.
@@ -193,11 +193,13 @@ impl Account {
         let tokens = match oauth::parse_tokens(response.status, &response.body, unix_now()) {
             Ok(tokens) => tokens,
             Err(e) if e.needs_reconnect() => {
-                tracing::warn!("Google refused the refresh token: {e}");
                 *access = None;
                 self.forget();
                 let message = e.to_string();
                 self.set_problem(Some(message.clone()));
+                // Logged and shown once; nothing reaches Google until you
+                // connect again, so this can't repeat.
+                crate::toast::report(message.clone());
                 return Err(ApiError::Reconnect(message));
             }
             Err(e) => return Err(ApiError::SignIn(e.to_string())),

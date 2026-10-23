@@ -15,7 +15,7 @@ use super::commands::GoogleStatusChanged;
 use super::drive_search::DriveSearch;
 use super::sync::Cache;
 use super::GoogleSettings;
-use crate::settings::{self, SharedSettings};
+use crate::settings::SharedSettings;
 
 pub struct Google {
     pub settings: SharedSettings,
@@ -42,8 +42,12 @@ impl Google {
         }
     }
 
+    /// This feature's settings, without copying the rest.
     pub fn settings(&self) -> GoogleSettings {
-        settings::current(&self.settings).google
+        match self.settings.read() {
+            Ok(s) => s.google.clone(),
+            Err(poisoned) => poisoned.into_inner().google.clone(),
+        }
     }
 
     /// Turned on and connected: the only time anything goes to Google.

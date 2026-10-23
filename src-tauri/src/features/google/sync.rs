@@ -293,7 +293,7 @@ async fn fetch_inbox(google: &Google, previous: Option<&Inbox>) -> Result<Inbox,
             wanted.push((id.clone(), history.clone()));
         }
     }
-    let threads: Vec<Thread> = futures::stream::iter(wanted)
+    let fetched: Vec<Option<Thread>> = futures::stream::iter(wanted)
         .map(|(id, history)| {
             let reused = known
                 .get(id.as_str())
@@ -301,15 +301,22 @@ async fn fetch_inbox(google: &Google, previous: Option<&Inbox>) -> Result<Inbox,
                 .map(|t| (*t).clone());
             async move {
                 if let Some(thread) = reused {
-                    return Ok(thread);
+                    return Ok(Some(thread));
                 }
-                let body = get(mail::thread_path(&id)).await?;
-                mail::parse_thread(&body).map_err(ApiError::Unreadable)
+                match get(mail::thread_path(&id)).await {
+                    // Deleted since it was listed.
+                    Err(ApiError::Http { status: 404, .. }) => Ok(None),
+                    Err(e) => Err(e),
+                    Ok(body) => mail::parse_thread(&body)
+                        .map(Some)
+                        .map_err(ApiError::Unreadable),
+                }
             }
         })
         .buffered(PARALLEL_THREADS)
         .try_collect()
         .await?;
+    let threads: Vec<Thread> = fetched.into_iter().flatten().collect();
     let by_id = |ids: &[(String, String)]| -> Vec<Thread> {
         ids.iter()
             .filter_map(|(id, _)| threads.iter().find(|t| &t.id == id).cloned())
