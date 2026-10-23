@@ -96,7 +96,7 @@
       label="Billing"
       hint={s.ai.chatgpt.billing === "subscription"
         ? "Uses your ChatGPT plan through Codex's sign-in."
-        : "Uses the OPENAI_API_KEY environment variable, billed per token."}
+        : "Uses the OpenAI API key saved under API keys (else OPENAI_API_KEY), billed per token."}
     >
       <Choice
         options={[

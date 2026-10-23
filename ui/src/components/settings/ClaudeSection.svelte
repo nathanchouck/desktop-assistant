@@ -78,7 +78,7 @@
       label="Billing"
       hint={s.ai.claude.billing === "subscription"
         ? "Uses your Claude plan through Claude Code's sign-in."
-        : "Uses the ANTHROPIC_API_KEY environment variable."}
+        : "Uses the Anthropic API key saved under API keys (else ANTHROPIC_API_KEY), billed per token."}
     >
       <Choice
         options={[

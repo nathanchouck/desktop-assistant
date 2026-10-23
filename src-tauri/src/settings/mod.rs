@@ -217,7 +217,8 @@ impl Default for ClaudeSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct ChatGptSettings {
     /// "subscription": your ChatGPT plan through Codex's sign-in.
-    /// "api_key": the OPENAI_API_KEY environment variable, per token.
+    /// "api_key": the OpenAI API key saved in the settings menu (else the
+    /// OPENAI_API_KEY environment variable), per token.
     pub billing: BillingMode,
     /// The model Codex uses ("gpt-6-luna"...). Empty: Codex's default
     /// (from its own config.toml, else its built-in choice).

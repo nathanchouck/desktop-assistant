@@ -17,6 +17,7 @@ pub mod mcp;
 pub mod paths;
 pub mod platform;
 pub mod search;
+pub mod secrets;
 pub mod settings;
 pub mod state;
 pub mod store;
@@ -169,35 +170,33 @@ pub(crate) fn check_ai_status(app: &AppHandle, force: bool) {
 }
 
 /// Starts the MCP server that gives Claude and ChatGPT the launcher's
-/// tools, and writes the files that point Claude Code at it.
+/// tools, and writes the files that point Claude Code at it (with the MCP
+/// registry's servers).
 fn start_launcher_tools(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let host = Arc::new(mcp::tools::LauncherTools::new(app.clone()));
-        let endpoint = match mcp::start(host).await {
-            Ok(endpoint) => endpoint,
-            Err(e) => {
-                tracing::warn!("launcher tools for Claude are off: {e}");
-                return;
-            }
-        };
         let state = app.state::<AppState>();
-        let dir = state.paths.data_dir.clone();
-        let written = endpoint.write_config(&dir).and_then(|mcp_config| {
-            let settings = dir.join("claude-settings.json");
-            std::fs::write(&settings, mcp::tools::claude_settings().to_string())?;
-            Ok(state::ToolFiles {
-                mcp_config,
-                settings,
-                endpoint: endpoint.clone(),
-            })
-        });
-        match written {
-            Ok(files) => {
-                let _ = state.tool_files.set(files);
+        match mcp::start(host).await {
+            Ok(endpoint) => {
+                let dir = state.paths.data_dir.clone();
+                let settings = dir.join("claude-settings.json");
+                let written = std::fs::create_dir_all(&dir).and_then(|()| {
+                    std::fs::write(&settings, mcp::tools::claude_settings().to_string())
+                });
+                match written {
+                    Ok(()) => {
+                        let _ = state
+                            .tool_files
+                            .set(state::ToolFiles { settings, endpoint });
+                    }
+                    Err(e) => tracing::warn!("could not write the launcher tools config: {e}"),
+                }
             }
-            Err(e) => tracing::warn!("could not write the launcher tools config: {e}"),
+            Err(e) => tracing::warn!("launcher tools for Claude are off: {e}"),
         }
+        // The registry's servers go to Claude even without the launcher's.
+        integrations::refresh_claude_config(&state);
     });
 }
 

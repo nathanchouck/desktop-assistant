@@ -9,7 +9,9 @@ use crate::ai::claude::ClaudeStatus;
 use crate::ai::codex::{self, CodexStatus};
 use crate::ai::{claude, AiError, ProviderId};
 use crate::desktop::DesktopContext;
+use crate::integrations;
 use crate::search::AskRow;
+use crate::secrets::Secret;
 use crate::state::AppState;
 
 /// How long asking waits for File Explorer's folder and selection.
@@ -36,25 +38,33 @@ pub(super) async fn context_to_send(
     Some(context)
 }
 
-/// Today's setup for `provider`: its settings and the launcher's tools.
+/// Today's setup for `provider`: its settings, the launcher's tools and the
+/// MCP registry's servers (with secrets from Credential Manager).
 pub(super) fn setup_for(state: &AppState, provider: ProviderId) -> Result<Setup, AiError> {
-    let ai = state.settings().ai;
+    let settings = state.settings();
     let tools = state.tool_files.get();
     Ok(match provider {
         ProviderId::Claude => {
-            let (launch, mut options) = claude::prepare(&ai.claude)?;
-            if let Some(files) = tools {
-                options.mcp_config = Some(files.mcp_config.clone());
-                options.settings = Some(files.settings.clone());
-            }
+            let (launch, mut options) = claude::prepare(&settings.ai.claude)?;
+            let servers = integrations::servers_now(&settings.mcp);
+            // Written now, so a change made since (settings synced from
+            // another PC, a secret) is in the file this process reads.
+            options.mcp_config = integrations::claude_config_file(
+                &state.paths.data_dir,
+                tools.map(|files| &files.endpoint),
+                &servers,
+            );
+            options.mcp_servers = servers;
+            options.settings = tools.map(|files| files.settings.clone());
             Setup::Claude(launch, options)
         }
         ProviderId::Chatgpt => {
-            let (launch, mut options) = codex::prepare(&ai.chatgpt)?;
+            let (launch, mut options) = codex::prepare(&settings.ai.chatgpt)?;
             options.mcp = tools.map(|files| codex::McpServer {
                 url: files.endpoint.url(),
-                token: files.endpoint.token.clone(),
+                token: Secret::new(files.endpoint.token.clone()),
             });
+            options.servers = integrations::servers_now(&settings.mcp);
             Setup::Codex(launch, options)
         }
     })

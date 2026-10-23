@@ -8,6 +8,7 @@
 use serde_json::{json, Value};
 
 use super::{sandbox, McpServer, Options};
+use crate::integrations::{mcp_config, ResolvedServer};
 use crate::mcp::protocol::SERVER_NAME;
 use crate::mcp::tools::{CONTEXT, SCREENSHOT, SEARCH};
 
@@ -80,24 +81,39 @@ pub fn login_api_key(id: u64, key: &str) -> String {
     .to_string()
 }
 
-/// The launcher's MCP server for one thread: its address and token go over
-/// stdin (never a command line or an environment variable that commands
-/// could read). Reading tools need no approval; a screenshot always asks.
-pub fn mcp_config(server: &McpServer, screen_tools: bool) -> Value {
-    let mut launcher = json!({
-        "url": server.url,
-        "http_headers": { "Authorization": format!("Bearer {}", server.token) },
-        "startup_timeout_sec": 10,
-        "tools": {
-            CONTEXT: { "approval_mode": "approve" },
-            SEARCH: { "approval_mode": "approve" },
-            SCREENSHOT: { "approval_mode": "prompt" },
-        },
-    });
-    if !screen_tools {
-        launcher["disabled_tools"] = json!([CONTEXT, SCREENSHOT]);
+/// The MCP servers for one thread: the launcher's and the registry's. Their
+/// addresses, tokens and environment go over stdin (never a command line or
+/// an environment variable that commands could read). The launcher's
+/// reading tools need no approval; a screenshot always asks. The
+/// registry's tools follow Codex's usual rules. `None` when there are none.
+pub fn mcp_config(
+    launcher: Option<&McpServer>,
+    servers: &[ResolvedServer],
+    screen_tools: bool,
+) -> Option<Value> {
+    if launcher.is_none() && servers.is_empty() {
+        return None;
     }
-    json!({ "mcp_servers": { SERVER_NAME: launcher } })
+    let mut list = mcp_config::codex_servers(servers);
+    if let Some(server) = launcher {
+        let mut entry = json!({
+            "url": server.url,
+            "http_headers": {
+                "Authorization": format!("Bearer {}", server.token.expose()),
+            },
+            "startup_timeout_sec": 10,
+            "tools": {
+                CONTEXT: { "approval_mode": "approve" },
+                SEARCH: { "approval_mode": "approve" },
+                SCREENSHOT: { "approval_mode": "prompt" },
+            },
+        });
+        if !screen_tools {
+            entry["disabled_tools"] = json!([CONTEXT, SCREENSHOT]);
+        }
+        list.insert(SERVER_NAME.into(), entry);
+    }
+    Some(json!({ "mcp_servers": list }))
 }
 
 /// `thread/start`, or `thread/resume` when continuing an earlier thread.
@@ -113,8 +129,8 @@ pub fn open_thread(id: u64, options: &Options) -> String {
     if !options.model.is_empty() {
         params["model"] = json!(options.model);
     }
-    if let Some(server) = &options.mcp {
-        params["config"] = mcp_config(server, options.screen_tools);
+    if let Some(config) = mcp_config(options.mcp.as_ref(), &options.servers, options.screen_tools) {
+        params["config"] = config;
     }
     let method = match &options.resume {
         Some(thread) => {
@@ -244,6 +260,8 @@ pub fn explain(error: &Value) -> String {
 mod tests {
     use super::*;
     use crate::ai::{Approvals, BillingMode};
+    use crate::integrations::ResolvedLaunch;
+    use crate::secrets::Secret;
     use std::path::PathBuf;
 
     fn options() -> Options {
@@ -258,10 +276,89 @@ mod tests {
             instructions: "be brief".into(),
             mcp: Some(McpServer {
                 url: "http://127.0.0.1:4321/mcp".into(),
-                token: "secret".into(),
+                token: Secret::new("secret"),
             }),
+            servers: Vec::new(),
             screen_tools: true,
             windows_sandbox: false,
+        }
+    }
+
+    fn registry() -> Vec<ResolvedServer> {
+        vec![
+            ResolvedServer {
+                name: "github".into(),
+                launch: ResolvedLaunch::Stdio {
+                    command: "npx".into(),
+                    args: vec!["-y".into(), "server-github".into()],
+                    env: vec![("GITHUB_TOKEN".into(), Secret::new("ghp_x"))],
+                },
+            },
+            ResolvedServer {
+                name: "linear".into(),
+                launch: ResolvedLaunch::Http {
+                    url: "https://mcp.linear.app/mcp".into(),
+                    headers: vec![("Authorization".into(), Secret::new("Bearer lin"))],
+                },
+            },
+        ]
+    }
+
+    #[test]
+    fn gives_the_thread_the_registry_too() {
+        let msg = parse(&open_thread(
+            1,
+            &Options {
+                servers: registry(),
+                ..options()
+            },
+        ));
+        let list = &msg["params"]["config"]["mcp_servers"];
+        assert_eq!(list["launcher"]["url"], "http://127.0.0.1:4321/mcp");
+        assert_eq!(
+            list["github"],
+            json!({"command": "npx", "args": ["-y", "server-github"], "env": {"GITHUB_TOKEN": "ghp_x"}})
+        );
+        assert_eq!(list["linear"]["url"], "https://mcp.linear.app/mcp");
+        assert_eq!(
+            list["linear"]["http_headers"]["Authorization"],
+            "Bearer lin"
+        );
+
+        // Without the launcher's server, the registry still goes in.
+        let alone = parse(&open_thread(
+            1,
+            &Options {
+                mcp: None,
+                servers: registry(),
+                ..options()
+            },
+        ));
+        let list = &alone["params"]["config"]["mcp_servers"];
+        assert!(list.get("launcher").is_none());
+        assert_eq!(list["github"]["command"], "npx");
+
+        let none = parse(&open_thread(
+            1,
+            &Options {
+                mcp: None,
+                ..options()
+            },
+        ));
+        assert!(none["params"].get("config").is_none());
+    }
+
+    #[test]
+    fn options_never_show_secrets() {
+        let shown = format!(
+            "{:?}",
+            Options {
+                servers: registry(),
+                ..options()
+            }
+        );
+        for secret in ["ghp_x", "Bearer lin", "\"secret\""] {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
         }
     }
 
