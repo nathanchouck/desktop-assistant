@@ -133,7 +133,8 @@ desktop-assistant/
 │       ├── fuzzy.rs             # nucleo wrapper, scores normalized to 0..1
 │       ├── icons.rs             # icon cache (memory + disk PNG) + `icon` protocol
 │       ├── store/               # SQLite: frecency (later: history), migrations
-│       ├── integrations/        # (M6) mcp_registry.rs
+│       ├── secrets.rs           # named secrets in Windows Credential Manager (memory off Windows)
+│       ├── integrations/        # MCP server registry: settings, validation, config for Claude + Codex
 │       └── platform/            # `Shell`: apps, files, icons, open/reveal; stubs off Windows
 │           └── win/             # COM on STA threads: AppsFolder, ShellExecuteEx, icons,
 │                                #   everything.rs (SDK bindings), desktop.rs (foreground
@@ -433,6 +434,12 @@ and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
 - **Moving.** "Move settings here" uses the settings already in the folder ("Use the settings there") or writes this PC's ("Replace with this PC's", keeping the old file as `settings.toml.bak`). "Back to default" writes the settings in use back to `%APPDATA%` and leaves the synced copy for the other PCs. A chosen folder that's missing at startup falls back to the default; one that vanishes while running keeps the settings in use, and the next save recreates it.
 - **Following changes.** `SettingsFiles` remembers each file's text as last read or written, so our own saves (and a sync rewriting identical text) aren't changes. notify watches both folders (only the two file names; 500 ms quiet) and the files are also checked every 30 s. A change made elsewhere is applied like a menu change (shortcut, Windows key, start at login, AI checks) and sent to the UI as `settings-changed`. A file with a mistake is reported once; the settings in use stay.
 - **Theme.** `appearance.tint` (blue, purple, pink, red, orange, green, teal, graphite, or `#rrggbb`), `glass` (subtle/normal/strong surface alpha while Acrylic is on) and `density` (compact: 32 px rows, 20 px icons). `lib/theme.ts` sets `data-tint`, `data-glass-strength` and `data-density` on `<html>`, and `tokens.css` holds the values, with presets in light and dark. A custom color gets a light version darkened to 3.5:1 against white and a dark version lifted to 4.5:1 on the dark surface.
+
+#### API keys and the MCP registry (`secrets.rs`, `integrations/`)
+- **Secrets:** `secrets.rs` keeps named secrets in Windows Credential Manager as generic credentials (`desktop-assistant:<name>`, `CRED_PERSIST_LOCAL_MACHINE`, so they stay on this PC). Values are written as UTF-8; UTF-16 (cmdkey) is read too. Off Windows, and in tests, they live in memory. `Secret`'s `Debug` prints `***`, and IPC replies only say whether a value is saved and, for a long one, its last four characters (`secret_status` / `secret_set` / `secret_delete`).
+- **API keys:** Settings → Integrations saves the Anthropic and OpenAI keys. In API key mode, Claude Code gets `ANTHROPIC_API_KEY` from Credential Manager (else the environment variable) and Codex gets the OpenAI key over stdin (else `OPENAI_API_KEY`/`CODEX_API_KEY`). Subscription mode still strips the key variables.
+- **MCP registry:** `mcp.servers` in `settings.toml` (it may sync): name (`[a-z0-9_-]`, unique, not `launcher`), enabled, stdio (command, args, env) or http (url, headers). A value marked secret lives in Credential Manager as `mcp:<server>:env|header:<name>`; the settings only name it, and its value is blanked whenever settings are written. `mcp_server_save` / `mcp_server_remove` check the server, write, move or forget its secrets (a rename carries them along), then save. A server synced from another PC shows which of its secrets aren't saved on this one.
+- **To the AIs:** as each conversation (or warm start) is set up, the enabled servers are resolved with their secrets. Claude Code gets them in `mcp-config.json` (data folder) next to the launcher's own server; the file is rewritten when it changes, at startup and when the `mcp` settings change. Codex gets them in each thread's `config.mcp_servers` over stdin, like the launcher's. A missing secret leaves just that value out, and an invalid server is skipped. Each AI's own MCP servers and connectors still load.
 
 ### Apps
 
