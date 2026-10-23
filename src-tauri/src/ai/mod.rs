@@ -46,6 +46,24 @@ pub fn forced_provider(query: &str) -> Option<(ProviderId, &str)> {
     }
 }
 
+/// `both <question>` asks Claude and ChatGPT side by side. So does
+/// `vs <question>`, but only from three words on, so "vs code" still finds
+/// Visual Studio Code. Returns the question without the prefix.
+pub fn compare_prefix(query: &str) -> Option<&str> {
+    let (prefix, rest) = query.trim_start().split_once(char::is_whitespace)?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    if prefix.eq_ignore_ascii_case("both")
+        || (prefix.eq_ignore_ascii_case("vs") && rest.split_whitespace().count() >= 3)
+    {
+        Some(rest)
+    } else {
+        None
+    }
+}
+
 /// Locks `mutex`, carrying on with the data if a panic poisoned it: the AI
 /// path never panics over a lock.
 pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -176,6 +194,24 @@ mod tests {
         assert_eq!(forced_provider("gh repo"), None);
         assert_eq!(forced_provider("chrome"), None);
         assert_eq!(forced_provider(r"c:\users"), None);
+    }
+
+    #[test]
+    fn both_or_vs_asks_both_ais() {
+        assert_eq!(
+            compare_prefix("both which is faster, rust or go?"),
+            Some("which is faster, rust or go?")
+        );
+        assert_eq!(compare_prefix("  Both  hi "), Some("hi"));
+        assert_eq!(
+            compare_prefix("vs explain this error please"),
+            Some("explain this error please")
+        );
+        assert_eq!(compare_prefix("both "), None, "nothing to ask yet");
+        assert_eq!(compare_prefix("vs code"), None, "Visual Studio Code");
+        assert_eq!(compare_prefix("vs code insiders"), None);
+        assert_eq!(compare_prefix("bothell weather"), None);
+        assert_eq!(compare_prefix("c both"), None);
     }
 
     #[test]

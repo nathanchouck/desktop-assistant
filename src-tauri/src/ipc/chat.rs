@@ -28,7 +28,19 @@ pub(super) async fn context_to_send(
     provider: ProviderId,
     fresh: bool,
 ) -> Option<DesktopContext> {
-    if !state.settings().ai.desktop_context(provider) {
+    context_for_any(state, &[provider], fresh).await
+}
+
+/// The same for questions to several AIs at once (a comparison): the one
+/// context every one of them that may see the screen gets. `None` when
+/// none of them may.
+pub(super) async fn context_for_any(
+    state: &AppState,
+    providers: &[ProviderId],
+    fresh: bool,
+) -> Option<DesktopContext> {
+    let settings = state.settings().ai;
+    if !providers.iter().any(|&p| settings.desktop_context(p)) {
         return None;
     }
     let context = state.desktop.current(CONTEXT_WAIT).await;

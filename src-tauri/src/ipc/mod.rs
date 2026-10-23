@@ -2,6 +2,7 @@
 //! After changing anything here, run `npm run bindings`.
 
 mod chat;
+mod compare;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -202,7 +203,16 @@ async fn search_query(
             items: vec![row],
         });
     }
-    let limit = settings.search.max_results as usize;
+    // [compare] `both <question>`: just the row that asks both AIs.
+    if let Some(items) = compare::prefixed_rows(&app, &state, &query) {
+        return Ok(SearchResponse { seq, items });
+    }
+    // Offered under the "Ask" row; one result fewer keeps both in view.
+    let compare_row = compare::offered_row(&state, &query);
+    let mut limit = settings.search.max_results as usize;
+    if compare_row.is_some() {
+        limit = limit.saturating_sub(1).max(1);
+    }
     let store = Arc::clone(&state.store);
     let frecency: Frecency = Arc::new(move |id| store.frecency(id));
     let ask = chat::ask_row(&state, settings.ai.default_provider);
@@ -210,17 +220,18 @@ async fn search_query(
     // A slow provider (big file index, busy disk) sends its results later
     // instead of dropping them.
     if let Some(complete) = outcome.complete {
+        let late_row = compare_row.clone();
         tauri::async_runtime::spawn(async move {
-            let items = complete.await;
+            let mut items = complete.await;
+            items.extend(late_row);
             if let Err(e) = (SearchUpdated { seq, items }).emit(&app) {
                 tracing::debug!("could not send late results: {e}");
             }
         });
     }
-    Ok(SearchResponse {
-        seq,
-        items: outcome.items,
-    })
+    let mut items = outcome.items;
+    items.extend(compare_row);
+    Ok(SearchResponse { seq, items })
 }
 
 /// How far along the built-in file index is (for the footer).
@@ -466,6 +477,12 @@ pub fn builder() -> Builder<Wry> {
             // Features add their commands below their own line, so
             // parallel work doesn't collide.
             // [ai]
+            // [compare]
+            compare::ai_compare,
+            compare::ai_compare_follow_up,
+            compare::ai_compare_keep,
+            compare::ai_compare_warm,
+            compare::launcher_set_wide,
             // [history]
             crate::features::history::commands::history_overview,
             crate::features::history::commands::history_clear,
