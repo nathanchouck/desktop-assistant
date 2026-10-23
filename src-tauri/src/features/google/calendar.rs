@@ -2,7 +2,7 @@
 //! `events.list` answer and turning events into rows (pure, tested with
 //! recorded answers).
 
-use chrono::{DateTime, Days, FixedOffset, NaiveDate, TimeZone};
+use chrono::{DateTime, Days, FixedOffset, NaiveDate, SecondsFormat, TimeZone};
 use serde::Deserialize;
 
 use super::meeting::{self, Meeting};
@@ -64,16 +64,14 @@ impl Event {
 /// `timeMin` bounds the end) to the end of the `days`th day.
 pub fn events_path<Tz: TimeZone>(now: &DateTime<Tz>, days: u32) -> String {
     let days = days.clamp(1, 7);
-    let time_min = now.fixed_offset().to_rfc3339();
+    let time_min = stamp(&now.fixed_offset());
     let time_max = now
         .date_naive()
         .checked_add_days(Days::new(u64::from(days)))
         .and_then(|day| day.and_hms_opt(0, 0, 0))
         .and_then(|midnight| now.timezone().from_local_datetime(&midnight).earliest())
-        .map(|end| end.fixed_offset().to_rfc3339())
-        .unwrap_or_else(|| {
-            (now.fixed_offset() + chrono::Duration::days(i64::from(days))).to_rfc3339()
-        });
+        .map(|end| stamp(&end.fixed_offset()))
+        .unwrap_or_else(|| stamp(&(now.fixed_offset() + chrono::Duration::days(i64::from(days)))));
     let query = net::form(&[
         ("timeMin", &time_min),
         ("timeMax", &time_max),
@@ -83,6 +81,11 @@ pub fn events_path<Tz: TimeZone>(now: &DateTime<Tz>, days: u32) -> String {
         ("fields", FIELDS),
     ]);
     format!("/calendar/v3/calendars/primary/events?{query}")
+}
+
+/// Whole seconds: Calendar ignores fractions, and may refuse nanoseconds.
+fn stamp(time: &DateTime<FixedOffset>) -> String {
+    time.to_rfc3339_opts(SecondsFormat::Secs, false)
 }
 
 #[derive(Deserialize)]

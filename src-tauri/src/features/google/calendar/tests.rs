@@ -212,6 +212,9 @@ fn asks_for_the_right_days() {
         "{path}"
     );
     assert!(path.contains("singleEvents=true&orderBy=startTime"));
+    // No fractions of a second.
+    let precise = DateTime::parse_from_rfc3339("2026-10-23T10:00:00.123456789+02:00").unwrap();
+    assert!(events_path(&precise, 1).contains("timeMin=2026-10-23T10%3A00%3A00%2B02%3A00"));
     // Out-of-range settings are clamped.
     assert!(events_path(&now(), 0).contains("timeMax=2026-10-24T00"));
     assert!(events_path(&now(), 30).contains("timeMax=2026-10-30T00"));
