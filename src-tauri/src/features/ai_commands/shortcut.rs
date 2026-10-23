@@ -17,14 +17,18 @@ use crate::{toast, window};
 /// One grab at a time: a held shortcut repeats.
 static GRABBING: AtomicBool = AtomicBool::new(false);
 
-/// Registers the shortcut at startup, if one is set.
+/// Registers the shortcut at startup, if one is set. If another app has
+/// it, a toast says so (shown when the launcher first opens).
 pub fn register(app: &AppHandle, text: &str) {
     if text.trim().is_empty() {
         return;
     }
     match shortcut::register(app, text) {
         Ok(()) => tracing::info!("selection shortcut {text} registered"),
-        Err(e) => tracing::warn!("{e}"),
+        Err(e) => toast::error(
+            app,
+            format!("Ask about the selection is off: {e}. Pick another shortcut in Settings."),
+        ),
     }
 }
 
