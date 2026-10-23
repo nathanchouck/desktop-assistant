@@ -33,8 +33,13 @@ enum Change {
 }
 
 pub(super) fn run(index: Arc<FileIndex>) {
+    let loading = Instant::now();
     if let Some(tree) = snapshot::load(&index.snapshot_path, &index.roots) {
-        tracing::info!("file index: {} entries loaded from disk", count(&tree));
+        tracing::info!(
+            "file index: {} entries loaded from disk in {:?}",
+            count(&tree),
+            loading.elapsed()
+        );
         index.replace_all(tree);
         index
             .dirty

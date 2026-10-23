@@ -34,6 +34,7 @@ use crate::settings::Settings;
 use crate::state::AppState;
 
 pub fn run() {
+    let started = Instant::now();
     // Without a home directory there is nowhere to keep settings or logs.
     let paths = AppPaths::resolve().expect("could not resolve app directories");
     let _log_guard = logging::init(&paths.log_dir());
@@ -54,6 +55,11 @@ pub fn run() {
     }
 
     let state = AppState::new(paths, settings.clone());
+    // Opens the databases and builds every search provider (emoji index...).
+    tracing::info!(
+        "app state built {} ms after start",
+        started.elapsed().as_millis()
+    );
     // The updater's config section is completed before the app is built.
     let mut context = tauri::generate_context!();
     let updater = features::updater::plugin(context.config_mut());
@@ -114,6 +120,9 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 window::show(handle, Instant::now());
             }
+            // Indexes and status checks carry on in the background and log
+            // their own times.
+            tracing::info!("ready {} ms after start", started.elapsed().as_millis());
             Ok(())
         })
         .on_window_event(window::on_window_event)

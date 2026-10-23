@@ -11,8 +11,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewWindow, Window,
-    WindowEvent,
+    AppHandle, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewWindow, Window, WindowEvent,
 };
 use tauri_specta::Event;
 
