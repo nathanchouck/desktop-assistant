@@ -98,7 +98,11 @@ impl Api {
                 continue;
             }
             if !response.ok() {
-                return Err(error_from_response(service, response.status, &response.body));
+                return Err(error_from_response(
+                    service,
+                    response.status,
+                    &response.body,
+                ));
             }
             return Ok(response.body);
         }
@@ -168,10 +172,12 @@ pub fn error_from_response(service: Service, status: u16, body: &[u8]) -> ApiErr
             .find(|l| l.starts_with("https://"));
         return ApiError::Disabled { service, link };
     }
-    let scope = reasons
-        .iter()
-        .any(|r| matches!(*r, "insufficientPermissions" | "ACCESS_TOKEN_SCOPE_INSUFFICIENT"))
-        || (error.status == "PERMISSION_DENIED" && error.message.contains("scopes"));
+    let scope = reasons.iter().any(|r| {
+        matches!(
+            *r,
+            "insufficientPermissions" | "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
+        )
+    }) || (error.status == "PERMISSION_DENIED" && error.message.contains("scopes"));
     if scope {
         return ApiError::NotAllowed(service);
     }
@@ -205,7 +211,10 @@ mod tests {
                 link: Some("https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=123".into())
             }
         );
-        assert_eq!(error.to_string(), "the Gmail API is turned off in your Google Cloud project");
+        assert_eq!(
+            error.to_string(),
+            "the Gmail API is turned off in your Google Cloud project"
+        );
         // Older answers only say so in the message.
         let old = br#"{"error":{"code":403,"message":"Google Drive API has not been used in project 9 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=9 then retry."}}"#;
         assert_eq!(
@@ -222,20 +231,32 @@ mod tests {
         let body = br#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","errors":[{"reason":"insufficientPermissions"}],"status":"PERMISSION_DENIED","details":[{"reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}"#;
         let error = error_from_response(Service::Calendar, 403, body);
         assert_eq!(error, ApiError::NotAllowed(Service::Calendar));
-        assert_eq!(error.to_string(), "Calendar access wasn't allowed. Connect again and tick it");
-        let busy = br#"{"error":{"code":429,"message":"Quota exceeded","status":"RESOURCE_EXHAUSTED"}}"#;
+        assert_eq!(
+            error.to_string(),
+            "Calendar access wasn't allowed. Connect again and tick it"
+        );
+        let busy =
+            br#"{"error":{"code":429,"message":"Quota exceeded","status":"RESOURCE_EXHAUSTED"}}"#;
         assert_eq!(
             error_from_response(Service::Drive, 429, busy).to_string(),
             "Google answered 429: Quota exceeded"
         );
-        let long = format!(r#"{{"error":{{"code":500,"message":"{}"}}}}"#, "x".repeat(400));
-        let ApiError::Http { message, .. } = error_from_response(Service::Drive, 500, long.as_bytes()) else {
+        let long = format!(
+            r#"{{"error":{{"code":500,"message":"{}"}}}}"#,
+            "x".repeat(400)
+        );
+        let ApiError::Http { message, .. } =
+            error_from_response(Service::Drive, 500, long.as_bytes())
+        else {
             panic!("expected Http");
         };
         assert_eq!(message.chars().count(), MAX_MESSAGE + 1);
         assert_eq!(
             error_from_response(Service::Drive, 502, b"<html>"),
-            ApiError::Http { status: 502, message: "no details".into() }
+            ApiError::Http {
+                status: 502,
+                message: "no details".into()
+            }
         );
     }
 }

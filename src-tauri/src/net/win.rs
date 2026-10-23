@@ -29,7 +29,10 @@ fn wide(s: &str) -> Vec<u16> {
 }
 
 fn last_error(step: &str) -> NetError {
-    NetError::Failed(format!("{step} failed: {}", std::io::Error::last_os_error()))
+    NetError::Failed(format!(
+        "{step} failed: {}",
+        std::io::Error::last_os_error()
+    ))
 }
 
 /// Sends `request` to `https://<host><path>` and reads the answer.

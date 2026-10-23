@@ -34,7 +34,11 @@ pub struct DriveSearch {
 
 /// Queries that differ only in case or spacing share an answer.
 fn key(query: &str) -> String {
-    query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    query
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 impl DriveSearch {

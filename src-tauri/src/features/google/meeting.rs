@@ -111,10 +111,22 @@ mod tests {
         .unwrap();
         assert_eq!(found.url, "https://meet.google.com/abc-defg-hij");
         assert_eq!(found.service, "Google Meet");
-        let hangout = find(&[], Some("https://meet.google.com/abc-defg-hij"), None, None).unwrap();
+        let hangout = find(
+            &[],
+            Some("https://meet.google.com/abc-defg-hij"),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(hangout.url, "https://meet.google.com/abc-defg-hij");
         // Another service's entry point still counts.
-        let other = find(&points(&[("video", "https://example.com/call/1")]), None, None, None).unwrap();
+        let other = find(
+            &points(&[("video", "https://example.com/call/1")]),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(other.service, "Video call");
     }
 
@@ -158,13 +170,19 @@ mod tests {
 
     #[test]
     fn knows_the_services() {
-        assert_eq!(service_of("https://meet.google.com/abc-defg-hij"), Some("Google Meet"));
+        assert_eq!(
+            service_of("https://meet.google.com/abc-defg-hij"),
+            Some("Google Meet")
+        );
         assert_eq!(service_of("https://meet.google.com/"), None);
         assert_eq!(service_of("https://zoom.us/my/ana"), Some("Zoom"));
         assert_eq!(service_of("https://company.zoomgov.com/j/1"), Some("Zoom"));
         assert_eq!(service_of("https://notzoom.us/j/1"), None);
         assert_eq!(service_of("https://acme.webex.com/meet/ana"), Some("Webex"));
-        assert_eq!(service_of("https://acme.webex.com/acme/j.php?MTID=m1"), Some("Webex"));
+        assert_eq!(
+            service_of("https://acme.webex.com/acme/j.php?MTID=m1"),
+            Some("Webex")
+        );
         assert_eq!(service_of("http://zoom.us/j/1"), None, "web links only");
         assert_eq!(service_of("https://teams.microsoft.com/"), None);
     }

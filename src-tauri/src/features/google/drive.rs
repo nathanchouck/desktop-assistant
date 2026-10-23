@@ -35,7 +35,10 @@ pub fn escape(text: &str) -> String {
 
 /// `files.list` for names containing `text`, newest first.
 pub fn files_path(text: &str) -> String {
-    let q = format!("name contains '{}' and trashed = false", escape(text.trim()));
+    let q = format!(
+        "name contains '{}' and trashed = false",
+        escape(text.trim())
+    );
     let query = net::form(&[
         ("q", &q),
         ("fields", "files(id,name,mimeType,modifiedTime,webViewLink)"),
@@ -113,12 +116,16 @@ pub fn rows(files: &[DriveFile], query: &str, now_ms: i64) -> Vec<ResultItem> {
                 Some(ms) => format!("Google Drive · {}", age(now_ms, ms)),
                 None => "Google Drive".to_owned(),
             };
-            ResultItem::new(format!("{ID_PREFIX}{}", file.id), ItemKind::Link, &file.name)
-                .with_subtitle(subtitle)
-                .with_icon(glyph("drive"))
-                // Ctrl+Shift+C copies the link.
-                .with_actions([Action::Open, Action::Copy])
-                .with_score(score)
+            ResultItem::new(
+                format!("{ID_PREFIX}{}", file.id),
+                ItemKind::Link,
+                &file.name,
+            )
+            .with_subtitle(subtitle)
+            .with_icon(glyph("drive"))
+            // Ctrl+Shift+C copies the link.
+            .with_actions([Action::Open, Action::Copy])
+            .with_score(score)
         })
         .collect()
 }
@@ -155,7 +162,10 @@ mod tests {
         let files = parse_files(FIXTURE.as_bytes()).unwrap();
         assert_eq!(files.len(), 3);
         assert_eq!(files[0].name, "Budget 2026");
-        assert_eq!(files[0].link, "https://docs.google.com/spreadsheets/d/1AbC/edit?usp=drivesdk");
+        assert_eq!(
+            files[0].link,
+            "https://docs.google.com/spreadsheets/d/1AbC/edit?usp=drivesdk"
+        );
         assert_eq!(files[0].modified_ms, Some(1_792_738_800_000));
         // No link given: opened by id.
         assert_eq!(files[2].link, "https://drive.google.com/open?id=1GhI");

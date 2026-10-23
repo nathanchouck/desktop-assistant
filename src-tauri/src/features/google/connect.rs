@@ -46,7 +46,10 @@ pub async fn start(google: Arc<Google>, app: AppHandle) -> Result<(), String> {
     let task_google = Arc::clone(&google);
     let task = tauri::async_runtime::spawn(async move {
         let google = task_google;
-        let result = finish(&google, loopback, &state, &pkce, &client_id, &secret, &redirect).await;
+        let result = finish(
+            &google, loopback, &state, &pkce, &client_id, &secret, &redirect,
+        )
+        .await;
         google.account.set_connecting(false);
         match result {
             Ok(info) => {
@@ -78,7 +81,11 @@ async fn finish(
     secret: &Secret,
     redirect: &str,
 ) -> Result<AccountInfo, String> {
-    let code = match loopback.wait(state, TIMEOUT).await.map_err(|e| e.to_string())? {
+    let code = match loopback
+        .wait(state, TIMEOUT)
+        .await
+        .map_err(|e| e.to_string())?
+    {
         Callback::Code(code) => code,
         Callback::Refused(error) if error == "access_denied" => {
             return Err("access wasn't allowed in the browser".into())
@@ -86,9 +93,13 @@ async fn finish(
         Callback::Refused(error) => return Err(format!("Google refused ({error})")),
     };
     let form = oauth::code_exchange_form(&code, client_id, secret, redirect, &pkce.verifier);
-    let response = net::fetch(Request::post_form(oauth::TOKEN_HOST, oauth::TOKEN_PATH, form))
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = net::fetch(Request::post_form(
+        oauth::TOKEN_HOST,
+        oauth::TOKEN_PATH,
+        form,
+    ))
+    .await
+    .map_err(|e| e.to_string())?;
     let tokens = oauth::parse_tokens(response.status, &response.body, unix_now())
         .map_err(|e| e.to_string())?;
     google.account.save_connection(&tokens, client_id).await

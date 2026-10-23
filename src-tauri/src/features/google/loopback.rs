@@ -141,7 +141,10 @@ mod tests {
         assert_eq!(callback, Some(Callback::Refused("access_denied".into())));
         let (status, _, callback) = answer(&get, "/", Some("state=old&code=x"), "s1");
         assert_eq!((status, callback), (StatusCode::BAD_REQUEST, None));
-        assert_eq!(answer(&get, "/favicon.ico", None, "s1").0, StatusCode::NOT_FOUND);
+        assert_eq!(
+            answer(&get, "/favicon.ico", None, "s1").0,
+            StatusCode::NOT_FOUND
+        );
         assert_eq!(answer(&get, "/", None, "s1").0, StatusCode::NOT_FOUND);
         assert_eq!(
             answer(&Method::POST, "/", Some("state=s1&code=x"), "s1").2,
@@ -150,7 +153,9 @@ mod tests {
     }
 
     async fn request(port: u16, target: &str) -> String {
-        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
         let text = format!("GET {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
         stream.write_all(text.as_bytes()).await.unwrap();
         let mut reply = String::new();
@@ -163,10 +168,15 @@ mod tests {
         let loopback = Loopback::bind().await.unwrap();
         let port = loopback.port;
         assert_eq!(loopback.redirect_uri(), format!("http://127.0.0.1:{port}"));
-        let waiting = tokio::spawn(async move { loopback.wait("st", Duration::from_secs(10)).await });
+        let waiting =
+            tokio::spawn(async move { loopback.wait("st", Duration::from_secs(10)).await });
         // A stray request and a wrong state don't end the wait.
-        assert!(request(port, "/favicon.ico").await.starts_with("HTTP/1.1 404"));
-        assert!(request(port, "/?state=nope&code=x").await.starts_with("HTTP/1.1 400"));
+        assert!(request(port, "/favicon.ico")
+            .await
+            .starts_with("HTTP/1.1 404"));
+        assert!(request(port, "/?state=nope&code=x")
+            .await
+            .starts_with("HTTP/1.1 400"));
         let reply = request(port, "/?state=st&code=4%2F0AQ&scope=email").await;
         assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
         assert!(reply.contains("close this tab"));

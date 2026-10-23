@@ -183,9 +183,13 @@ impl Account {
             .map_err(|e| ApiError::SignIn(e.to_string()))?
             .ok_or(ApiError::NotConnected)?;
         let form = oauth::refresh_form(&refresh, &info.client_id, &self.client_secret()?);
-        let response = net::fetch(Request::post_form(oauth::TOKEN_HOST, oauth::TOKEN_PATH, form))
-            .await
-            .map_err(|e| ApiError::SignIn(e.to_string()))?;
+        let response = net::fetch(Request::post_form(
+            oauth::TOKEN_HOST,
+            oauth::TOKEN_PATH,
+            form,
+        ))
+        .await
+        .map_err(|e| ApiError::SignIn(e.to_string()))?;
         let tokens = match oauth::parse_tokens(response.status, &response.body, unix_now()) {
             Ok(tokens) => tokens,
             Err(e) if e.needs_reconnect() => {
@@ -212,7 +216,11 @@ impl Account {
 
     /// Saves a new connection: the refresh token in Credential Manager,
     /// the rest in the account file.
-    pub async fn save_connection(&self, tokens: &Tokens, client_id: &str) -> Result<AccountInfo, String> {
+    pub async fn save_connection(
+        &self,
+        tokens: &Tokens,
+        client_id: &str,
+    ) -> Result<AccountInfo, String> {
         let refresh = tokens.refresh.as_ref().ok_or(
             "Google didn't hand out a refresh token. Remove the launcher's access at myaccount.google.com/permissions and connect again",
         )?;
@@ -257,7 +265,13 @@ impl Account {
     pub async fn disconnect(&self) {
         if let Some(refresh) = secrets::read(REFRESH_TOKEN) {
             let form = net::form(&[("token", refresh.expose())]);
-            match net::fetch(Request::post_form(oauth::TOKEN_HOST, oauth::REVOKE_PATH, form)).await {
+            match net::fetch(Request::post_form(
+                oauth::TOKEN_HOST,
+                oauth::REVOKE_PATH,
+                form,
+            ))
+            .await
+            {
                 Ok(r) if r.ok() => tracing::info!("revoked the Google sign-in"),
                 // 400 `invalid_token`: it was already dead.
                 Ok(r) => tracing::info!("Google answered {} to the revoke", r.status),
@@ -308,10 +322,16 @@ mod tests {
         let account = Account::load(dir.path(), Arc::clone(&shared));
         assert!(!account.connected());
         assert_eq!(account.client_id(), "id-1.apps");
-        assert_eq!(account.access_token(false).await, Err(ApiError::NotConnected));
+        assert_eq!(
+            account.access_token(false).await,
+            Err(ApiError::NotConnected)
+        );
 
         // No refresh token: refused, nothing saved.
-        assert!(account.save_connection(&tokens(None), "id-1.apps").await.is_err());
+        assert!(account
+            .save_connection(&tokens(None), "id-1.apps")
+            .await
+            .is_err());
         assert!(!account.connected());
 
         secrets::set(CLIENT_SECRET, &Secret::new("GOCSPX-test")).unwrap();
@@ -325,7 +345,10 @@ mod tests {
         assert_eq!(status.email.as_deref(), Some("me@example.com"));
         assert!(account.granted().mail);
         // The fresh access token is used without a request.
-        assert_eq!(account.access_token(false).await.unwrap().expose(), "ya29.test");
+        assert_eq!(
+            account.access_token(false).await.unwrap().expose(),
+            "ya29.test"
+        );
         // A restart finds the connection again.
         let reloaded = Account::load(dir.path(), Arc::clone(&shared));
         assert_eq!(reloaded.email().as_deref(), Some("me@example.com"));

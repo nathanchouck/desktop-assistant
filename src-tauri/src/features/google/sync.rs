@@ -244,7 +244,12 @@ async fn fetch_calendar(google: &Google, days: u32) -> Result<Vec<Event>, ApiErr
     let path = calendar::events_path(&chrono::Local::now(), days);
     let body = google
         .api
-        .get(Service::Calendar, calendar::HOST, &path, crate::net::DEFAULT_TIMEOUT)
+        .get(
+            Service::Calendar,
+            calendar::HOST,
+            &path,
+            crate::net::DEFAULT_TIMEOUT,
+        )
         .await?;
     calendar::parse_events(&body).map_err(ApiError::Unreadable)
 }
@@ -256,18 +261,31 @@ async fn fetch_inbox(google: &Google, previous: Option<&Inbox>) -> Result<Inbox,
     let get = |path: String| async move {
         google
             .api
-            .get(Service::Gmail, mail::HOST, &path, crate::net::DEFAULT_TIMEOUT)
+            .get(
+                Service::Gmail,
+                mail::HOST,
+                &path,
+                crate::net::DEFAULT_TIMEOUT,
+            )
             .await
     };
-    let unread_count =
-        mail::parse_unread_count(&get(mail::inbox_label_path()).await?).map_err(ApiError::Unreadable)?;
-    let unread_ids = mail::parse_thread_list(&get(mail::threads_path(true, mail::UNREAD_SHOWN)).await?)
+    let unread_count = mail::parse_unread_count(&get(mail::inbox_label_path()).await?)
         .map_err(ApiError::Unreadable)?;
-    let recent_ids = mail::parse_thread_list(&get(mail::threads_path(false, mail::RECENT_KEPT)).await?)
-        .map_err(ApiError::Unreadable)?;
+    let unread_ids =
+        mail::parse_thread_list(&get(mail::threads_path(true, mail::UNREAD_SHOWN)).await?)
+            .map_err(ApiError::Unreadable)?;
+    let recent_ids =
+        mail::parse_thread_list(&get(mail::threads_path(false, mail::RECENT_KEPT)).await?)
+            .map_err(ApiError::Unreadable)?;
 
     let known: HashMap<&str, &Thread> = previous
-        .map(|p| p.unread.iter().chain(&p.recent).map(|t| (t.id.as_str(), t)).collect())
+        .map(|p| {
+            p.unread
+                .iter()
+                .chain(&p.recent)
+                .map(|t| (t.id.as_str(), t))
+                .collect()
+        })
         .unwrap_or_default();
     let mut wanted: Vec<(String, String)> = Vec::new();
     for (id, history) in unread_ids.iter().chain(&recent_ids) {
@@ -310,7 +328,10 @@ mod tests {
 
     #[test]
     fn problems_read_as_one_line() {
-        assert_eq!(describe_problems(&[(Service::Calendar, None), (Service::Gmail, None)]), None);
+        assert_eq!(
+            describe_problems(&[(Service::Calendar, None), (Service::Gmail, None)]),
+            None
+        );
         assert_eq!(
             describe_problems(&[(Service::Calendar, Some(&ApiError::NotConnected))]),
             None
@@ -327,8 +348,11 @@ mod tests {
         );
         let dead = ApiError::Reconnect("the sign-in expired".into());
         assert_eq!(
-            describe_problems(&[(Service::Calendar, Some(&dead)), (Service::Gmail, Some(&dead))])
-                .as_deref(),
+            describe_problems(&[
+                (Service::Calendar, Some(&dead)),
+                (Service::Gmail, Some(&dead))
+            ])
+            .as_deref(),
             Some("The sign-in expired")
         );
     }

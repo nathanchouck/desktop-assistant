@@ -202,7 +202,10 @@ mod tests {
         let request = Request::post_form("oauth2.googleapis.com", "/token", "secret=1".into())
             .header("Authorization", "Bearer ya29.secret");
         let shown = format!("{request:?}");
-        assert!(!shown.contains("ya29") && !shown.contains("secret=1"), "{shown}");
+        assert!(
+            !shown.contains("ya29") && !shown.contains("secret=1"),
+            "{shown}"
+        );
         assert!(shown.contains("oauth2.googleapis.com"));
         assert_eq!(
             request.header_block(),
