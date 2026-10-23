@@ -16,7 +16,7 @@ use super::api::{ApiError, Service};
 use super::calendar::{self, Event};
 use super::hub::Google;
 use super::mail::{self, Inbox, Thread};
-use super::GoogleSettings;
+use super::{sentence, GoogleSettings};
 use crate::settings;
 
 pub const REFRESH_EVERY: Duration = Duration::from_secs(5 * 60);
@@ -231,13 +231,7 @@ pub fn describe_problems(errors: &[(Service, Option<&ApiError>)]) -> Option<Stri
             parts.push(line);
         }
     }
-    (!parts.is_empty()).then(|| {
-        let mut text = parts.join(". ");
-        if let Some(first) = text.get(..1) {
-            text = first.to_uppercase() + &text[1..];
-        }
-        text
-    })
+    (!parts.is_empty()).then(|| sentence(&parts.join(". ")))
 }
 
 async fn fetch_calendar(google: &Google, days: u32) -> Result<Vec<Event>, ApiError> {

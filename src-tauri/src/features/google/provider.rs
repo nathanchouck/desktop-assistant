@@ -12,6 +12,7 @@ use super::calendar::{self, Event};
 use super::drive;
 use super::hub::Google;
 use super::mail::{self, Inbox};
+use super::sentence;
 use super::sync::Fetched;
 use crate::search::{glyph, Action, Activation, ItemKind, ResultItem, SearchError, SearchProvider};
 
@@ -130,14 +131,14 @@ fn error_row(service: Service, error: &ApiError) -> ResultItem {
         .with_subtitle("It's off in your Google Cloud project · Enter opens the page"),
         ApiError::NotConnected | ApiError::Reconnect(_) | ApiError::NotAllowed(_) => {
             ResultItem::new(CONNECT_ID, ItemKind::Command, "Connect Google again")
-                .with_subtitle(capitalized(&error.to_string()))
+                .with_subtitle(sentence(&error.to_string()))
         }
         _ => ResultItem::new(
             REFRESH_ID,
             ItemKind::Command,
             format!("Couldn't read your {}", service.short_name()),
         )
-        .with_subtitle(capitalized(&error.to_string())),
+        .with_subtitle(sentence(&error.to_string())),
     };
     let action = if row.id == REFRESH_ID {
         Action::Run
@@ -147,14 +148,6 @@ fn error_row(service: Service, error: &ApiError) -> ResultItem {
     row.with_icon(glyph("warning"))
         .with_actions([action])
         .with_score(1.0)
-}
-
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
 }
 
 /// "today or tomorrow", for the empty calendar row.

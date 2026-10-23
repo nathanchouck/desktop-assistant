@@ -98,9 +98,26 @@ pub fn start(app: &AppHandle) {
     });
 }
 
+/// `text` with a capital first letter: error texts start lower case
+/// ("the sign-in expired") and read as a sentence on their own.
+fn sentence(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sentences() {
+        assert_eq!(sentence("the sign-in expired"), "The sign-in expired");
+        assert_eq!(sentence("échec"), "Échec");
+        assert_eq!(sentence(""), "");
+    }
 
     #[test]
     fn settings_defaults() {

@@ -12,6 +12,7 @@ use super::account::{unix_now, AccountInfo, CLIENT_SECRET};
 use super::hub::Google;
 use super::loopback::Loopback;
 use super::oauth::{self, Callback, Pkce};
+use super::sentence;
 use crate::net::{self, Request};
 use crate::secrets::{self, Secret};
 use crate::toast;
@@ -109,12 +110,4 @@ async fn finish(
 pub fn cancel(google: &Google) {
     google.replace_connecting(None);
     google.account.set_connecting(false);
-}
-
-fn sentence(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
 }
