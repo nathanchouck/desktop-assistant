@@ -84,12 +84,6 @@ pub struct Inbox {
     pub recent: Vec<Thread>,
 }
 
-impl Inbox {
-    pub fn thread(&self, id: &str) -> Option<&Thread> {
-        self.unread.iter().chain(&self.recent).find(|t| t.id == id)
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LabelJson {
@@ -404,7 +398,6 @@ mod tests {
         assert_eq!(rows[1].icon.as_deref(), Some("glyph:mail"));
         assert!(rows.windows(2).all(|w| w[0].score > w[1].score));
         assert_eq!(super::rows(&Inbox::default(), "", None, NOW_MS)[0].title, "No unread mail in Inbox");
-        assert_eq!(inbox.thread("t3").map(|t| t.subject.as_str()), Some("Old news"));
     }
 
     #[test]

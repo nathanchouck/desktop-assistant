@@ -29,6 +29,10 @@ pub fn rank(items: &mut [ResultItem], query: &str, frecency: &dyn Fn(&str) -> f6
             if matches!(item.kind, ItemKind::Clip | ItemKind::Conversation) {
                 return (0, item.score, i);
             }
+            // Calendar events and mail threads keep their time order.
+            if crate::features::google::keeps_order(&item.id) {
+                return (0, item.score, i);
+            }
             let title = item.title.to_lowercase();
             let tier = match item.kind {
                 ItemKind::Answer => ANSWER_TIER,

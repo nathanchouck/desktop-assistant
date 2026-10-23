@@ -471,6 +471,10 @@ pub fn builder() -> Builder<Wry> {
             crate::settings::commands::settings_folder_reset,
             crate::settings::commands::settings_local_open,
             // [google]
+            crate::features::google::commands::google_status,
+            crate::features::google::commands::google_secret_set,
+            crate::features::google::commands::google_connect,
+            crate::features::google::commands::google_disconnect,
             // [polish]
             crate::toast::toast_recent,
         ])
@@ -492,6 +496,7 @@ pub fn builder() -> Builder<Wry> {
             // [appearance]
             crate::settings::live::SettingsChanged,
             // [google]
+            crate::features::google::commands::GoogleStatusChanged,
             // [polish]
             crate::window::LauncherHidden,
         ])
