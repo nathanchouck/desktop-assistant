@@ -133,6 +133,7 @@ desktop-assistant/
 │       ├── fuzzy.rs             # nucleo wrapper, scores normalized to 0..1
 │       ├── icons.rs             # icon cache (memory + disk PNG) + `icon` protocol
 │       ├── store/               # SQLite: frecency (later: history), migrations
+│       ├── net.rs               # small HTTPS GET/POST over WinHTTP (exchange rates, Google)
 │       ├── secrets.rs           # named secrets in Windows Credential Manager (memory off Windows)
 │       ├── integrations/        # MCP server registry: settings, validation, config for Claude + Codex
 │       └── platform/            # `Shell`: apps, files, icons, open/reveal; stubs off Windows
@@ -458,6 +459,16 @@ and `copy_text`, `toast::info` / `toast::error`, thumbnails served from
 - **Dictate:** the "Dictate" command and the mic button in the search bar press a tagged Win+H (Windows voice typing), which types into the focused search box. Windows may ask to turn voice typing on the first time.
 - **Saved AI commands** (`saved.rs`, `template.rs`, `provider.rs`): `ai_commands.commands` is a list of {name, keyword, prompt, provider default|claude|chatgpt, icon}. Placeholders: `{selection}` (copied from the window you came from), `{clipboard}`, `{text}` (typed after the name or keyword), `{date}`, `{time}`, `{datetime}`; `{text|clipboard}` takes the first that isn't empty. Enter returns `Activation::Ask`; a prompt that needs typed text without any puts "keyword " in the box. Defaults: Fix Grammar, Summarize Clipboard, Explain Clipboard, Translate to English, Make It Shorter, plus Today's Calendar, Unread Email and Search Drive on Claude through its Google connectors.
 
+#### Google: Calendar, Gmail, Drive (`features/google/`, `net.rs`)
+- **Your own OAuth client** (D-040, resolves D-008). Settings → Google walks through making a "Desktop app" client in Google Cloud Console: enable the Calendar, Gmail and Drive APIs, set up the consent screen as External with yourself as a test user, then paste the client ID (`google.client_id`, may sync) and client secret. Connect uses Authorization Code + PKCE (S256): the consent page opens in the browser, and a one-shot listener on `127.0.0.1:<random port>` (`loopback.rs`; checks `state`, gives up after 5 min) receives the code, which is exchanged at `oauth2.googleapis.com/token`. Scopes are read-only: `calendar.events.readonly`, `gmail.metadata`, `drive.metadata.readonly`, plus `openid email` for "Connected as …".
+- **Secrets.** The client secret and refresh token are in Credential Manager (`desktop-assistant:google-client-secret`, `…:google-refresh-token`). Access tokens stay in memory, refreshed one at a time a minute before they expire; a 401 forces one refresh and retry. `google-account.json` in the local data folder holds the email, the client ID the token belongs to and the granted scopes. A refused refresh (`invalid_grant`: revoked, or 7 days in Testing mode) forgets the token, toasts once, and rows say "Connect Google again". Disconnect revokes the token, then deletes both secrets and the file.
+- **Requests** go over WinHTTP (`net.rs`, shared with the calculator's rates; other platforms get "not supported"). API errors are read for a switched-off API (the row opens Google's activation page) and for a missing scope.
+- **`cal`** (claimed while connected) lists events from the primary calendar between now and the end of the `calendar_days`th day (1–7, default 2), in time order: "Today 14:00–15:00 · Room 4 · Zoom", with "Now" or "in 25 min" at the right. Cancelled and declined events and working-location entries are skipped. Enter opens the call (Meet's own fields, else a Zoom/Teams/Meet/Webex link in the location or description; `meeting.rs`) or else the event; Ctrl+Shift+C copies the call link. Text after `cal` filters by title.
+- **`mail`** (claimed while connected): "N unread in Inbox" (Enter opens Gmail), then the 10 newest unread threads ("Sender · 2 h ago"). `gmail.metadata` gives headers only and can't search, so `mail <text>` filters the cached unread and 20 newest inbox threads by subject and sender, plus a "Search Gmail for “…”" row that opens Gmail's search.
+- **Cache** (`sync.rs`): events and inbox are read in the background while connected, every 5 minutes, at once when the Google settings change, and when the launcher opens or a `cal`/`mail` search finds them over a minute old. Search only reads memory. Threads whose `historyId` hasn't moved are reused.
+- **Drive in search** (`drive_in_search`, default on): queries of 3+ characters ask `files.list` (`name contains '…' and trashed = false`, 8 newest) after a 250 ms pause, cached per query for 2 minutes, delivered as late results (D-020); a failure pauses Drive for a minute. Rows are kind Link with the `drive` glyph ("Google Drive · 3 days ago"), scored like local files ×0.95. Enter opens the file, Ctrl+Shift+C copies its link.
+- The ranker keeps `gcal:`, `gmail:` and `google:` rows in the provider's order, like clips and chats.
+
 ### Apps
 
 - `AppIndex` holds the Start menu's "All apps" (the AppsFolder) in memory:
@@ -719,6 +730,7 @@ it events and carries out its verdicts. (D-022)
 | Settings | `settings.toml` in `%APPDATA%\desktop-assistant` or a chosen synced folder; `settings.local.toml` in `%LOCALAPPDATA%\desktop-assistant` (this PC's values) |
 | Frecency | `%LOCALAPPDATA%\desktop-assistant\data.db` |
 | Chat history | `%LOCALAPPDATA%\desktop-assistant\history.db` |
+| Google sign-in | Credential Manager (client secret, refresh token); `%LOCALAPPDATA%\desktop-assistant\google-account.json` (email, scopes) |
 | Logs | `%LOCALAPPDATA%\desktop-assistant\logs\` (7 days kept) |
 | API keys | Windows Credential Manager, service `desktop-assistant` |
 

@@ -154,10 +154,10 @@ AI power features
 - [x] Saved AI commands (prompt templates: "fix grammar", "summarize clipboard")
 - [ ] Side-by-side: same prompt to Claude and ChatGPT
 
-Integrations without AI (needs Google OAuth, D-008)
-- [ ] `cal`: next events, join meeting link
-- [ ] `mail`: unread count, open thread
-- [ ] Drive file search merged into results
+Integrations without AI (your own Google OAuth client, D-040)
+- [x] `cal`: next events, join meeting link
+- [x] `mail`: unread count, open thread
+- [x] Drive file search merged into results
 - [x] Media controls (play/pause/next, now playing)
 
 Extensibility
