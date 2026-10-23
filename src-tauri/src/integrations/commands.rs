@@ -53,7 +53,9 @@ fn status(name: &str) -> Result<SecretStatus, IpcError> {
     })
 }
 
-/// Which of `names` are saved on this PC.
+/// Which of `names` are saved on this PC. One that can't be read (a name
+/// from a hand-edited settings file that isn't valid) counts as not saved,
+/// so the others still show.
 #[tauri::command]
 #[specta::specta]
 pub async fn secret_status(names: Vec<String>) -> Result<Vec<SecretStatus>, IpcError> {
@@ -63,7 +65,14 @@ pub async fn secret_status(names: Vec<String>) -> Result<Vec<SecretStatus>, IpcE
             if !may_ask_about(name) {
                 return Err(err(format!("\"{name}\" isn't a secret the launcher keeps")));
             }
-            status(name)
+            Ok(status(name).unwrap_or_else(|e| {
+                tracing::warn!("could not check the secret {name}: {}", e.message);
+                SecretStatus {
+                    name: name.clone(),
+                    saved: false,
+                    last4: None,
+                }
+            }))
         })
         .collect()
 }
@@ -196,6 +205,13 @@ mod tests {
             .await
             .unwrap();
         assert!(listed[0].saved && !listed[1].saved);
+        let odd = secret_status(vec!["mcp:a b:env:X".into(), OPENAI_API_KEY.into()])
+            .await
+            .unwrap();
+        assert!(
+            !odd[0].saved && odd[1].saved,
+            "a bad name doesn't hide the rest"
+        );
 
         let gone = secret_delete(OPENAI_API_KEY.into()).await.unwrap();
         assert!(!gone.saved && gone.last4.is_none());

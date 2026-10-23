@@ -98,7 +98,8 @@
     >
       <Toggle on={mcp.enabled} label="Give the AIs these servers" onchange={(on) => void store.save((s) => (s.mcp.enabled = on))} />
     </Row>
-    {#each mcp.servers as server (server.name)}
+    <!-- Keyed by position: a hand-edited file may repeat a name. -->
+    {#each mcp.servers as server, i (i)}
       {@const missing = missingSecrets(server, statuses)}
       <div class="server" class:off={!mcp.enabled || !server.enabled}>
         <div class="info">

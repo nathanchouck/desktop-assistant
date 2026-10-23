@@ -103,7 +103,11 @@ export const commands = {
 	 *  that couldn't happen.
 	 */
 	updateInstall: () => typedError<null, IpcError>(__TAURI_INVOKE("update_install")),
-	/**  Which of `names` are saved on this PC. */
+	/**
+	 *  Which of `names` are saved on this PC. One that can't be read (a name
+	 *  from a hand-edited settings file that isn't valid) counts as not saved,
+	 *  so the others still show.
+	 */
 	secretStatus: (names: string[]) => typedError<SecretStatus[], IpcError>(__TAURI_INVOKE("secret_status", { names })),
 	/**  Saves an API key in Credential Manager (replacing any saved one). */
 	secretSet: (name: string, value: string) => typedError<SecretStatus, IpcError>(__TAURI_INVOKE("secret_set", { name, value })),
