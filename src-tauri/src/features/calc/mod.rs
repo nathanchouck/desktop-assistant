@@ -4,7 +4,8 @@
 //! - `parse` decides what counts as a calculation (`tokens` splits the
 //!   query, `rewrite` turns everyday notation into fend's);
 //! - `eval` runs fend with a time limit, `format` makes the answer readable;
-//! - `rates` keeps exchange rates fresh in the background (`win` downloads).
+//! - `rates` keeps exchange rates fresh in the background (`crate::net`
+//!   downloads).
 
 mod eval;
 mod format;
@@ -12,8 +13,6 @@ mod parse;
 mod rates;
 mod rewrite;
 mod tokens;
-#[cfg(windows)]
-mod win;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, OnceLock};
