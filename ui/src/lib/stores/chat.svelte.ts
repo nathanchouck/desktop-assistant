@@ -1,4 +1,4 @@
-import { commands, type AiStream, type OpenedChat, type ProviderId } from "../bindings";
+import { commands, type AiStream, type Attachment, type OpenedChat, type ProviderId } from "../bindings";
 import { applyEvent, fromSaved, lastAnswer, pendingApproval, type Transcript } from "../chat";
 
 const empty = (): Transcript => ({ entries: [], running: false, model: "" });
@@ -29,8 +29,11 @@ export class ChatStore {
   /** The AI asked for (null: the default), kept for a retry. */
   #requested: ProviderId | null = null;
 
-  /** Starts a new conversation with `provider` (or the default AI) and shows it. */
-  async ask(text: string, provider: ProviderId | null = null): Promise<void> {
+  /**
+   * Starts a new conversation with `provider` (or the default AI) and shows
+   * it. `attachments` (selected text, a file, a picture) go with the question.
+   */
+  async ask(text: string, provider: ProviderId | null = null, attachments: Attachment[] = []): Promise<void> {
     this.#generation++;
     this.#conversation = null;
     this.#requested = provider;
@@ -38,7 +41,7 @@ export class ChatStore {
     this.active = true;
     this.draft = "";
     this.transcript = { entries: [{ kind: "user", text }], running: true, model: "" };
-    await this.#start(text);
+    await this.#start(text, attachments);
   }
 
   /**
@@ -75,7 +78,8 @@ export class ChatStore {
     return res.status === "error" ? res.error.message : null;
   }
 
-  async followUp(): Promise<void> {
+  /** Sends the draft as a follow-up, with `attachments` if any. */
+  async followUp(attachments: Attachment[] = []): Promise<void> {
     const text = this.draft.trim();
     if (!text || this.transcript.running) return;
     this.draft = "";
@@ -83,8 +87,8 @@ export class ChatStore {
     this.transcript.running = true;
     // If the first question never reached the AI (say it wasn't installed
     // yet), this one starts the conversation instead.
-    if (this.#conversation === null) return this.#start(text);
-    const res = await commands.aiFollowUp(text);
+    if (this.#conversation === null) return this.#start(text, attachments);
+    const res = await commands.aiFollowUp(text, attachments);
     if (res.status === "error") return this.#fail(res.error.message);
     this.provider = res.data.provider;
     this.#noteContext(res.data.context);
@@ -124,11 +128,11 @@ export class ChatStore {
     await commands.aiClose();
   }
 
-  async #start(text: string): Promise<void> {
+  async #start(text: string, attachments: Attachment[]): Promise<void> {
     const generation = this.#generation;
     // Events can beat `aiAsk`'s reply; hold them until we know the id.
     this.#buffer = [];
-    const res = await commands.aiAsk(text, this.#requested);
+    const res = await commands.aiAsk(text, this.#requested, attachments);
     if (generation !== this.#generation) return;
     const held = this.#buffer ?? [];
     this.#buffer = null;

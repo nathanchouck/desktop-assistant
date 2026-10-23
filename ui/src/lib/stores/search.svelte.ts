@@ -2,6 +2,7 @@ import {
   commands,
   type Action,
   type Activation,
+  type Attachment,
   type OpenedChat,
   type ProviderId,
   type ResultItem,
@@ -29,6 +30,8 @@ export interface SearchHooks {
   onSettings?: () => void;
   /** Show a saved conversation (chat history) in the chat view. */
   onOpenChat?: (chat: OpenedChat) => void;
+  /** Start a question with these attached (Ctrl+Shift+A on a file). */
+  onCompose?: (attachments: Attachment[]) => void;
   /** The AI that Tab and the "Ask" row use. */
   defaultProvider?: () => ProviderId;
 }
@@ -50,7 +53,13 @@ export class SearchStore {
   #armed: { id: string; until: number } | null = null;
 
   constructor(hooks: SearchHooks) {
-    this.#hooks = { onSettings: () => {}, onOpenChat: () => {}, defaultProvider: () => "claude", ...hooks };
+    this.#hooks = {
+      onSettings: () => {},
+      onOpenChat: () => {},
+      onCompose: () => {},
+      defaultProvider: () => "claude",
+      ...hooks,
+    };
   }
 
   async setQuery(query: string, keepSelection = false): Promise<void> {
@@ -192,6 +201,10 @@ export class SearchStore {
       case "open_chat":
         this.clear();
         this.#hooks.onOpenChat(activation.chat);
+        break;
+      case "compose":
+        this.clear();
+        this.#hooks.onCompose(activation.attachments);
         break;
     }
   }

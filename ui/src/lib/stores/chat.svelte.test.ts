@@ -75,7 +75,7 @@ describe("ChatStore", () => {
     chat.draft = "again";
     await chat.followUp();
     expect(commands.aiFollowUp).not.toHaveBeenCalled();
-    expect(commands.aiAsk).toHaveBeenLastCalledWith("again", null);
+    expect(commands.aiAsk).toHaveBeenLastCalledWith("again", null, []);
     chat.onEvent(text(5, "ok"));
     expect(chat.transcript.entries.at(-1)).toEqual({ kind: "assistant", text: "ok" });
   });
@@ -100,14 +100,14 @@ describe("ChatStore", () => {
     const asking = chat.ask("hi", "chatgpt");
     expect(chat.provider).toBe("chatgpt");
     await asking;
-    expect(commands.aiAsk).toHaveBeenCalledWith("hi", "chatgpt");
+    expect(commands.aiAsk).toHaveBeenCalledWith("hi", "chatgpt", []);
 
     // The default AI: unknown until the backend says.
     commands.aiAsk.mockResolvedValueOnce(reply(2, null, "claude"));
     const second = chat.ask("hello");
     expect(chat.provider).toBeNull();
     await second;
-    expect(commands.aiAsk).toHaveBeenLastCalledWith("hello", null);
+    expect(commands.aiAsk).toHaveBeenLastCalledWith("hello", null, []);
     expect(chat.provider).toBe("claude");
 
     await chat.close();
@@ -121,7 +121,7 @@ describe("ChatStore", () => {
     commands.aiAsk.mockResolvedValueOnce(reply(3, null, "chatgpt"));
     chat.draft = "again";
     await chat.followUp();
-    expect(commands.aiAsk).toHaveBeenLastCalledWith("again", "chatgpt");
+    expect(commands.aiAsk).toHaveBeenLastCalledWith("again", "chatgpt", []);
   });
 
   it("shows what Claude was told about the screen under your message", async () => {
@@ -138,6 +138,26 @@ describe("ChatStore", () => {
     chat.draft = "thanks";
     await chat.followUp();
     expect(chat.transcript.entries.at(-1)).toEqual({ kind: "user", text: "thanks" });
+  });
+
+  it("sends attachments with a question and with a follow-up", async () => {
+    const picture = { type: "image" as const, id: "1a", width: 4, height: 3 };
+    const selected = { type: "text" as const, text: "teh cat" };
+    commands.aiAsk.mockResolvedValue(reply(1, "Picture · Notepad"));
+    commands.aiFollowUp.mockResolvedValue(reply(1, "Selected text"));
+    const chat = new ChatStore();
+    await chat.ask("what's this?", null, [picture]);
+    expect(commands.aiAsk).toHaveBeenCalledWith("what's this?", null, [picture]);
+    expect(chat.transcript.entries[0]).toEqual({
+      kind: "user",
+      text: "what's this?",
+      context: "Picture · Notepad",
+    });
+    chat.onEvent({ conversation: 1, event: { type: "done" } });
+    chat.draft = "and this?";
+    await chat.followUp([selected]);
+    expect(commands.aiFollowUp).toHaveBeenCalledWith("and this?", [selected]);
+    expect(chat.transcript.entries.at(-1)).toEqual({ kind: "user", text: "and this?", context: "Selected text" });
   });
   describe("a reopened chat (from history)", () => {
     const saved = (conversation = 7): OpenedChat => ({
@@ -175,7 +195,7 @@ describe("ChatStore", () => {
       chat.draft = "and in May?";
       await chat.followUp();
       expect(commands.aiAsk).not.toHaveBeenCalled();
-      expect(commands.aiFollowUp).toHaveBeenCalledWith("and in May?");
+      expect(commands.aiFollowUp).toHaveBeenCalledWith("and in May?", []);
       expect(chat.transcript.running).toBe(true);
       expect(chat.finishedAnswer).toBeNull();
       // Its events are this conversation's; another's are ignored.

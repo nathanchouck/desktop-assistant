@@ -193,6 +193,22 @@ describe("SearchStore", () => {
     expect(store.items).toEqual([]);
   });
 
+  it("starts a question about a file with Ctrl+Shift+A", async () => {
+    const onCompose = vi.fn();
+    commands.searchQuery.mockResolvedValueOnce({
+      status: "ok",
+      data: { seq: 1, items: [row("file:C:\\a.pdf", "file", { actions: ["open", "ask_about"] })] },
+    });
+    const store = new SearchStore({ onAsk: vi.fn(), onCompose });
+    await store.setQuery("a.pdf");
+    const attachments = [{ type: "path", path: "C:\\a.pdf", folder: false }];
+    reply({ type: "compose", attachments });
+    await store.activate(0, ["ask_about"]);
+    expect(commands.itemActivate).toHaveBeenCalledWith("file:C:\\a.pdf", "ask_about");
+    expect(onCompose).toHaveBeenCalledWith(attachments);
+    expect(store.query).toBe("");
+  });
+
   it("says a slow action is running, until it's done", async () => {
     vi.useFakeTimers();
     try {
