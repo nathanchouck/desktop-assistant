@@ -250,8 +250,32 @@ mod tests {
             resume: None,
             instructions: String::new(),
             mcp: None,
+            servers: Vec::new(),
             screen_tools: true,
             windows_sandbox: false,
+        }
+    }
+
+    #[test]
+    fn keys_never_reach_codex_through_its_environment() {
+        let launch = Launch::Exe(PathBuf::from("codex"));
+        for billing in [BillingMode::Subscription, BillingMode::ApiKey] {
+            let cmd = command(
+                &launch,
+                &Options {
+                    billing,
+                    api_key: Some(Secret::new("sk-proj-saved")),
+                    ..options()
+                },
+            );
+            for var in SECRET_ENV {
+                let set = cmd.as_std().get_envs().find(|(k, _)| *k == var);
+                assert_eq!(set.map(|(_, v)| v), Some(None), "{var} is removed");
+            }
+            assert!(!cmd
+                .as_std()
+                .get_args()
+                .any(|a| a.to_string_lossy().contains("sk-proj")));
         }
     }
 
@@ -278,7 +302,7 @@ mod tests {
     #[test]
     fn never_shows_the_key() {
         let options = Options {
-            api_key: Some(ApiKey::new("sk-secret")),
+            api_key: Some(Secret::new("sk-secret")),
             ..options()
         };
         assert!(!format!("{options:?}").contains("sk-secret"));

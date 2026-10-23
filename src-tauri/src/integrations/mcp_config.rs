@@ -343,9 +343,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(path, dir.path().join(CLAUDE_CONFIG_FILE));
-        let read = || -> Value {
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
-        };
+        let read =
+            || -> Value { serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap() };
         assert_eq!(read()["mcpServers"]["github"]["command"], "npx");
 
         let same = claude_config(Some(&launcher()), &servers)

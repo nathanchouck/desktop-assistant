@@ -154,7 +154,10 @@ pub fn check_server<'a>(
 ) -> Result<(), String> {
     check_name(&server.name)?;
     if others.into_iter().any(|o| o.name == server.name) {
-        return Err(format!("There's already a server called \"{}\".", server.name));
+        return Err(format!(
+            "There's already a server called \"{}\".",
+            server.name
+        ));
     }
     match server.transport {
         McpTransport::Stdio if server.command.trim().is_empty() => {
@@ -293,7 +296,9 @@ pub(crate) mod tests {
         assert!(check_name("github").is_ok());
         assert!(check_name("my_server-2").is_ok());
         assert!(check_name("").unwrap_err().contains("name"));
-        assert!(check_name("launcher").unwrap_err().contains("launcher's own"));
+        assert!(check_name("launcher")
+            .unwrap_err()
+            .contains("launcher's own"));
         for bad in ["GitHub", "has space", "dots.too", "ü", &"x".repeat(65)] {
             assert!(check_name(bad).is_err(), "{bad}");
         }

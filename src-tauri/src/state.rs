@@ -21,11 +21,11 @@ use crate::settings::{self, Settings, SharedSettings};
 use crate::store::Store;
 use crate::window::LauncherState;
 
-/// Where the launcher's MCP server is described for Claude Code.
+/// The launcher's MCP server, set once it's running. Claude Code's
+/// `--mcp-config` file (with the registry's servers) is written by
+/// `integrations` as each conversation starts.
 #[derive(Debug, Clone)]
 pub struct ToolFiles {
-    /// For `--mcp-config`.
-    pub mcp_config: PathBuf,
     /// For `--settings`: which of the launcher's tools need approval.
     pub settings: PathBuf,
     /// The server itself; Codex gets it per thread over stdin.

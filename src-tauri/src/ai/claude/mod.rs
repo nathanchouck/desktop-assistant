@@ -289,12 +289,7 @@ pub async fn check_status(settings: &ClaudeSettings) -> ClaudeStatus {
 /// browser to sign in. Returns the running process.
 pub fn sign_in(settings: &ClaudeSettings) -> Result<tokio::process::Child, AiError> {
     let launch = locate(&settings.path).ok_or(AiError::NotInstalled)?;
-    let mut cmd = base_command(
-        &launch,
-        BillingMode::Subscription,
-        None,
-        CREATE_NEW_CONSOLE,
-    )?;
+    let mut cmd = base_command(&launch, BillingMode::Subscription, None, CREATE_NEW_CONSOLE)?;
     cmd.args(["auth", "login", "--claudeai"]);
     cmd.spawn().map_err(|e| AiError::Spawn(NAME, e.to_string()))
 }
@@ -342,14 +337,12 @@ pub(crate) fn pick_key(
     saved: Option<Secret>,
     from_env: impl FnOnce() -> Option<String>,
 ) -> Option<Secret> {
-    saved
-        .filter(|k| !k.expose().trim().is_empty())
-        .or_else(|| {
-            from_env()
-                .map(|v| v.trim().to_owned())
-                .filter(|v| !v.is_empty())
-                .map(Secret::new)
-        })
+    saved.filter(|k| !k.expose().trim().is_empty()).or_else(|| {
+        from_env()
+            .map(|v| v.trim().to_owned())
+            .filter(|v| !v.is_empty())
+            .map(Secret::new)
+    })
 }
 
 /// Tells Claude where it's running and how to answer.
@@ -453,7 +446,10 @@ mod tests {
             pick_key(None, env).map(|k| k.expose().to_owned()),
             Some("sk-ant-env".into())
         );
-        assert_eq!(pick_key(Some(Secret::new(" ")), || Some(String::new())), None);
+        assert_eq!(
+            pick_key(Some(Secret::new(" ")), || Some(String::new())),
+            None
+        );
         assert_eq!(pick_key(None, || None), None);
     }
 

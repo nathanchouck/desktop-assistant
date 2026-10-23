@@ -61,8 +61,9 @@ pub enum BillingMode {
     /// env vars are stripped from the child process so they can't take over.
     #[default]
     Subscription,
-    /// Use the API key from the environment (`ANTHROPIC_API_KEY` for
-    /// Claude, `OPENAI_API_KEY` for ChatGPT).
+    /// Use the API key saved in the settings menu (Credential Manager),
+    /// else the one in the environment (`ANTHROPIC_API_KEY` for Claude,
+    /// `OPENAI_API_KEY` for ChatGPT).
     ApiKey,
 }
 
@@ -134,9 +135,15 @@ pub enum AiError {
          \"Install Codex\" in the launcher, then sign in to ChatGPT."
     )]
     CodexNotInstalled,
-    #[error("API key mode is on but ANTHROPIC_API_KEY isn't set")]
+    #[error(
+        "Claude's billing is set to API key, but no Anthropic API key is saved. Add one in \
+         Settings → Integrations (or set ANTHROPIC_API_KEY)."
+    )]
     MissingApiKey,
-    #[error("ChatGPT's billing is set to API key, but OPENAI_API_KEY isn't set")]
+    #[error(
+        "ChatGPT's billing is set to API key, but no OpenAI API key is saved. Add one in \
+         Settings → Integrations (or set OPENAI_API_KEY)."
+    )]
     MissingOpenAiKey,
     /// (program, reason)
     #[error("could not start {0}: {1}")]

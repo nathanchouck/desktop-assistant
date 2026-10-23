@@ -204,7 +204,9 @@ mod tests {
     #[tokio::test]
     async fn only_known_names_are_accepted() {
         assert!(secret_set("mcp:x:env:Y".into(), "v".into()).await.is_err());
-        assert!(secret_set("something-else".into(), "v".into()).await.is_err());
+        assert!(secret_set("something-else".into(), "v".into())
+            .await
+            .is_err());
         assert!(secret_delete("other".into()).await.is_err());
         assert!(secret_status(vec!["other".into()]).await.is_err());
         assert!(secret_set(ANTHROPIC_API_KEY.into(), "   ".into())

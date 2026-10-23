@@ -190,7 +190,10 @@ mod tests {
             Some("1234")
         );
         assert_eq!(Secret::new("short-pass").last4(), None);
-        assert_eq!(Secret::new("ключ-ключ-ключ").last4().as_deref(), Some("ключ"));
+        assert_eq!(
+            Secret::new("ключ-ключ-ключ").last4().as_deref(),
+            Some("ключ")
+        );
     }
 
     #[test]
