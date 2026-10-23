@@ -43,11 +43,13 @@ pub fn path_from_id(id: &str) -> Option<&str> {
 
 /// What a file or folder row offers. Enter opens; the rest have keys or
 /// the action menu (Ctrl+K). "Open with" means nothing for a folder.
+/// Ctrl+Shift+A starts a question about it.
 pub fn file_actions(is_folder: bool) -> Vec<Action> {
     let mut actions = vec![Action::Open, Action::RevealInExplorer, Action::CopyPath];
     if !is_folder {
         actions.push(Action::OpenWith);
     }
+    actions.push(Action::AskAbout);
     actions.push(Action::Trash);
     actions
 }
@@ -456,6 +458,8 @@ mod tests {
         assert_eq!(items[0].title, "report.docx");
         assert_eq!(items[0].id, r"file:C:\x\report.docx");
         assert_eq!(items[0].actions[0], Action::Open);
+        // Ctrl+Shift+A starts a question about it.
+        assert!(items[0].actions.contains(&Action::AskAbout));
         assert!(items.iter().all(|i| i.score <= FILE_WEIGHT));
     }
 
@@ -516,12 +520,14 @@ mod tests {
                 Action::RevealInExplorer,
                 Action::CopyPath,
                 Action::OpenWith,
+                Action::AskAbout,
                 Action::Trash
             ]
         );
         // Enter still opens; a folder has no "Open with".
         assert_eq!(folder.actions[0], Action::Open);
         assert!(!folder.actions.contains(&Action::OpenWith));
+        assert!(folder.actions.contains(&Action::AskAbout));
         assert!(folder.actions.contains(&Action::Trash));
     }
 }

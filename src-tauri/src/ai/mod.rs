@@ -6,6 +6,7 @@ pub mod chat;
 pub mod claude;
 pub mod codex;
 pub mod launch;
+pub mod message;
 pub mod process;
 pub mod status;
 

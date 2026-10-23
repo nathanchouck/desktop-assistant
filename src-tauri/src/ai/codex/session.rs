@@ -15,6 +15,7 @@ use super::parser::{Incoming, Parser};
 use super::protocol::{self, ApprovalKind};
 use super::{command, Launch, Options, NAME};
 use crate::ai::locked as lock_or_recover;
+use crate::ai::message::Message;
 use crate::ai::process::{self, EventSink, Process};
 use crate::ai::{AiError, AiEvent, BillingMode};
 use crate::secrets::Secret;
@@ -44,7 +45,7 @@ pub struct CodexSession {
     stop_requested: AtomicBool,
     /// Open approvals: UI id → (Codex's request id, kind).
     pending: StdMutex<HashMap<String, (Value, ApprovalKind)>>,
-    turns: mpsc::UnboundedSender<String>,
+    turns: mpsc::UnboundedSender<Message>,
 }
 
 impl CodexSession {
@@ -99,10 +100,10 @@ impl CodexSession {
     }
 
     /// Marks a new turn as running and queues its message.
-    pub async fn send_turn(&self, text: &str) -> Result<(), AiError> {
+    pub async fn send_turn(&self, message: &Message) -> Result<(), AiError> {
         self.stop_requested.store(false, Ordering::Release);
         self.process.busy.store(true, Ordering::Release);
-        self.turns.send(text.to_owned()).map_err(|_| {
+        self.turns.send(message.clone()).map_err(|_| {
             self.process.busy.store(false, Ordering::Release);
             AiError::Process(NAME, "it isn't running any more".into())
         })
@@ -177,7 +178,7 @@ impl CodexSession {
         this: Weak<Self>,
         options: Options,
         key: Option<Secret>,
-        mut queued: mpsc::UnboundedReceiver<String>,
+        mut queued: mpsc::UnboundedReceiver<Message>,
     ) {
         {
             let Some(session) = this.upgrade() else {
@@ -188,7 +189,7 @@ impl CodexSession {
             }
         }
         let mut open = false;
-        while let Some(text) = queued.recv().await {
+        while let Some(turn) = queued.recv().await {
             let Some(session) = this.upgrade() else {
                 return;
             };
@@ -198,7 +199,7 @@ impl CodexSession {
                 }
                 open = true;
             }
-            session.run_turn(&text).await;
+            session.run_turn(&turn).await;
         }
     }
 
@@ -274,7 +275,7 @@ impl CodexSession {
         Ok(())
     }
 
-    async fn run_turn(&self, text: &str) {
+    async fn run_turn(&self, message: &Message) {
         if self.stop_requested.swap(false, Ordering::AcqRel) {
             self.process.busy.store(false, Ordering::Release);
             self.process.emit(AiEvent::Stopped);
@@ -289,7 +290,7 @@ impl CodexSession {
         };
         let reply = self
             .request(
-                |id| protocol::turn_start(id, &thread, text),
+                |id| protocol::turn_start(id, &thread, message),
                 REQUEST_TIMEOUT,
             )
             .await;

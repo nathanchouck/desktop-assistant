@@ -6,13 +6,20 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use super::HotkeyError;
 
-/// The plugin, with a handler that toggles the launcher on key press.
+/// The plugin, with a handler that toggles the launcher on key press (or,
+/// for the "ask about the selection" shortcut, grabs the selection).
 pub fn plugin() -> TauriPlugin<Wry> {
     tauri_plugin_global_shortcut::Builder::new()
-        .with_handler(|app, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                super::toggle_now(app);
+        .with_handler(|app, shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
             }
+            // [ai_commands]
+            if crate::features::ai_commands::shortcut::is_selection_shortcut(app, shortcut) {
+                crate::features::ai_commands::shortcut::pressed(app);
+                return;
+            }
+            super::toggle_now(app);
         })
         .build()
 }

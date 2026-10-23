@@ -9,6 +9,7 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult};
+use crate::features::ai_commands::Attachment;
 use crate::platform::{vk, PlatformError, Shell};
 use crate::search::apps::target_from_id;
 use crate::search::commands::BuiltinCommand;
@@ -72,7 +73,8 @@ pub async fn carry_out(app: &AppHandle, activation: Activation) -> AppResult<Act
         | Activation::Refresh
         | Activation::Removed { .. }
         | Activation::OpenSettings
-        | Activation::OpenChat { .. } => {}
+        | Activation::OpenChat { .. }
+        | Activation::Compose { .. } => {}
     }
     Ok(activation)
 }
@@ -191,6 +193,16 @@ async fn activate_builtin(
             }
             Action::OpenWith => open_with(app, shell, path),
             Action::Trash => return trash(shell, path).await,
+            // Start a question about it; the launcher stays open.
+            Action::AskAbout => {
+                let folder = tokio::fs::metadata(path).await.is_ok_and(|m| m.is_dir());
+                return Ok(Activation::Compose {
+                    attachments: vec![Attachment::Path {
+                        path: path.to_owned(),
+                        folder,
+                    }],
+                });
+            }
             _ => shell.open_path(path.to_owned()).await.map_err(launch_err)?,
         }
         return Ok(Activation::Hide);

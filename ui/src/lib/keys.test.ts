@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { chatHints, chatIntentFor, intentFor, keyFor, searchHints, shortcutFromEvent } from "./keys";
+import {
+  chatHints,
+  chatIntentFor,
+  composeHints,
+  composeIntentFor,
+  intentFor,
+  keyFor,
+  searchHints,
+  shortcutFromEvent,
+} from "./keys";
 
 const key = (k: string, mods: Partial<{ ctrl: boolean; shift: boolean; alt: boolean }> = {}) => ({
   key: k,
@@ -186,6 +195,38 @@ describe("hints", () => {
     // Not while the next answer is coming or an approval waits.
     expect(chatHints({ running: true, pending: false, answer: true })).toEqual([["Esc", "Stop"]]);
     expect(chatHints({ running: true, pending: true, answer: true })[0]).toEqual(["Ctrl Y", "Approve"]);
+  });
+});
+
+describe("composeIntentFor", () => {
+  it("asks with Enter and Tab, the other AI with Shift+Tab", () => {
+    expect(composeIntentFor(key("Enter"), false)).toEqual({ type: "ask" });
+    expect(composeIntentFor(key("Enter"), true)).toEqual({ type: "ask" });
+    expect(composeIntentFor(key("Tab"), false)).toEqual({ type: "ask" });
+    expect(composeIntentFor(key("Tab", { shift: true }), false)).toEqual({ type: "ask", other: true });
+    expect(composeIntentFor(key("Enter", { ctrl: true }), false)).toBeNull();
+  });
+
+  it("drops the last chip with Backspace only in an empty box", () => {
+    expect(composeIntentFor(key("Backspace"), true)).toEqual({ type: "remove_last" });
+    expect(composeIntentFor(key("Backspace"), false)).toBeNull();
+    expect(composeIntentFor(key("Backspace", { ctrl: true }), true)).toBeNull();
+  });
+
+  it("clears with Esc and leaves typing alone", () => {
+    expect(composeIntentFor(key("Escape"), false)).toEqual({ type: "escape" });
+    expect(composeIntentFor(key("a"), true)).toBeNull();
+    expect(composeIntentFor(key("ArrowDown"), true)).toBeNull();
+  });
+
+  it("hints name both AIs, and Backspace while the box is empty", () => {
+    expect(composeHints("Claude", "ChatGPT", true)).toEqual([
+      ["↵", "Ask Claude"],
+      ["⇧ Tab", "Ask ChatGPT"],
+      ["⌫", "Remove"],
+      ["Esc", "Clear"],
+    ]);
+    expect(composeHints("ChatGPT", "Claude", false).map(([k]) => k)).toEqual(["↵", "⇧ Tab", "Esc"]);
   });
 });
 

@@ -225,6 +225,37 @@ export function chatIntentFor(e: KeyLike): ChatIntent | null {
   return null;
 }
 
+/** What a key press means while a question with attachments is being typed. */
+export type ComposeIntent =
+  /** Ask the default AI (Enter, Tab), or the other one (Shift+Tab). */
+  | { type: "ask"; other?: true }
+  /** Backspace in an empty box: drop the last attachment. */
+  | { type: "remove_last" }
+  /** Drop the attachments and the question. */
+  | { type: "escape" };
+
+export function composeIntentFor(e: KeyLike, draftEmpty: boolean): ComposeIntent | null {
+  const plain = !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+  switch (e.key) {
+    case "Enter":
+      return plain ? { type: "ask" } : null;
+    case "Tab":
+      if (e.ctrlKey || e.altKey || e.metaKey) return null;
+      return e.shiftKey ? { type: "ask", other: true } : { type: "ask" };
+    case "Backspace":
+      return plain && draftEmpty ? { type: "remove_last" } : null;
+    case "Escape":
+      return { type: "escape" };
+  }
+  return null;
+}
+
+/** Footer hints while a question with attachments is being typed. */
+export function composeHints(ai: string, otherAi: string, draftEmpty: boolean): Hint[] {
+  const remove: Hint[] = draftEmpty ? [["⌫", "Remove"]] : [];
+  return [["↵", `Ask ${ai}`], ["⇧ Tab", `Ask ${otherAi}`], ...remove, ["Esc", "Clear"]];
+}
+
 interface ComboLike {
   code: string;
   ctrlKey: boolean;
