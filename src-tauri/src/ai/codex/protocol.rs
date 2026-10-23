@@ -8,6 +8,7 @@
 use serde_json::{json, Value};
 
 use super::{sandbox, McpServer, Options};
+use crate::ai::message::Message;
 use crate::integrations::{mcp_config, ResolvedServer};
 use crate::mcp::protocol::SERVER_NAME;
 use crate::mcp::tools::{CONTEXT, SCREENSHOT, SEARCH};
@@ -147,11 +148,20 @@ pub fn open_thread(id: u64, options: &Options) -> String {
     json!({ "id": id, "method": method, "params": params }).to_string()
 }
 
-pub fn turn_start(id: u64, thread: &str, text: &str) -> String {
+/// A turn: the text, then each picture as a local image (Codex reads the
+/// file itself).
+pub fn turn_start(id: u64, thread: &str, message: &Message) -> String {
+    let mut input = vec![json!({ "type": "text", "text": message.text })];
+    input.extend(
+        message
+            .images
+            .iter()
+            .map(|image| json!({ "type": "localImage", "path": image.path })),
+    );
     json!({
         "id": id,
         "method": "turn/start",
-        "params": { "threadId": thread, "input": [{ "type": "text", "text": text }] },
+        "params": { "threadId": thread, "input": input },
     })
     .to_string()
 }
@@ -424,11 +434,11 @@ mod tests {
         assert_eq!(parse(&initialized())["method"], "initialized");
         assert!(parse(&initialized()).get("id").is_none());
 
-        let turn = parse(&turn_start(4, "t1", "hi"));
+        let turn = parse(&turn_start(4, "t1", &"hi".into()));
         assert_eq!(turn["params"]["threadId"], "t1");
         assert_eq!(
-            turn["params"]["input"][0],
-            json!({"type": "text", "text": "hi"})
+            turn["params"]["input"],
+            json!([{"type": "text", "text": "hi"}])
         );
 
         let stop = parse(&turn_interrupt(5, "t1", "u1"));
@@ -497,5 +507,25 @@ mod tests {
         let e = json!({"message": "stream disconnected", "codexErrorInfo": "other"});
         assert_eq!(explain(&e), "stream disconnected");
         assert!(explain(&Value::Null).contains("Try again"));
+    }
+
+    #[test]
+    fn pictures_go_as_local_images() {
+        use crate::ai::message::ImageInput;
+        let message = Message::new(
+            "what's this?",
+            vec![ImageInput {
+                path: std::path::PathBuf::from("/data/ai-attachments/1a.png"),
+                png: vec![1, 2, 3],
+            }],
+        );
+        let turn = parse(&turn_start(9, "t1", &message));
+        assert_eq!(
+            turn["params"]["input"],
+            json!([
+                {"type": "text", "text": "what's this?"},
+                {"type": "localImage", "path": "/data/ai-attachments/1a.png"},
+            ])
+        );
     }
 }

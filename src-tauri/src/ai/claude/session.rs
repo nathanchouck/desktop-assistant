@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use super::protocol::{self, Incoming};
 use super::{command, Launch, Options, NAME};
+use crate::ai::message::Message;
 use crate::ai::process::{self, EventSink, Process};
 use crate::ai::{AiError, AiEvent};
 
@@ -53,10 +54,12 @@ impl ClaudeSession {
     }
 
     /// Marks a new turn as running and sends its message.
-    pub async fn send_turn(&self, text: &str) -> Result<(), AiError> {
+    pub async fn send_turn(&self, message: &Message) -> Result<(), AiError> {
         self.stopping.store(false, Ordering::Release);
         self.process.busy.store(true, Ordering::Release);
-        self.process.send_line(&protocol::user_message(text)).await
+        self.process
+            .send_line(&protocol::user_message(message))
+            .await
     }
 
     /// Answers a permission request.
