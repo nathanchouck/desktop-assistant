@@ -11,15 +11,16 @@ use tokio::sync::mpsc;
 
 use super::library::Library;
 
-/// Settings have no change notification, so they're compared this often
-/// (a read lock and a small copy).
-const SETTINGS_EVERY: Duration = Duration::from_secs(1);
+/// A chosen folder that doesn't exist yet is looked for this often.
+const MISSING_EVERY: Duration = Duration::from_secs(1);
 /// Editors save in several steps (temp file, rename): wait for quiet.
 const QUIET: Duration = Duration::from_millis(300);
 
 /// Runs for the life of the app.
 pub async fn follow(library: Arc<Library>) {
     let (tx, mut changes) = mpsc::unbounded_channel::<()>();
+    // Subscribed before the first look, so no change is missed.
+    let mut settings_changed = crate::settings::changes();
     // What the watcher and the index were made for: (on, folder).
     let mut current: Option<(bool, PathBuf)> = None;
     let mut watcher: Option<RecommendedWatcher> = None;
@@ -47,7 +48,8 @@ pub async fn follow(library: Arc<Library>) {
                     library.rescan().await;
                 }
             }
-            _ = tokio::time::sleep(SETTINGS_EVERY) => {}
+            _ = settings_changed.changed() => {}
+            _ = tokio::time::sleep(MISSING_EVERY), if missing => {}
         }
     }
 }
@@ -114,6 +116,7 @@ mod tests {
         )
         .await;
         shared.write().unwrap().scripts.folder = second.display().to_string();
+        crate::settings::announce_change();
         wait_for(
             "folder change",
             Box::new(move |l| l.index().folder == second),
@@ -123,6 +126,7 @@ mod tests {
         // A folder that doesn't exist yet is followed once it's made.
         let third = dir.path().join("three");
         shared.write().unwrap().scripts.folder = third.display().to_string();
+        crate::settings::announce_change();
         wait_for(
             "missing folder",
             Box::new(|l| l.index().folder_error.is_some()),

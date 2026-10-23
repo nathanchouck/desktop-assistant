@@ -139,6 +139,45 @@ describe("SearchStore", () => {
     expect(commands.itemActivate).toHaveBeenCalledWith("sys:restart", "run");
   });
 
+  it("asks before the Recycle Bin, and Enter or Ctrl+D again confirms", async () => {
+    const actions: ResultItem["actions"] = ["open", "reveal_in_explorer", "copy_path", "open_with", "trash"];
+    const store = await storeWith([row("file:a", "file", { title: "a.txt", actions }), row("b")]);
+    await store.activate(0, ["delete", "trash"]);
+    expect(commands.itemActivate).not.toHaveBeenCalled();
+    expect(store.notice).toBe("Move a.txt to the Recycle Bin? Press Enter to confirm.");
+    // Enter runs what's waiting, not the row's default (Open).
+    reply({ type: "removed", message: "Moved a.txt to the Recycle Bin." });
+    await store.activate();
+    expect(commands.itemActivate).toHaveBeenCalledWith("file:a", "trash");
+    // The row is gone at once, before the index notices.
+    expect(store.items.map((i) => i.id)).toEqual(["b"]);
+    expect(store.selected).toBe(0);
+    expect(store.notice).toBe("Moved a.txt to the Recycle Bin.");
+  });
+
+  it("confirms with the same key, and other keys don't run what's waiting", async () => {
+    const actions: ResultItem["actions"] = ["open", "copy_path", "trash"];
+    const store = await storeWith([row("file:a", "file", { actions })]);
+    await store.activate(0, ["delete", "trash"]);
+    reply({ type: "notice", message: "Copied" });
+    await store.activate(0, ["copy_path", "copy"]);
+    expect(commands.itemActivate).toHaveBeenLastCalledWith("file:a", "copy_path");
+    // That disarmed it: the Recycle Bin asks again.
+    await store.activate(0, ["delete", "trash"]);
+    expect(commands.itemActivate).toHaveBeenCalledTimes(1);
+    await store.activate(0, ["delete", "trash"]);
+    expect(commands.itemActivate).toHaveBeenLastCalledWith("file:a", "trash");
+  });
+
+  it("keeps the highlight in place when a row above it goes", async () => {
+    const store = await storeWith([row("a"), row("b"), row("c")]);
+    store.move(2);
+    reply({ type: "removed", message: "gone" });
+    await store.activate(0, ["open"]);
+    expect(store.items.map((i) => i.id)).toEqual(["b", "c"]);
+    expect(store.current?.id).toBe("c");
+  });
+
   it("forgets a confirmation when the highlight moves", async () => {
     const store = await storeWith([row("sys:restart", "command", { confirm: "Restart?" }), row("b")]);
     await store.activate();

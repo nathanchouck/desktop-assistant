@@ -374,7 +374,13 @@ impl Ctx {
             .map(|ms| format!(" (Start's visibility event came {ms} ms after the tap)"))
             .unwrap_or_default();
         match report.ending {
-            Ending::StayedOpen => tracing::warn!("{report}{event}"),
+            Ending::StayedOpen => {
+                tracing::warn!("{report}{event}");
+                crate::toast::report(
+                    "Start opened after a Windows key tap and wouldn't close; the log has \
+                     the timings",
+                );
+            }
             _ => tracing::info!("{report}{event}"),
         }
         if report.ending == Ending::Closed {

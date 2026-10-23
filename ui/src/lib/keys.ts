@@ -15,6 +15,8 @@ export type Intent =
   | { type: "ask"; other?: true }
   /** Open the settings menu (Ctrl+,). */
   | { type: "settings" }
+  /** Open the action menu for the selected result (Ctrl+K). */
+  | { type: "menu" }
   | { type: "escape" };
 
 interface KeyLike {
@@ -25,6 +27,22 @@ interface KeyLike {
   metaKey: boolean;
 }
 
+/**
+ * The fixed keys for a result's other actions: [key, what it can mean].
+ * The first of those a result offers is what the key does for it.
+ */
+export const ACTION_KEYS: [string, Action[]][] = [
+  ["Ctrl ↵", ["reveal_in_explorer", "paste"]],
+  // Ctrl+Shift+Enter is the Windows convention for "run as administrator".
+  ["Ctrl ⇧ ↵", ["run_as_admin"]],
+  ["Ctrl ⇧ C", ["copy_path", "copy"]],
+  ["Ctrl ⇧ P", ["pin"]],
+  ["Ctrl ⇧ A", ["ask_about"]],
+  ["Ctrl D", ["delete", "trash"]],
+];
+
+const actionsFor = (key: string): Action[] => ACTION_KEYS.find(([k]) => k === key)?.[1] ?? [];
+
 export function intentFor(e: KeyLike): Intent | null {
   const ctrlOnly = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
   const ctrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
@@ -34,9 +52,8 @@ export function intentFor(e: KeyLike): Intent | null {
     case "ArrowUp":
       return { type: "move", delta: -1 };
     case "Enter":
-      // Ctrl+Shift+Enter is the Windows convention for "run as administrator".
-      if (ctrlShift) return { type: "activate", actions: ["run_as_admin"] };
-      if (ctrlOnly) return { type: "activate", actions: ["reveal_in_explorer", "paste"] };
+      if (ctrlShift) return { type: "activate", actions: actionsFor("Ctrl ⇧ ↵") };
+      if (ctrlOnly) return { type: "activate", actions: actionsFor("Ctrl ↵") };
       return { type: "activate" };
     case "Tab":
       if (e.ctrlKey || e.altKey || e.metaKey) return null;
@@ -48,14 +65,21 @@ export function intentFor(e: KeyLike): Intent | null {
   if (ctrlShift) {
     switch (e.key.toLowerCase()) {
       case "c":
-        return { type: "activate", actions: ["copy_path", "copy"] };
+        return { type: "activate", actions: actionsFor("Ctrl ⇧ C") };
       case "p":
-        return { type: "activate", actions: ["pin"] };
+        return { type: "activate", actions: actionsFor("Ctrl ⇧ P") };
       case "a":
-        return { type: "activate", actions: ["ask_about"] };
+        return { type: "activate", actions: actionsFor("Ctrl ⇧ A") };
     }
   }
-  if (ctrlOnly && e.key.toLowerCase() === "d") return { type: "activate", actions: ["delete"] };
+  if (ctrlOnly) {
+    switch (e.key.toLowerCase()) {
+      case "d":
+        return { type: "activate", actions: actionsFor("Ctrl D") };
+      case "k":
+        return { type: "menu" };
+    }
+  }
   // Ctrl+1..9 opens that row directly.
   if (ctrlOnly && /^[1-9]$/.test(e.key)) {
     return { type: "activate", index: Number(e.key) - 1 };
@@ -63,19 +87,33 @@ export function intentFor(e: KeyLike): Intent | null {
   return null;
 }
 
+/**
+ * The key that runs `action` on a result offering `actions`: Enter for its
+ * default, else the fixed key that picks it. `null` when only the action
+ * menu has it.
+ */
+export function keyFor(actions: Action[], action: Action): string | null {
+  if (actions[0] === action) return "↵";
+  for (const [key, meanings] of ACTION_KEYS) {
+    if (meanings.find((a) => actions.includes(a)) === action) return key;
+  }
+  return null;
+}
+
 /** A footer key hint: [key, label]. */
 export type Hint = [string, string];
 
-/** Hints for a result's extra actions, in display order. */
-const actionHints: [Action, Hint][] = [
-  ["reveal_in_explorer", ["Ctrl ↵", "Show in folder"]],
-  ["paste", ["Ctrl ↵", "Paste"]],
-  ["copy_path", ["Ctrl ⇧ C", "Copy path"]],
-  ["copy", ["Ctrl ⇧ C", "Copy"]],
-  ["run_as_admin", ["Ctrl ⇧ ↵", "Admin"]],
-  ["ask_about", ["Ctrl ⇧ A", "Ask"]],
-  ["pin", ["Ctrl ⇧ P", "Pin"]],
-  ["delete", ["Ctrl D", "Delete"]],
+/** Short footer labels for a result's extra actions, in display order. */
+const hintLabels: [Action, string][] = [
+  ["reveal_in_explorer", "Show in folder"],
+  ["paste", "Paste"],
+  ["copy_path", "Copy path"],
+  ["copy", "Copy"],
+  ["run_as_admin", "Admin"],
+  ["ask_about", "Ask"],
+  ["pin", "Pin"],
+  ["delete", "Delete"],
+  ["trash", "Delete"],
 ];
 
 /** What Enter does, by a result's default action. */
@@ -92,29 +130,35 @@ const enterLabels: Record<Action, string> = {
   pin: "Pin",
   ask_ai: "Ask",
   ask_about: "Ask",
+  open_with: "Open with",
+  trash: "Delete",
 };
 
 /** At most this many extra-action hints, so the footer fits. */
-const MAX_ACTION_HINTS = 3;
+const MAX_ACTION_HINTS = 2;
+
+/** The action menu's hint, shown when a result has more than one action. */
+export const MENU_HINT: Hint = ["Ctrl K", "Actions"];
 
 /**
  * Footer hints while searching, for the selected result's actions. On the
  * "Ask" row, `otherAi` names the AI that Shift+Tab asks instead.
  */
 export function searchHints(actions: Action[], otherAi?: string): Hint[] {
-  const [first, ...rest] = actions;
+  const [first] = actions;
   if (first === "ask_ai") {
     const other: Hint[] = otherAi ? [["⇧ Tab", `Ask ${otherAi}`]] : [];
     return [["↵", "Ask"], ...other, ["Esc", "Clear"]];
   }
-  const shownKeys = new Set<string>();
-  const extra = actionHints
-    .filter(([action]) => rest.includes(action))
-    .map(([, hint]) => hint)
-    // Two actions sharing a key (Ctrl ↵): the first one is what it does.
-    .filter(([key]) => !shownKeys.has(key) && shownKeys.add(key))
+  const shownKeys = new Set<string>(["↵"]);
+  const extra = hintLabels
+    .filter(([action]) => actions.includes(action))
+    .map(([action, label]): [string | null, string] => [keyFor(actions, action), label])
+    // Only actions with their own key; two sharing a key show once.
+    .filter((hint): hint is Hint => hint[0] !== null && !shownKeys.has(hint[0]) && Boolean(shownKeys.add(hint[0])))
     .slice(0, MAX_ACTION_HINTS);
-  return [["↵", first ? enterLabels[first] : "Open"], ...extra, ["Esc", "Clear"]];
+  const menu: Hint[] = actions.length > 1 ? [MENU_HINT] : [];
+  return [["↵", first ? enterLabels[first] : "Open"], ...extra, ...menu, ["Esc", "Clear"]];
 }
 
 /**

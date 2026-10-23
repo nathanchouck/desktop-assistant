@@ -78,10 +78,12 @@ fn history(paths: &AppPaths) -> Option<Arc<History>> {
                 thumbs.clone(),
             )
             .or_else(|e| {
-                tracing::error!("{e}; clipboard history won't be saved this session");
+                crate::toast::report(format!(
+                    "Clipboard history won't be saved this session: {e}"
+                ));
                 History::in_memory(images, thumbs)
             })
-            .map_err(|e| tracing::error!("clipboard history is off: {e}"))
+            .map_err(|e| crate::toast::report(format!("Clipboard history is off: {e}")))
             .ok()
             .map(Arc::new)
         })
@@ -118,7 +120,7 @@ pub fn start(app: &AppHandle) {
             win::start(history, settings);
         });
     if let Err(e) = started {
-        tracing::warn!("clipboard history is off: {e}");
+        crate::toast::report(format!("Clipboard history is off: {e}"));
     }
 }
 

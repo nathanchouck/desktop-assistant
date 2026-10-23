@@ -1,5 +1,6 @@
 <script lang="ts">
   import { events } from "../../lib/bindings";
+  import { launcher } from "../../lib/stores/launcher.svelte";
   import type { SettingsStore } from "../../lib/stores/settings.svelte";
   import { UpdatesStore } from "../../lib/stores/updates.svelte";
   import { canCheck, readyVersion, statusLine } from "../../lib/updates";
@@ -17,11 +18,15 @@
   $effect(() => {
     void updates.load();
     const unlisten = events.updateStatusChanged.listen((e) => updates.apply(e.payload.status));
+    return () => void unlisten.then((stop) => stop());
+  });
+
+  // The clock only ticks while the launcher is on screen.
+  $effect(() => {
+    if (!launcher.visible) return;
+    now = Date.now();
     const timer = setInterval(() => (now = Date.now()), 30_000);
-    return () => {
-      clearInterval(timer);
-      void unlisten.then((stop) => stop());
-    };
+    return () => clearInterval(timer);
   });
 </script>
 

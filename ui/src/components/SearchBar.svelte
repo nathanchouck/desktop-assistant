@@ -17,6 +17,11 @@
     input.select();
   }
 
+  /** Back from a popup (the action menu): carry on typing where you were. */
+  export function focus(): void {
+    input.focus();
+  }
+
   $effect(() => input.focus());
 </script>
 

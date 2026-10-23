@@ -24,6 +24,9 @@ use tokio::net::TcpListener;
 
 use protocol::{ToolHost, SERVER_NAME};
 
+/// After a failed accept, before the next one.
+const ACCEPT_RETRY: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// Request bodies over this size are refused.
 const MAX_BODY: usize = 1024 * 1024;
 const PATH: &str = "/mcp";
@@ -77,7 +80,12 @@ pub async fn start(host: Arc<dyn ToolHost>) -> std::io::Result<Endpoint> {
             let stream = match listener.accept().await {
                 Ok((stream, _)) => stream,
                 Err(e) => {
-                    tracing::warn!("MCP server stopped accepting: {e}");
+                    crate::toast::report(format!(
+                        "The launcher's tools for Claude and ChatGPT hit a problem: {e}"
+                    ));
+                    // Out of sockets or handles fails again at once: pause
+                    // instead of spinning on it.
+                    tokio::time::sleep(ACCEPT_RETRY).await;
                     continue;
                 }
             };

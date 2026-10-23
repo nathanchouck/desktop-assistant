@@ -48,6 +48,10 @@ pub enum Action {
     Pin,
     /// Ask the AI about this result (a file, a clip).
     AskAbout,
+    /// Pick the program to open a file with (Windows' "Open with" dialog).
+    OpenWith,
+    /// Move a file or folder to the Recycle Bin. The UI asks first.
+    Trash,
 }
 
 /// One row in the results list.

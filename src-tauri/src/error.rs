@@ -22,6 +22,8 @@ pub enum AppError {
     UnknownItem(String),
     #[error("could not copy to the clipboard: {0}")]
     Clipboard(String),
+    #[error("could not move {path} to the Recycle Bin: {reason}")]
+    Trash { path: String, reason: String },
 }
 
 /// What the UI receives when a command fails. Keeps internal error types

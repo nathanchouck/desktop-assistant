@@ -288,12 +288,16 @@ pub fn load(files: &Files) -> Loaded {
     let mut unreadable = None;
     let mut texts = Texts {
         synced: read_text(&files.synced).unwrap_or_else(|e| {
-            tracing::error!("can't read {}: {e}", files.synced.display());
+            crate::toast::report(format!(
+                "Can't read {}, so the defaults are used and nothing is saved until it can \
+                 be: {e}",
+                files.synced.display()
+            ));
             unreadable = Some(e.to_string());
             None
         }),
         local: read_text(&files.local).unwrap_or_else(|e| {
-            tracing::error!("can't read {}: {e}", files.local.display());
+            crate::toast::report(format!("Can't read {}: {e}", files.local.display()));
             None
         }),
     };
@@ -305,9 +309,17 @@ pub fn load(files: &Files) -> Loaded {
                     Which::Synced => (&files.synced, &mut texts.synced),
                     Which::Local => (&files.local, &mut texts.local),
                 };
+                // Shown when the launcher first opens (`toast::recent`).
                 match set_aside(path) {
-                    Ok(bad) => tracing::error!("{e}; moved it to {}", bad.display()),
-                    Err(move_err) => tracing::error!("{e}; could not move it aside: {move_err}"),
+                    Ok(bad) => crate::toast::report(format!(
+                        "Your settings file had an error, so it was moved to {} and the \
+                         defaults are used. {e}",
+                        bad.display()
+                    )),
+                    Err(move_err) => crate::toast::report(format!(
+                        "Your settings file has an error and couldn't be moved aside \
+                         ({move_err}); the defaults are used. {e}"
+                    )),
                 }
                 // Each pass drops a broken file, so this ends.
                 if text.take().is_none() {
@@ -330,7 +342,7 @@ pub fn load(files: &Files) -> Loaded {
         };
         match write(files, &settings, scope) {
             Ok(written) => texts = written,
-            Err(e) => tracing::error!("could not save settings: {e}"),
+            Err(e) => crate::toast::report(format!("Couldn't save your settings: {e}")),
         }
     }
     Loaded {

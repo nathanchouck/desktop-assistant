@@ -79,7 +79,7 @@ pub struct WinKeyStatus {
 pub fn init(app: &AppHandle, settings: &HotkeySettings) {
     match shortcut::register(app, &settings.toggle) {
         Ok(()) => tracing::info!("shortcut {} registered", settings.toggle),
-        Err(e) => tracing::warn!("{e}"),
+        Err(e) => crate::toast::report(e.to_string()),
     }
     app.manage(Hotkeys::default());
     hook_timeout::remember_startup_value();
@@ -158,7 +158,10 @@ fn start_win_key(app: &AppHandle) -> Option<WinKey> {
         Ok(guard) => Some(guard),
         Err(e) => {
             // Taps still open the launcher, from the hook thread.
-            tracing::warn!("could not start the Start guard: {e}");
+            crate::toast::report(format!(
+                "Start may open with the launcher after a Windows key tap: couldn't start \
+                 the Start guard: {e}"
+            ));
             None
         }
     };
@@ -172,7 +175,7 @@ fn start_win_key(app: &AppHandle) -> Option<WinKey> {
             })
         }
         Err(e) => {
-            tracing::warn!("{e}");
+            crate::toast::report(e.to_string());
             None
         }
     }

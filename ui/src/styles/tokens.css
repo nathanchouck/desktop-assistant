@@ -59,6 +59,11 @@
   --approval: color-mix(in srgb, var(--accent) 8%, transparent);
   --approval-border: color-mix(in srgb, var(--accent) 35%, transparent);
 
+  /* Action menu (Ctrl+K): opaque, so the rows under it don't show through */
+  --popover: #fbfcfd;
+  --popover-border: rgba(20, 30, 60, 0.12);
+  --popover-shadow: 0 8px 24px rgba(20, 30, 60, 0.18);
+
   /* Shape & spacing */
   --radius-row: 10px;
   --radius-keycap: 5px;
@@ -75,6 +80,8 @@
   --icon-size: 24px;
   --results-rows: 9;
   --footer-height: 34px;
+  --menu-width: 300px;
+  --menu-row-height: 30px;
 
   /* Type */
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -171,6 +178,10 @@
     --swatch-ring: rgba(255, 255, 255, 0.25);
     --approval: color-mix(in srgb, var(--accent) 10%, transparent);
     --approval-border: color-mix(in srgb, var(--accent) 40%, transparent);
+
+    --popover: #262930;
+    --popover-border: rgba(255, 255, 255, 0.12);
+    --popover-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
 
   :root[data-glass="on"] {

@@ -139,6 +139,8 @@ export const commands = {
 	settingsFolderReset: () => typedError<FolderMoved, IpcError>(__TAURI_INVOKE("settings_folder_reset")),
 	/**  Opens this PC's own settings file for hand edits. */
 	settingsLocalOpen: () => typedError<null, IpcError>(__TAURI_INVOKE("settings_local_open")),
+	/**  Toasts sent before the UI listened (see `recent`). */
+	toastRecent: () => __TAURI_INVOKE<RecentToast[]>("toast_recent"),
 };
 
 /** Events */
@@ -146,6 +148,7 @@ export const events = {
 	aiStream: makeEvent<AiStream>("ai-stream"),
 	colorPicked: makeEvent<ColorPicked>("color-picked"),
 	fileIndexChanged: makeEvent<FileIndexChanged>("file-index-changed"),
+	launcherHidden: makeEvent<LauncherHidden>("launcher-hidden"),
 	launcherShown: makeEvent<LauncherShown>("launcher-shown"),
 	searchUpdated: makeEvent<SearchUpdated>("search-updated"),
 	settingsChanged: makeEvent<SettingsChanged>("settings-changed"),
@@ -171,7 +174,11 @@ export type Action = "open" | "run_as_admin" | "reveal_in_explorer" | "copy_path
 /**  Pin or unpin the result. */
 "pin" | 
 /**  Ask the AI about this result (a file, a clip). */
-"ask_about";
+"ask_about" | 
+/**  Pick the program to open a file with (Windows' "Open with" dialog). */
+"open_with" | 
+/**  Move a file or folder to the Recycle Bin. The UI asks first. */
+"trash";
 
 /**
  *  What happens after a result is activated, besides what its provider
@@ -204,6 +211,12 @@ export type Activation =
  *  it was pinned or deleted).
  */
 { type: "refresh" } | 
+/**
+ *  Stay open, take the row away and show this in the footer: the
+ *  thing is gone, though the search may not know it yet (a file moved
+ *  to the Recycle Bin, before the index notices).
+ */
+{ type: "removed"; message: string } | 
 /**  Show the settings menu. */
 { type: "open_settings" } | 
 /**
@@ -583,6 +596,12 @@ export type ItemKind = "app" | "file" | "folder" | "command" | "ask_ai" |
 /**  A user script. */
 "script";
 
+/**
+ *  Sent each time the launcher hides, so the UI can hold toasts for the
+ *  next open and stop anything that only matters while it's on screen.
+ */
+export type LauncherHidden = null;
+
 /**  Sent each time the launcher appears, so the UI can focus the search box. */
 export type LauncherShown = null;
 
@@ -671,6 +690,13 @@ export type Quicklink = {
 export type QuicklinkSettings = {
 	enabled: boolean,
 	links: Quicklink[],
+};
+
+/**  A toast sent a moment ago, for a UI that just started listening. */
+export type RecentToast = {
+	toast: Toast,
+	/**  How long ago it was sent. */
+	age_ms: number,
 };
 
 /**  One row in the results list. */
