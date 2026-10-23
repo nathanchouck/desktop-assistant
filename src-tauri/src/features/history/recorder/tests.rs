@@ -181,3 +181,79 @@ fn claude_starts_over_without_its_folder_or_session() {
         (Some("t".into()), home, None)
     );
 }
+
+fn meta_for(provider: ProviderId, record: i64) -> Meta {
+    let resumable = Resumable::new(provider, PathBuf::from("/work"), None);
+    Meta::new(record, resumable, "which is faster?", 100)
+}
+
+fn ids(saved: &[Record]) -> Vec<i64> {
+    saved.iter().map(|s| s.id).collect()
+}
+
+#[test]
+fn compared_conversations_are_recorded_side_by_side() {
+    let mut r = Recorder::default();
+    r.begin(1, meta(1), "old", None, 0);
+    r.event(1, &delta("old answer"), 0);
+    // A comparison starts: the old chat is over.
+    assert_eq!(ids(&r.link(&[2, 3], 10)), [1]);
+    // Their events can come before either question is recorded.
+    r.event(
+        3,
+        &AiEvent::Started {
+            model: "gpt-6.1-sol".into(),
+        },
+        11,
+    );
+    r.event(2, &delta("Claude says"), 12);
+    r.event(3, &delta("ChatGPT says"), 13);
+    let claude = r.begin(2, meta_for(ProviderId::Claude, 20), "q", None, 20);
+    assert_eq!(ids(&claude), [20]);
+    assert_eq!(claude[0].entries, [user("q"), assistant("Claude says")]);
+    let chatgpt = r.begin(3, meta_for(ProviderId::Chatgpt, 30), "q", None, 21);
+    assert_eq!(ids(&chatgpt), [30], "asking the second keeps the first");
+    assert_eq!(chatgpt[0].model, "gpt-6.1-sol");
+    assert_eq!(chatgpt[0].provider, ProviderId::Chatgpt);
+
+    // Each turn's end saves its own chat; follow-ups go to both.
+    assert_eq!(ids(&r.event(2, &AiEvent::Done, 22)), [20]);
+    assert_eq!(ids(&r.event(3, &AiEvent::Done, 23)), [30]);
+    assert!(r.question(2, "and?", None, 24).is_some());
+    assert!(r.question(3, "and?", None, 24).is_some());
+
+    // Carrying on with ChatGPT ends Claude's, saved with what came.
+    r.event(2, &delta("half"), 25);
+    let saved = r.keep(3, 30);
+    assert_eq!(ids(&saved), [20]);
+    assert_eq!(saved[0].entries.last(), Some(&assistant("half")));
+    assert_eq!((r.record_of(2), r.record_of(3)), (None, Some(30)));
+    // ...and the next new chat ends that one, as usual.
+    r.event(3, &delta("more"), 31);
+    assert_eq!(ids(&r.begin(4, meta(4), "new", None, 40)), [30, 4]);
+    assert_eq!(r.record_of(3), None);
+}
+
+#[test]
+fn a_new_chat_or_closing_ends_both_sides() {
+    let mut r = Recorder::default();
+    r.link(&[1, 2], 0);
+    r.begin(1, meta_for(ProviderId::Claude, 10), "q", None, 0);
+    r.begin(2, meta_for(ProviderId::Chatgpt, 20), "q", None, 0);
+    r.event(1, &delta("a"), 1);
+    r.event(2, &delta("b"), 1);
+    // A single chat's first event: both sides are over.
+    let mut saved = ids(&r.event(3, &delta("hi"), 5));
+    saved.sort_unstable();
+    assert_eq!(saved, [10, 20]);
+    assert_eq!((r.record_of(1), r.record_of(2)), (None, None));
+    // Late events from either side are leftovers.
+    assert!(r.event(1, &AiEvent::Done, 6).is_empty());
+
+    r.link(&[4, 5], 10);
+    r.begin(4, meta_for(ProviderId::Claude, 40), "q", None, 10);
+    r.begin(5, meta_for(ProviderId::Chatgpt, 50), "q", None, 10);
+    r.event(5, &delta("cut short"), 11);
+    assert_eq!(ids(&r.finish(12)), [50]);
+    assert!(r.recordings.is_empty());
+}
