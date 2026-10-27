@@ -273,6 +273,54 @@ describe("SearchStore", () => {
     }
   });
 
+  describe("comparing Claude and ChatGPT", () => {
+    const withCompare = async (items: ResultItem[]) => {
+      const onAsk = vi.fn();
+      const onCompare = vi.fn();
+      commands.searchQuery.mockResolvedValueOnce({ status: "ok", data: { seq: 1, items } });
+      const store = new SearchStore({ onAsk, onCompare });
+      await store.setQuery("query");
+      return { store, onAsk, onCompare };
+    };
+
+    it("asks both with Ctrl+Tab or the comparison row", async () => {
+      const { store, onAsk, onCompare } = await withCompare([
+        row("a"),
+        row("ask-ai", "ask_ai"),
+        row("ai-compare", "ask_ai"),
+      ]);
+      expect(store.compareOffered).toBe(true);
+      store.compare();
+      expect(onCompare).toHaveBeenLastCalledWith("query");
+      await store.activate(2);
+      expect(onCompare).toHaveBeenCalledTimes(2);
+      // The Ask row next to it still asks one AI.
+      await store.activate(1);
+      expect(onAsk).toHaveBeenCalledWith("query", null);
+      expect(onCompare).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops a 'both' or AI prefix from the question", async () => {
+      const { store, onCompare } = await withCompare([row("ai-compare", "ask_ai")]);
+      answer([row("ai-compare", "ask_ai")]);
+      await store.setQuery("both which is faster?");
+      store.compare();
+      expect(onCompare).toHaveBeenLastCalledWith("which is faster?");
+      answer([row("ask-ai", "ask_ai")]);
+      await store.setQuery("c rust or go");
+      expect(store.compareOffered).toBe(false);
+      store.compare();
+      expect(onCompare).toHaveBeenLastCalledWith("rust or go");
+    });
+
+    it("runs the fix first when an AI can't answer", async () => {
+      const { store, onCompare } = await withCompare([row("cmd:chatgpt-sign-in", "command")]);
+      store.compare();
+      expect(onCompare).not.toHaveBeenCalled();
+      expect(commands.itemActivate).toHaveBeenCalledWith("cmd:chatgpt-sign-in", "run");
+    });
+  });
+
   it("refreshes in place, keeping the highlighted row", async () => {
     const store = await storeWith([row("a"), row("clip:2", "clip", { actions: ["paste", "pin"] })]);
     store.move(1);

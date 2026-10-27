@@ -7,6 +7,7 @@ const commands = vi.hoisted(() => ({
   aiApprove: vi.fn(),
   aiStop: vi.fn(),
   aiClose: vi.fn(),
+  aiCompareKeep: vi.fn(),
   chatCopyAnswer: vi.fn(),
   chatPasteAnswer: vi.fn(),
 }));
@@ -92,6 +93,36 @@ describe("ChatStore", () => {
     expect(chat.pending?.id).toBe("r1");
     await chat.answer(true);
     expect(commands.aiApprove).toHaveBeenCalledWith("r1", true);
+  });
+
+  it("carries on with one side of a comparison, mid-answer", async () => {
+    commands.aiCompareKeep.mockResolvedValueOnce(ok(null));
+    commands.aiFollowUp.mockResolvedValue(reply(8, null, "chatgpt"));
+    const chat = new ChatStore();
+    await chat.continueFrom(
+      {
+        provider: "chatgpt",
+        conversation: 8,
+        transcript: { entries: [{ kind: "user", text: "q" }], running: true, model: "gpt-6.1-sol" },
+      },
+      "typed",
+    );
+    expect(commands.aiCompareKeep).toHaveBeenCalledWith(8);
+    expect(chat.active).toBe(true);
+    expect(chat.provider).toBe("chatgpt");
+    expect(chat.draft).toBe("typed");
+    chat.onEvent(text(9, "the other AI's"));
+    chat.onEvent(text(8, "rest of it"));
+    chat.onEvent({ conversation: 8, event: { type: "done" } });
+    expect(chat.transcript.entries.at(-1)).toEqual({ kind: "assistant", text: "rest of it" });
+    // Follow-ups go on in that conversation.
+    await chat.followUp();
+    expect(commands.aiFollowUp).toHaveBeenCalledWith("typed", []);
+
+    commands.aiCompareKeep.mockResolvedValueOnce({ status: "error", error: { message: "gone" } });
+    await chat.continueFrom({ provider: "claude", conversation: 3, transcript: { entries: [], running: true, model: "" } });
+    expect(chat.transcript.entries.at(-1)).toEqual({ kind: "error", text: "gone" });
+    expect(chat.transcript.running).toBe(false);
   });
 
   it("asks the AI it was told to, and learns who answers", async () => {

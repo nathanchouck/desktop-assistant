@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   chatHints,
   chatIntentFor,
+  compareHints,
+  compareIntentFor,
   composeHints,
   composeIntentFor,
   intentFor,
@@ -69,7 +71,55 @@ describe("intentFor", () => {
   it("asks the AI with Tab, the other one with Shift+Tab", () => {
     expect(intentFor(key("Tab"))).toEqual({ type: "ask" });
     expect(intentFor(key("Tab", { shift: true }))).toEqual({ type: "ask", other: true });
-    expect(intentFor(key("Tab", { ctrl: true }))).toBeNull();
+  });
+
+  it("asks both AIs side by side with Ctrl+Tab", () => {
+    expect(intentFor(key("Tab", { ctrl: true }))).toEqual({ type: "compare" });
+    expect(intentFor(key("Tab", { ctrl: true, shift: true }))).toBeNull();
+    expect(intentFor(key("Tab", { alt: true }))).toBeNull();
+  });
+});
+
+describe("compareIntentFor", () => {
+  it("carries on with one AI with Ctrl+1 / Ctrl+2", () => {
+    expect(compareIntentFor(key("1", { ctrl: true }))).toEqual({ type: "keep", side: 0 });
+    expect(compareIntentFor(key("2", { ctrl: true }))).toEqual({ type: "keep", side: 1 });
+    expect(compareIntentFor(key("3", { ctrl: true }))).toBeNull();
+    expect(compareIntentFor(key("1"))).toBeNull();
+  });
+
+  it("sends, approves, stops, scrolls and backs out like a chat", () => {
+    expect(compareIntentFor(key("Enter"))).toEqual({ type: "send" });
+    expect(compareIntentFor(key("y", { ctrl: true }))).toEqual({ type: "approve", allow: true });
+    expect(compareIntentFor(key("n", { ctrl: true }))).toEqual({ type: "approve", allow: false });
+    expect(compareIntentFor(key(".", { ctrl: true }))).toEqual({ type: "stop" });
+    expect(compareIntentFor(key("PageDown"))).toEqual({ type: "scroll", delta: 1, pages: true });
+    expect(compareIntentFor(key("Escape"))).toEqual({ type: "escape" });
+  });
+
+  it("leaves pasting or copying an answer to after picking one", () => {
+    expect(compareIntentFor(key("Enter", { ctrl: true }))).toBeNull();
+    expect(compareIntentFor(key("c", { ctrl: true, shift: true }))).toBeNull();
+    expect(compareIntentFor(key("a"))).toBeNull();
+  });
+
+  it("hints name whose approval Ctrl+Y answers, and each AI's key", () => {
+    const names = ["Claude", "ChatGPT"];
+    expect(compareHints({ running: true, pending: "ChatGPT", names })).toEqual([
+      ["Ctrl Y", "Approve ChatGPT"],
+      ["Ctrl N", "Deny"],
+    ]);
+    expect(compareHints({ running: true, pending: null, names })).toEqual([
+      ["Ctrl 1", "Claude only"],
+      ["Ctrl 2", "ChatGPT only"],
+      ["Esc", "Stop"],
+    ]);
+    expect(compareHints({ running: false, pending: null, names })).toEqual([
+      ["↵", "Ask both"],
+      ["Ctrl 1", "Claude only"],
+      ["Ctrl 2", "ChatGPT only"],
+      ["Esc", "Close"],
+    ]);
   });
 });
 
@@ -166,6 +216,21 @@ describe("hints", () => {
     expect(searchHints(["open"], "ChatGPT").map(([k]) => k)).not.toContain("⇧ Tab");
   });
 
+  it("mentions Ctrl+Tab when both AIs can be asked", () => {
+    expect(searchHints(["ask_ai"], "ChatGPT", "offered")).toEqual([
+      ["↵", "Ask"],
+      ["⇧ Tab", "Ask ChatGPT"],
+      ["Ctrl Tab", "Ask both"],
+      ["Esc", "Clear"],
+    ]);
+    // The comparison row itself.
+    expect(searchHints(["ask_ai"], "ChatGPT", "selected")).toEqual([
+      ["↵", "Ask both"],
+      ["Esc", "Clear"],
+    ]);
+    expect(searchHints(["open"], "ChatGPT", "offered").map(([k]) => k)).not.toContain("Ctrl Tab");
+  });
+
   it("names Enter after the default action and skips repeats of a key", () => {
     const hints = searchHints(["paste", "copy", "pin", "delete"]);
     expect(hints[0]).toEqual(["↵", "Paste"]);
@@ -205,6 +270,16 @@ describe("composeIntentFor", () => {
     expect(composeIntentFor(key("Tab"), false)).toEqual({ type: "ask" });
     expect(composeIntentFor(key("Tab", { shift: true }), false)).toEqual({ type: "ask", other: true });
     expect(composeIntentFor(key("Enter", { ctrl: true }), false)).toBeNull();
+  });
+
+  it("asks both AIs about the attachments with Ctrl+Tab", () => {
+    expect(composeIntentFor(key("Tab", { ctrl: true }), true)).toEqual({ type: "compare" });
+    expect(composeHints("Claude", "ChatGPT", false, true)).toEqual([
+      ["↵", "Ask Claude"],
+      ["⇧ Tab", "Ask ChatGPT"],
+      ["Ctrl Tab", "Ask both"],
+      ["Esc", "Clear"],
+    ]);
   });
 
   it("drops the last chip with Backspace only in an empty box", () => {
