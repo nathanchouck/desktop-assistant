@@ -4,16 +4,28 @@
   import ResultList from "./components/ResultList.svelte";
   import ActionMenu from "./components/ActionMenu.svelte";
   import ChatPane from "./components/ChatPane.svelte";
+  import ComparePane from "./components/ComparePane.svelte";
   import ComposePane from "./components/ComposePane.svelte";
   import SettingsPane from "./components/SettingsPane.svelte";
   import Footer from "./components/Footer.svelte";
   import { commands, events, type Attachment, type IndexStatus, type ProviderId } from "./lib/bindings";
   import { answeringLabel, forcedProvider, looksLikeAQuestion, otherProvider, PROVIDER_NAMES } from "./lib/chat";
+  import { COMPARE_ROW_ID, compareNotice, comparePrefix } from "./lib/compare";
   import { composedQuestion, DEFAULT_QUESTION } from "./lib/compose";
   import { indexNotice } from "./lib/display";
-  import { chatHints, chatIntentFor, composeHints, composeIntentFor, intentFor, searchHints } from "./lib/keys";
+  import {
+    chatHints,
+    chatIntentFor,
+    compareHints,
+    compareIntentFor,
+    composeHints,
+    composeIntentFor,
+    intentFor,
+    searchHints,
+  } from "./lib/keys";
   import { ActionMenuStore } from "./lib/stores/actionMenu.svelte";
   import { ChatStore } from "./lib/stores/chat.svelte";
+  import { CompareStore } from "./lib/stores/compare.svelte";
   import { ComposeStore } from "./lib/stores/compose.svelte";
   import { launcher } from "./lib/stores/launcher.svelte";
   import { SearchStore } from "./lib/stores/search.svelte";
@@ -26,6 +38,8 @@
   const CHAT_RESET_MS = 5 * 60 * 1000;
 
   const chat = new ChatStore();
+  /** Claude and ChatGPT answering the same question side by side. */
+  const compare = new CompareStore();
   /** A question with attachments (the selection, a file, a snip) being typed. */
   const compose = new ComposeStore();
   const settings = new SettingsStore();
@@ -39,6 +53,10 @@
     onSettings: () => void openSettings(),
     onOpenChat: (saved) => chat.reopen(saved),
     onCompose: (attachments) => void startCompose(attachments),
+    onCompare: (text) => {
+      search.clear();
+      void compare.start(text);
+    },
     defaultProvider,
   });
   const toasts = new ToastStore();
@@ -50,6 +68,7 @@
   };
   let bar: SearchBar | undefined = $state();
   let pane: ChatPane | undefined = $state();
+  let comparePane: ComparePane | undefined = $state();
   let settingsPane: SettingsPane | undefined = $state();
   /** The settings menu is showing (over search or a chat). */
   let settingsOpen = $state(false);
@@ -60,18 +79,31 @@
   let warmed = false;
   /** The same for a question with attachments. */
   let composeWarmed = false;
+  /** The window is wide for two answers side by side. */
+  let wide = false;
+  /** A chat of either kind is showing; the input takes its follow-up. */
+  const chatting = $derived(chat.active || compare.active);
   /** Attachments, no chat: the input takes the question about them. */
-  const composing = $derived(compose.active && !chat.active);
+  const composing = $derived(compose.active && !chatting);
   /** The AI that Enter asks while composing (a `c `/`g ` prefix picks one). */
   const composeAi = $derived(forcedProvider(compose.draft)?.provider ?? defaultProvider());
 
   // A question is being typed: start the AI it's for now so it answers sooner.
   $effect(() => {
     if (!search.query.trim()) warmed = false;
-    else if (!warmed && !chat.active && looksLikeAQuestion(search.query, search.items)) {
+    else if (!warmed && !chatting && looksLikeAQuestion(search.query, search.items)) {
       warmed = true;
-      void commands.aiWarm(forcedProvider(search.query)?.provider ?? null);
+      if (comparePrefix(search.query) !== null) void commands.aiCompareWarm();
+      else void commands.aiWarm(forcedProvider(search.query)?.provider ?? null);
     }
+  });
+
+  // Two answers side by side get a wider window, once as the view opens
+  // and once as it closes (like the two heights, never while typing).
+  $effect(() => {
+    if (compare.active === wide) return;
+    wide = compare.active;
+    void commands.launcherSetWide(wide);
   });
 
   // Attachments came in: start the AI now, the question is on its way.
@@ -89,16 +121,23 @@
     if (appearance) applyTheme(document.documentElement, themeFor(appearance));
   });
 
-  const expanded = $derived(settingsOpen || chat.active || composing || search.expanded || toasts.current !== null);
+  const expanded = $derived(settingsOpen || chatting || composing || search.expanded || toasts.current !== null);
   const notice = $derived(
     settingsOpen
       ? "Changes are saved as you make them"
       : chat.active
         ? answeringLabel(chat.provider ?? defaultProvider(), chat.transcript.model)
-        : composing
-          ? null
-          : (search.notice ?? indexNotice(indexStatus)),
+        : compare.active
+          ? compareNotice(compare.sides)
+          : composing
+            ? null
+            : (search.notice ?? indexNotice(indexStatus)),
   );
+  /** Whose approval Ctrl+Y answers while comparing. */
+  const comparePending = $derived.by(() => {
+    const side = compare.pending ? compare.sides[compare.pending.side] : undefined;
+    return side ? PROVIDER_NAMES[side.provider] : null;
+  });
   const hints = $derived(
     settingsOpen
       ? ([["Esc", "Close"]] as [string, string][])
@@ -113,9 +152,19 @@
             pending: chat.pending !== undefined,
             answer: chat.finishedAnswer !== null,
           })
-        : composing
-          ? composeHints(PROVIDER_NAMES[composeAi], PROVIDER_NAMES[otherProvider(composeAi)], !compose.draft)
-          : searchHints(search.current?.actions ?? [], PROVIDER_NAMES[search.otherProvider()]),
+        : compare.active
+          ? compareHints({
+              running: compare.running,
+              pending: comparePending,
+              names: compare.sides.map((s) => PROVIDER_NAMES[s.provider]),
+            })
+          : composing
+            ? composeHints(PROVIDER_NAMES[composeAi], PROVIDER_NAMES[otherProvider(composeAi)], !compose.draft, true)
+            : searchHints(
+                search.current?.actions ?? [],
+                PROVIDER_NAMES[search.otherProvider()],
+                search.current?.id === COMPARE_ROW_ID ? "selected" : search.compareOffered ? "offered" : "no",
+              ),
   );
 
   async function openSettings() {
@@ -144,6 +193,9 @@
         // asks that AI.
         if (intent.index === undefined && !intent.actions && forcedProvider(search.query)) {
           search.ask();
+        } else if (intent.index === undefined && !intent.actions && comparePrefix(search.query) !== null) {
+          // "both <question>" + Enter: both AIs, even before the row shows.
+          search.compare();
         } else {
           void search.activate(intent.index, intent.actions);
         }
@@ -151,6 +203,9 @@
       case "ask":
         if (intent.other) search.askOther();
         else search.ask();
+        break;
+      case "compare":
+        search.compare();
         break;
       case "settings":
         void openSettings();
@@ -176,6 +231,7 @@
     if (attachments.length === 0) return;
     settingsOpen = false;
     if (chat.active && !chat.transcript.running && !chat.pending) await chat.close();
+    if (compare.active && !compare.running && !compare.pending) await compare.close();
     search.clear();
     compose.add(attachments);
     await tick();
@@ -196,6 +252,10 @@
     switch (intent.type) {
       case "ask":
         askComposed(intent.other === true);
+        break;
+      case "compare":
+        // Both AIs get the same attachments (a `c `/`g ` prefix is dropped).
+        void compare.start(composedQuestion(compose.draft).text, compose.take());
         break;
       case "remove_last":
         compose.removeLast();
@@ -273,6 +333,52 @@
     }
   }
 
+  function onCompareKey(e: KeyboardEvent) {
+    // Backspace in an empty box drops the last attachment.
+    if (compose.active && composeIntentFor(e, !compare.draft)?.type === "remove_last") {
+      e.preventDefault();
+      compose.removeLast();
+      return;
+    }
+    const intent = compareIntentFor(e);
+    if (!intent) return;
+    e.preventDefault();
+    switch (intent.type) {
+      case "send":
+        if (compare.running) break;
+        if (compose.active && !compare.draft.trim()) compare.draft = DEFAULT_QUESTION;
+        void compare.followUp(compose.active ? compose.take() : []);
+        break;
+      case "approve":
+        void compare.answer(intent.allow);
+        break;
+      case "stop":
+        void compare.stop();
+        break;
+      case "keep":
+        keepSide(intent.side);
+        break;
+      case "scroll":
+        comparePane?.scroll(intent.delta, intent.pages);
+        break;
+      case "escape":
+        // Each Esc backs out one step: deny, stop both, clear the draft,
+        // drop the attachments, close.
+        if (compare.pending) void compare.answer(false);
+        else if (compare.running) void compare.stop();
+        else if (compare.draft) compare.draft = "";
+        else if (compose.active) compose.clear();
+        else void compare.close();
+        break;
+    }
+  }
+
+  /** Ctrl+1 / Ctrl+2: carry on with that AI alone, as a normal chat. */
+  function keepSide(index: number) {
+    const kept = compare.release(index);
+    if (kept) void chat.continueFrom(kept.side, kept.draft);
+  }
+
   function onHidden() {
     launcher.visible = false;
     toasts.hidden();
@@ -283,6 +389,7 @@
     toasts.shown();
     const idle = Date.now() - hiddenAt > CHAT_RESET_MS;
     if (chat.active && idle && !chat.transcript.running && !chat.pending) void chat.close();
+    if (compare.active && idle && !compare.running && !compare.pending) void compare.close();
     if (idle) compose.clear();
     if (settingsOpen) settingsPane?.focus();
     else bar?.focusAndSelect();
@@ -309,7 +416,10 @@
     const unlisten = [
       events.launcherShown.listen(onShown),
       events.launcherHidden.listen(onHidden),
-      events.aiStream.listen((e) => chat.onEvent(e.payload)),
+      events.aiStream.listen((e) => {
+        chat.onEvent(e.payload);
+        compare.onEvent(e.payload);
+      }),
       events.fileIndexChanged.listen((e) => (indexStatus = e.payload.status)),
       events.searchUpdated.listen((e) => search.onUpdate(e.payload)),
       events.showSettings.listen(() => void openSettings()),
@@ -320,7 +430,7 @@
       events.composeRequested.listen((e) => void startCompose(e.payload.attachments)),
       // A color was picked: list recent colors, the new one first.
       events.colorPicked.listen(() => {
-        if (settingsOpen || chat.active) return;
+        if (settingsOpen || chatting) return;
         void search.setQuery("colors").then(() => bar?.focusAndSelect());
       }),
     ];

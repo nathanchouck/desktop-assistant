@@ -14,6 +14,8 @@ export const GLYPHS: Record<string, string> = {
   file: '<path d="M6.5 3.5h7l4 4v13h-11z M13.5 3.5v4h4"/>',
   sparkle: '<path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.4l-1.8-4.9L5 9.7l5.2-1.8z"/><path d="M18.5 15l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
   chatgpt: '<path d="M12 3.5l7.4 4.25v8.5L12 20.5l-7.4-4.25v-8.5z"/><path d="M12 8.5l3 1.75v3.5L12 15.5l-3-1.75v-3.5z"/>',
+  /** Both AIs side by side (a comparison). */
+  compare: '<rect x="3" y="4.5" width="7.5" height="15" rx="2"/><rect x="13.5" y="4.5" width="7.5" height="15" rx="2"/><path d="M5.5 9h2.5M5.5 12h2.5M16 9h2.5M16 12h2.5"/>',
   settings: '<line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.4"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.4"/>',
 
   // Answers and text
@@ -117,13 +119,15 @@ export type IconSpec =
   | { type: "color"; color: string };
 
 const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
+/** Glyphs drawn in the accent color: the AIs. */
+const AI_GLYPHS = ["sparkle", "chatgpt", "compare"];
 
 /** Decodes an `icon` value (see `ResultItem::icon` in Rust). */
 export function iconSpec(kind: string, icon: string | null): IconSpec {
   if (icon?.startsWith("glyph:")) {
     const name = icon.slice("glyph:".length);
     const markup = GLYPHS[name];
-    if (markup) return { type: "glyph", markup, accent: name === "sparkle" || name === "chatgpt" };
+    if (markup) return { type: "glyph", markup, accent: AI_GLYPHS.includes(name) };
   } else if (icon?.startsWith("text:")) {
     const text = icon.slice("text:".length);
     if (text) return { type: "text", text };

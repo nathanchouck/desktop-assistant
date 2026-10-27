@@ -97,6 +97,18 @@ export function lastAnswer(t: Transcript): string | null {
   return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
+/** Shows under your last message what the AI was told about the screen. */
+export function noteContext(t: Transcript, context: string | null): void {
+  if (!context) return;
+  for (let i = t.entries.length - 1; i >= 0; i--) {
+    const entry = t.entries[i];
+    if (entry?.kind === "user") {
+      entry.context = context;
+      return;
+    }
+  }
+}
+
 /** The approval waiting for an answer, if any. */
 export function pendingApproval(t: Transcript): Extract<Entry, { kind: "approval" }> | undefined {
   for (let i = t.entries.length - 1; i >= 0; i--) {

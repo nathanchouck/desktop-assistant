@@ -86,6 +86,8 @@
   --chip-height: 24px;
   --chip-icon: 16px;
   --compose-preview-height: 200px;
+  /* Claude and ChatGPT side by side: each column's title bar. */
+  --compare-head-height: 30px;
 
   /* Type */
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;

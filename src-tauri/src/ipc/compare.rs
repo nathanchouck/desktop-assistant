@@ -277,6 +277,10 @@ mod tests {
         assert_eq!(item.title, "Compare Claude and ChatGPT: which is faster?");
         assert_eq!(item.icon.as_deref(), Some("glyph:compare"));
         assert_eq!(item.actions, [Action::AskAi]);
+        let glyphs = include_str!("../../../ui/src/lib/glyphs.ts");
+        assert!(glyphs.contains("\n  compare: '"), "the UI draws its icon");
+        let ui = include_str!("../../../ui/src/lib/compare.ts");
+        assert!(ui.contains(&format!("COMPARE_ROW_ID = \"{ROW_ID}\"")));
     }
 
     #[test]
