@@ -10,6 +10,7 @@ import {
 } from "../bindings";
 import { confirmQuestion } from "../actions";
 import { forcedProvider, otherProvider } from "../chat";
+import { COMPARE_ROW_ID, comparePrefix } from "../compare";
 import { LatestOnly } from "../latest";
 
 /** Rows that stand in for "Ask …" while that AI can't answer yet. */
@@ -33,6 +34,8 @@ export interface SearchHooks {
   onOpenChat?: (chat: OpenedChat) => void;
   /** Start a question with these attached (Ctrl+Shift+A on a file). */
   onCompose?: (attachments: Attachment[]) => void;
+  /** The query should go to Claude and ChatGPT side by side. */
+  onCompare?: (text: string) => void;
   /** The AI that Tab and the "Ask" row use. */
   defaultProvider?: () => ProviderId;
 }
@@ -47,6 +50,8 @@ export class SearchStore {
   /** Bar + results when there is text; just the bar otherwise. */
   expanded = $derived(this.query.trim().length > 0);
   current = $derived<ResultItem | undefined>(this.items[this.selected]);
+  /** The list has the row that asks both AIs (both are signed in). */
+  compareOffered = $derived(this.items.some((item) => item.id === COMPARE_ROW_ID));
 
   #latest = new LatestOnly();
   #hooks: Required<SearchHooks>;
@@ -58,6 +63,7 @@ export class SearchStore {
       onSettings: () => {},
       onOpenChat: () => {},
       onCompose: () => {},
+      onCompare: () => {},
       defaultProvider: () => "claude",
       ...hooks,
     };
@@ -143,6 +149,24 @@ export class SearchStore {
   }
 
   /**
+   * Ctrl+Tab, the comparison row, or "both <question>": asks Claude and
+   * ChatGPT side by side, whatever the results (without any AI prefix).
+   */
+  compare(text = this.query): void {
+    const question = (comparePrefix(text) ?? forcedProvider(text)?.text ?? text).trim();
+    if (!question) return;
+    // When an AI can't answer yet, the last row offers the fix instead
+    // (install or sign in): run that.
+    const fixes = [...FIX_ROWS.claude, ...FIX_ROWS.chatgpt];
+    const last = this.items.length - 1;
+    if (fixes.includes(this.items[last]?.id ?? "")) {
+      void this.activate(last);
+      return;
+    }
+    this.#hooks.onCompare(question);
+  }
+
+  /**
    * Runs an action on row `index`: the first of `actions` the row offers,
    * or its default action. A risky action asks first; Enter (or its own
    * key) again within `CONFIRM_MS` runs it.
@@ -150,7 +174,7 @@ export class SearchStore {
   async activate(index = this.selected, actions?: Action[]): Promise<void> {
     const item = this.items[index];
     if (!item) return;
-    if (item.kind === "ask_ai") return this.ask();
+    if (item.kind === "ask_ai") return item.id === COMPARE_ROW_ID ? this.compare() : this.ask();
     const armed = this.#takeArmed(item.id);
     // Enter confirms whatever is waiting, even if it isn't the default.
     const chosen = actions

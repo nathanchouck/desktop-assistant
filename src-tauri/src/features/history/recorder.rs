@@ -80,12 +80,38 @@ pub struct Recorder {
     /// The newest conversation recorded. Events for an older one that isn't
     /// recorded are leftovers from a closed chat.
     newest: u32,
+    /// Conversations live together (Claude and ChatGPT compared side by
+    /// side): none of them ends the others. Each is saved as its own chat.
+    together: Vec<u32>,
 }
 
 impl Recorder {
+    /// Conversations `ids` start together (a comparison), before any of
+    /// their events: every other conversation is over, and these are
+    /// recorded side by side. Returns what the others had unsaved.
+    pub fn link(&mut self, ids: &[u32], now_ms: i64) -> Vec<Record> {
+        self.together = ids.to_vec();
+        let saves = ids
+            .first()
+            .map(|&first| self.finish_others(first, now_ms))
+            .unwrap_or_default();
+        for &id in ids {
+            self.recordings.entry(id).or_insert_with(Recording::pending);
+            self.newest = self.newest.max(id);
+        }
+        saves
+    }
+
+    /// One side of a comparison carries on alone: the others are over.
+    /// Returns what they had unsaved.
+    pub fn keep(&mut self, conversation: u32, now_ms: i64) -> Vec<Record> {
+        self.together.clear();
+        self.finish_others(conversation, now_ms)
+    }
+
     /// A new conversation's first question. Other conversations are over
-    /// (the chat runs one at a time): what they had unsaved is returned
-    /// too.
+    /// (unless it was started alongside them): what they had unsaved is
+    /// returned too.
     pub fn begin(
         &mut self,
         conversation: u32,
@@ -152,9 +178,9 @@ impl Recorder {
                 return saves;
             }
             // A new conversation whose question isn't recorded yet (the ask
-            // is returning). The chat runs one at a time, so the others are
-            // over; that also keeps unrecorded ones (history off) from
-            // piling up.
+            // is returning). Conversations started together are linked
+            // before they send anything, so the others are over; that also
+            // keeps unrecorded ones (history off) from piling up.
             saves = self.finish_others(conversation, now_ms);
             self.newest = conversation;
             self.recordings.insert(conversation, Recording::pending());
@@ -172,6 +198,7 @@ impl Recorder {
     /// The chat was closed: every conversation is over. Returns what they
     /// had unsaved (a turn cut short).
     pub fn finish(&mut self, now_ms: i64) -> Vec<Record> {
+        self.together.clear();
         self.finish_others(0, now_ms)
     }
 
@@ -192,10 +219,15 @@ impl Recorder {
             .map(|m| m.record)
     }
 
+    /// Ends every conversation but `keep` and those live alongside it.
     fn finish_others(&mut self, keep: u32, now_ms: i64) -> Vec<Record> {
+        if !self.together.contains(&keep) {
+            self.together.clear();
+        }
+        let together = &self.together;
         let mut saves = Vec::new();
         self.recordings.retain(|&id, recording| {
-            if id == keep {
+            if id == keep || together.contains(&id) {
                 return true;
             }
             if recording.dirty {

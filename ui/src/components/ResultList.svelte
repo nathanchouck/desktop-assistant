@@ -60,7 +60,8 @@
       {/if}
       <span class="hint">
         {#if i === selected || i >= 9}
-          {kindLabel[item.kind]}
+          <!-- The AI rows say their own key: Tab, or Ctrl Tab for both. -->
+          {item.kind === "ask_ai" ? item.subtitle || kindLabel.ask_ai : kindLabel[item.kind]}
         {:else}
           Ctrl {i + 1}
         {/if}

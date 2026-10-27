@@ -21,6 +21,10 @@ use crate::state::AppState;
 pub const LABEL: &str = "launcher";
 /// Logical width; the height follows the content (see `set_height`).
 pub const WIDTH: f64 = 720.0;
+/// Logical width while Claude and ChatGPT answer side by side (see
+/// `set_wide`): two columns about as wide as most answers' lines. Never
+/// wider than the screen's work area (see `placement`).
+const WIDE_WIDTH: f64 = 1040.0;
 const MIN_HEIGHT: u32 = 48;
 const MAX_HEIGHT: u32 = 720;
 const DEFAULT_HEIGHT: u32 = 64;
@@ -50,6 +54,8 @@ pub fn is_shown() -> bool {
 /// Window facts other modules need.
 pub struct LauncherState {
     height: AtomicU32,
+    /// Two answers side by side: the window is `WIDE_WIDTH` wide.
+    wide: AtomicBool,
     glass: AtomicBool,
     last_hidden: Mutex<Option<Instant>>,
     /// Hidden long enough to give memory back (see `idle`).
@@ -60,6 +66,7 @@ impl Default for LauncherState {
     fn default() -> Self {
         Self {
             height: AtomicU32::new(DEFAULT_HEIGHT),
+            wide: AtomicBool::new(false),
             glass: AtomicBool::new(false),
             last_hidden: Mutex::new(None),
             idle: idle::Idle::default(),
@@ -70,6 +77,15 @@ impl Default for LauncherState {
 impl LauncherState {
     pub fn height(&self) -> u32 {
         self.height.load(Ordering::Relaxed)
+    }
+
+    /// Logical width: wider while two answers are side by side.
+    pub fn width(&self) -> f64 {
+        if self.wide.load(Ordering::Relaxed) {
+            WIDE_WIDTH
+        } else {
+            WIDTH
+        }
     }
 
     /// Whether the OS blur (Acrylic) is active. The UI uses an opaque
@@ -120,9 +136,9 @@ pub fn show(app: &AppHandle, started: Instant) {
         return;
     };
     let state = app.try_state::<AppState>();
-    let height = state
+    let size = state
         .as_ref()
-        .map_or(DEFAULT_HEIGHT, |s| s.launcher.height());
+        .map_or((WIDTH, DEFAULT_HEIGHT), |s| launcher_size(s));
     if let Some(state) = &state {
         // Before the launcher takes focus, while your window is still in
         // front. Always captured (pasting and window commands need it); the
@@ -134,7 +150,7 @@ pub fn show(app: &AppHandle, started: Instant) {
     if let Some(state) = &state {
         idle::on_show(&window, &state.launcher.idle);
     }
-    if let Err(e) = place_on_cursor_monitor(app, &window, height) {
+    if let Err(e) = place_on_cursor_monitor(app, &window, size) {
         tracing::debug!("could not position launcher: {e}");
     }
     if let Err(e) = window.show().and_then(|()| window.set_focus()) {
@@ -180,25 +196,57 @@ pub struct LauncherHidden;
 pub fn set_height(app: &AppHandle, height: u32) {
     tracing::debug!("launcher height requested: {height}");
     let height = height.clamp(MIN_HEIGHT, MAX_HEIGHT);
+    let mut width = WIDTH;
     if let Some(state) = app.try_state::<AppState>() {
         state.launcher.height.store(height, Ordering::Relaxed);
+        width = state.launcher.width();
     }
     if let Some(window) = launcher(app) {
-        if let Err(e) = fit_on_current_monitor(&window, height) {
+        if let Err(e) = fit_on_current_monitor(&window, (width, height)) {
             tracing::warn!("could not resize launcher: {e}");
         }
     }
 }
 
-/// Fits the window to its own monitor again at `height`: centered, at its
-/// usual top edge or higher if needed. Moves only when the top edge has
-/// to change, and in the order that never pokes past the work area.
-fn fit_on_current_monitor(window: &WebviewWindow, height: u32) -> tauri::Result<()> {
-    let size = LogicalSize::new(WIDTH, f64::from(height));
+/// Widens the window while two answers are side by side (`wide`), or
+/// brings it back to its usual width. Like the height, it changes once
+/// when that view opens or closes, never while typing; it stays centered
+/// on its monitor.
+pub fn set_wide(app: &AppHandle, wide: bool) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    if state.launcher.wide.swap(wide, Ordering::Relaxed) == wide {
+        return;
+    }
+    let Some(window) = launcher(app) else { return };
+    // A hidden window is placed at its new size when it opens.
+    if !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    if let Err(e) = fit_on_current_monitor(&window, launcher_size(&state)) {
+        tracing::warn!("could not resize launcher: {e}");
+    }
+}
+
+/// The window's logical (width, height) as the UI last asked for it.
+fn launcher_size(state: &AppState) -> (f64, u32) {
+    (state.launcher.width(), state.launcher.height())
+}
+
+/// Fits the window to its own monitor again at logical `(width, height)`:
+/// centered, at its usual top edge or higher if needed. Moves only when
+/// the top edge has to change, and in the order that never pokes past the
+/// work area.
+fn fit_on_current_monitor(
+    window: &WebviewWindow,
+    (width, height): (f64, u32),
+) -> tauri::Result<()> {
+    let size = LogicalSize::new(width, f64::from(height));
     let Some(monitor) = window.current_monitor()? else {
         return window.set_size(size);
     };
-    let frame = frame_on(&monitor, height);
+    let frame = frame_on(&monitor, (width, height));
     let target = PhysicalPosition::new(frame.x, frame.y);
     let now = window.outer_position()?;
     let size = logical_size(&frame, monitor.scale_factor());
@@ -214,8 +262,8 @@ fn fit_on_current_monitor(window: &WebviewWindow, height: u32) -> tauri::Result<
     }
 }
 
-/// The window's frame on `monitor` at `height` logical pixels.
-fn frame_on(monitor: &Monitor, height: u32) -> placement::Rect {
+/// The window's frame on `monitor` at logical `(width, height)`.
+fn frame_on(monitor: &Monitor, (width, height): (f64, u32)) -> placement::Rect {
     let area = monitor.work_area();
     placement::frame(
         placement::Rect {
@@ -225,7 +273,7 @@ fn frame_on(monitor: &Monitor, height: u32) -> placement::Rect {
             height: area.size.height,
         },
         monitor.scale_factor(),
-        (WIDTH, f64::from(height)),
+        (width, f64::from(height)),
         TOP_FRACTION,
     )
 }
@@ -253,10 +301,10 @@ fn refit_soon(app: &AppHandle) {
         if !window.is_visible().unwrap_or(false) {
             return;
         }
-        let height = app
+        let size = app
             .try_state::<AppState>()
-            .map_or(DEFAULT_HEIGHT, |s| s.launcher.height());
-        if let Err(e) = fit_on_current_monitor(&window, height) {
+            .map_or((WIDTH, DEFAULT_HEIGHT), |s| launcher_size(&s));
+        if let Err(e) = fit_on_current_monitor(&window, size) {
             tracing::debug!("could not fit the launcher after a scale change: {e}");
         }
     });
@@ -316,7 +364,7 @@ fn keep_open() -> bool {
 fn place_on_cursor_monitor(
     app: &AppHandle,
     window: &WebviewWindow,
-    height: u32,
+    size: (f64, u32),
 ) -> tauri::Result<()> {
     let cursor = app.cursor_position()?;
     let monitor = match app.monitor_from_point(cursor.x, cursor.y)? {
@@ -326,7 +374,7 @@ fn place_on_cursor_monitor(
             None => return Ok(()),
         },
     };
-    let frame = frame_on(&monitor, height);
+    let frame = frame_on(&monitor, size);
     let target = PhysicalPosition::new(frame.x, frame.y);
     // The window is hidden here, so the extra moves don't show. Moving to a
     // monitor with another scale makes Windows rescale (and may shift) the
@@ -350,6 +398,15 @@ mod tests {
         state.mark_hidden();
         assert!(state.hidden_within(REOPEN_GUARD));
         assert!(!state.hidden_within(Duration::ZERO));
+    }
+
+    #[test]
+    fn comparing_widens_the_window() {
+        let state = LauncherState::default();
+        assert_eq!(state.width(), WIDTH);
+        state.wide.store(true, Ordering::Relaxed);
+        assert_eq!(state.width(), WIDE_WIDTH);
+        const { assert!(WIDE_WIDTH > WIDTH) };
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { commands, type AiStream, type Attachment, type OpenedChat, type ProviderId } from "../bindings";
-import { applyEvent, fromSaved, lastAnswer, pendingApproval, type Transcript } from "../chat";
+import { applyEvent, fromSaved, lastAnswer, noteContext, pendingApproval, type Transcript } from "../chat";
 
 const empty = (): Transcript => ({ entries: [], running: false, model: "" });
 
@@ -59,6 +59,27 @@ export class ChatStore {
     this.transcript = { entries: fromSaved(saved.entries), running: false, model: saved.model };
   }
 
+  /**
+   * Carries on with one side of a comparison as this chat (Ctrl+1 /
+   * Ctrl+2): its conversation and what it said so far, even mid-answer.
+   * The backend ends the other AI's conversation.
+   */
+  async continueFrom(
+    side: { provider: ProviderId; conversation: number; transcript: Transcript },
+    draft = "",
+  ): Promise<void> {
+    this.#generation++;
+    this.#conversation = side.conversation;
+    this.#buffer = null;
+    this.#requested = side.provider;
+    this.provider = side.provider;
+    this.active = true;
+    this.draft = draft;
+    this.transcript = side.transcript;
+    const res = await commands.aiCompareKeep(side.conversation);
+    if (res.status === "error") this.#fail(res.error.message);
+  }
+
   /** Copies the last answer; returns an error message if that failed. */
   async copyAnswer(): Promise<string | null> {
     const text = this.finishedAnswer;
@@ -91,7 +112,7 @@ export class ChatStore {
     const res = await commands.aiFollowUp(text, attachments);
     if (res.status === "error") return this.#fail(res.error.message);
     this.provider = res.data.provider;
-    this.#noteContext(res.data.context);
+    noteContext(this.transcript, res.data.context);
   }
 
   /** Handles an event from the backend for whichever conversation is shown. */
@@ -139,21 +160,8 @@ export class ChatStore {
     if (res.status === "error") return this.#fail(res.error.message);
     this.#conversation = res.data.conversation;
     this.provider = res.data.provider;
-    this.#noteContext(res.data.context);
+    noteContext(this.transcript, res.data.context);
     for (const message of held) this.onEvent(message);
-  }
-
-  /** Shows under your last message what the AI was told about the screen. */
-  #noteContext(context: string | null): void {
-    if (!context) return;
-    const entries = this.transcript.entries;
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const entry = entries[i];
-      if (entry?.kind === "user") {
-        entry.context = context;
-        return;
-      }
-    }
   }
 
   #fail(message: string): void {

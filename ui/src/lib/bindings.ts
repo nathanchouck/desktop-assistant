@@ -70,6 +70,32 @@ export const commands = {
 	/**  Opens the folder with the log files (from an error toast). */
 	openLogFolder: () => typedError<null, IpcError>(__TAURI_INVOKE("open_log_folder")),
 	/**
+	 *  Asks Claude and ChatGPT the same question at once, side by side,
+	 *  ending any current chat. An AI that can't be asked (not installed, an
+	 *  attachment gone) says why in its side; the other still answers.
+	 */
+	aiCompare: (text: string, attachments: Attachment[]) => typedError<CompareReply, IpcError>(__TAURI_INVOKE("ai_compare", { text, attachments })),
+	/**
+	 *  Sends a follow-up to both sides of the comparison (each AI that's still
+	 *  in it), with the desktop context if it changed and any attachments.
+	 */
+	aiCompareFollowUp: (text: string, attachments: Attachment[]) => typedError<CompareReply, IpcError>(__TAURI_INVOKE("ai_compare_follow_up", { text, attachments })),
+	/**
+	 *  Carries on with one side of the comparison as a normal chat; the other
+	 *  AI's conversation ends (it stays in history).
+	 */
+	aiCompareKeep: (conversation: number) => typedError<null, IpcError>(__TAURI_INVOKE("ai_compare_keep", { conversation })),
+	/**
+	 *  Starts both AIs ahead of a comparison you seem to be typing (each one
+	 *  that starts early and can answer), so their answers start sooner.
+	 */
+	aiCompareWarm: () => typedError<null, IpcError>(__TAURI_INVOKE("ai_compare_warm")),
+	/**
+	 *  Widens the launcher while two answers are side by side, or brings it
+	 *  back to its usual width.
+	 */
+	launcherSetWide: (wide: boolean) => __TAURI_INVOKE<void>("launcher_set_wide", { wide }),
+	/**
 	 *  How many chats are saved. Applies the current limits first, so a
 	 *  lowered cap or age shows at once.
 	 */
@@ -557,6 +583,29 @@ export type ColorSettings = {
 export type CommandAi = 
 /**  The default AI (Settings → ChatGPT → Default AI). */
 "default" | "claude" | "chatgpt";
+
+/**  A question sent to both AIs. */
+export type CompareReply = {
+	/**  One per AI, Claude first. */
+	sides: CompareSide[],
+};
+
+/**  One AI's part of a comparison. */
+export type CompareSide = {
+	provider: ProviderId,
+	/**
+	 *  Its conversation; `None` when it couldn't be started (`error` says
+	 *  why).
+	 */
+	conversation: number | null,
+	/**
+	 *  What it was told about the screen, in a few words (as
+	 *  `AskReply::context`).
+	 */
+	context: string | null,
+	/**  Why this AI didn't get the question. */
+	error: string | null,
+};
 
 /**
  *  Open the launcher with these attached to the next question (the

@@ -13,6 +13,8 @@ export type Intent =
    * or the other one (`other`, Shift+Tab).
    */
   | { type: "ask"; other?: true }
+  /** Ask Claude and ChatGPT side by side (Ctrl+Tab). */
+  | { type: "compare" }
   /** Open the settings menu (Ctrl+,). */
   | { type: "settings" }
   /** Open the action menu for the selected result (Ctrl+K). */
@@ -56,6 +58,7 @@ export function intentFor(e: KeyLike): Intent | null {
       if (ctrlOnly) return { type: "activate", actions: actionsFor("Ctrl ↵") };
       return { type: "activate" };
     case "Tab":
+      if (ctrlOnly) return { type: "compare" };
       if (e.ctrlKey || e.altKey || e.metaKey) return null;
       return e.shiftKey ? { type: "ask", other: true } : { type: "ask" };
     case "Escape":
@@ -140,15 +143,26 @@ const MAX_ACTION_HINTS = 2;
 /** The action menu's hint, shown when a result has more than one action. */
 export const MENU_HINT: Hint = ["Ctrl K", "Actions"];
 
+/** Ctrl+Tab's hint: ask Claude and ChatGPT side by side. */
+const COMPARE_HINT: Hint = ["Ctrl Tab", "Ask both"];
+
 /**
  * Footer hints while searching, for the selected result's actions. On the
  * "Ask" row, `otherAi` names the AI that Shift+Tab asks instead.
+ * `compare`: "offered" when the list has the row that asks both AIs (the
+ * Ask row then mentions Ctrl+Tab), "selected" when that row is selected.
  */
-export function searchHints(actions: Action[], otherAi?: string): Hint[] {
+export function searchHints(
+  actions: Action[],
+  otherAi?: string,
+  compare: "no" | "offered" | "selected" = "no",
+): Hint[] {
   const [first] = actions;
+  if (compare === "selected") return [["↵", "Ask both"], ["Esc", "Clear"]];
   if (first === "ask_ai") {
     const other: Hint[] = otherAi ? [["⇧ Tab", `Ask ${otherAi}`]] : [];
-    return [["↵", "Ask"], ...other, ["Esc", "Clear"]];
+    const both: Hint[] = compare === "offered" ? [COMPARE_HINT] : [];
+    return [["↵", "Ask"], ...other, ...both, ["Esc", "Clear"]];
   }
   const shownKeys = new Set<string>(["↵"]);
   const extra = hintLabels
@@ -225,10 +239,46 @@ export function chatIntentFor(e: KeyLike): ChatIntent | null {
   return null;
 }
 
+/** What a key press means while Claude and ChatGPT answer side by side. */
+export type CompareIntent =
+  /** Send the follow-up to both. */
+  | { type: "send" }
+  /** Answer the oldest waiting approval (Ctrl+Y / Ctrl+N). */
+  | { type: "approve"; allow: boolean }
+  /** Stop both answers (Ctrl+.). */
+  | { type: "stop" }
+  /** Carry on with one AI as a normal chat: 0 Claude (Ctrl+1), 1 ChatGPT (Ctrl+2). */
+  | { type: "keep"; side: number }
+  /** Scroll both columns; `pages` false means one line. */
+  | { type: "scroll"; delta: number; pages: boolean }
+  | { type: "escape" };
+
+export function compareIntentFor(e: KeyLike): CompareIntent | null {
+  const ctrlOnly = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+  if (ctrlOnly && (e.key === "1" || e.key === "2")) return { type: "keep", side: Number(e.key) - 1 };
+  const intent = chatIntentFor(e);
+  // Which answer to paste or copy is ambiguous here; Ctrl+1 / Ctrl+2 first.
+  if (intent?.type === "paste_answer" || intent?.type === "copy_answer") return null;
+  return intent;
+}
+
+/**
+ * Footer hints while comparing. `pending` names the AI whose approval
+ * Ctrl+Y answers; `names` are the two AIs, left to right.
+ */
+export function compareHints(state: { running: boolean; pending: string | null; names: string[] }): Hint[] {
+  if (state.pending) return [["Ctrl Y", `Approve ${state.pending}`], ["Ctrl N", "Deny"]];
+  const keep = state.names.slice(0, 2).map((name, i): Hint => [`Ctrl ${i + 1}`, `${name} only`]);
+  if (state.running) return [...keep, ["Esc", "Stop"]];
+  return [["↵", "Ask both"], ...keep, ["Esc", "Close"]];
+}
+
 /** What a key press means while a question with attachments is being typed. */
 export type ComposeIntent =
   /** Ask the default AI (Enter, Tab), or the other one (Shift+Tab). */
   | { type: "ask"; other?: true }
+  /** Ask Claude and ChatGPT side by side (Ctrl+Tab). */
+  | { type: "compare" }
   /** Backspace in an empty box: drop the last attachment. */
   | { type: "remove_last" }
   /** Drop the attachments and the question. */
@@ -236,10 +286,12 @@ export type ComposeIntent =
 
 export function composeIntentFor(e: KeyLike, draftEmpty: boolean): ComposeIntent | null {
   const plain = !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+  const ctrlOnly = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
   switch (e.key) {
     case "Enter":
       return plain ? { type: "ask" } : null;
     case "Tab":
+      if (ctrlOnly) return { type: "compare" };
       if (e.ctrlKey || e.altKey || e.metaKey) return null;
       return e.shiftKey ? { type: "ask", other: true } : { type: "ask" };
     case "Backspace":
@@ -250,10 +302,14 @@ export function composeIntentFor(e: KeyLike, draftEmpty: boolean): ComposeIntent
   return null;
 }
 
-/** Footer hints while a question with attachments is being typed. */
-export function composeHints(ai: string, otherAi: string, draftEmpty: boolean): Hint[] {
+/**
+ * Footer hints while a question with attachments is being typed.
+ * `compare`: mention that Ctrl+Tab asks both AIs.
+ */
+export function composeHints(ai: string, otherAi: string, draftEmpty: boolean, compare = false): Hint[] {
   const remove: Hint[] = draftEmpty ? [["⌫", "Remove"]] : [];
-  return [["↵", `Ask ${ai}`], ["⇧ Tab", `Ask ${otherAi}`], ...remove, ["Esc", "Clear"]];
+  const both: Hint[] = compare ? [COMPARE_HINT] : [];
+  return [["↵", `Ask ${ai}`], ["⇧ Tab", `Ask ${otherAi}`], ...both, ...remove, ["Esc", "Clear"]];
 }
 
 interface ComboLike {

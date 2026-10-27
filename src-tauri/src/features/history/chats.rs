@@ -117,6 +117,22 @@ impl ChatHistory {
         self.save_all(saves);
     }
 
+    /// Conversations `ids` start side by side (a comparison), each saved
+    /// as its own chat; told before any of their events.
+    pub fn link(&self, ids: &[u32]) {
+        if !self.enabled() {
+            return;
+        }
+        let saves = self.recorder().link(ids, now_ms());
+        self.save_all(saves);
+    }
+
+    /// One side of a comparison carries on alone; the other is over.
+    pub fn keep(&self, conversation: u32) {
+        let saves = self.recorder().keep(conversation, now_ms());
+        self.save_all(saves);
+    }
+
     /// A follow-up in conversation `conversation`.
     pub fn question(&self, conversation: u32, text: &str, context: Option<&str>) {
         let save = self

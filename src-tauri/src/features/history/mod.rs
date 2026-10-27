@@ -12,7 +12,9 @@
 //!   copy / paste of the last answer.
 //!
 //! The `ai_*` commands report each question (`asked`), the chat event loop
-//! each event (`observe`), and closing the chat (`closed`).
+//! each event (`observe`), and closing the chat (`closed`). A comparison
+//! (Claude and ChatGPT side by side) is two chats, linked while both are
+//! live (`comparing`, `kept`).
 
 mod chats;
 mod claude_sessions;
@@ -113,6 +115,23 @@ pub async fn asked(chat: &Chat, conversation: u32, text: &str, context: Option<&
         history.question(conversation, text, context);
     } else if let Some(saved) = chat.resumable(conversation).await {
         history.begin(conversation, saved, text, context);
+    }
+}
+
+/// Conversations `ids` (Claude and ChatGPT, compared side by side) are
+/// about to start: each is recorded as its own chat, and neither ends the
+/// other. Called before either can send an event.
+pub fn comparing(ids: &[u32]) {
+    if let Some(history) = get() {
+        history.link(ids);
+    }
+}
+
+/// One side of a comparison carries on as a normal chat; the other is
+/// over.
+pub fn kept(conversation: u32) {
+    if let Some(history) = get() {
+        history.keep(conversation);
     }
 }
 

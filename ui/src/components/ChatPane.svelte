@@ -6,8 +6,12 @@
   interface Props {
     transcript: Transcript;
     onanswer: (allow: boolean) => void;
+    /** Who asks for approval ("Claude"), when two AIs are side by side. */
+    who?: string;
+    /** Ctrl+Y / Ctrl+N answer this pane's approval (shows the keys). */
+    keys?: boolean;
   }
-  let { transcript, onanswer }: Props = $props();
+  let { transcript, onanswer, who, keys = true }: Props = $props();
   let pane: HTMLDivElement;
   /** Follow new text unless you've scrolled up to read. */
   let pinned = true;
@@ -71,16 +75,17 @@
       </p>
     {:else if entry.kind === "approval"}
       {#if entry.state === "pending"}
+        {@const summary = approvalSummary(entry)}
         <section class="approval" aria-label="Approval">
-          <p>Allow <strong>{entry.tool}</strong>{approvalSummary(entry) ? ` · ${approvalSummary(entry)}` : ""}?</p>
+          <p>Allow {who ? `${who} to use ` : ""}<strong>{entry.tool}</strong>{summary ? ` · ${summary}` : ""}?</p>
           {#if entry.detail}
             <pre class="detail">{entry.detail}</pre>
           {/if}
           <div class="buttons">
             <button type="button" class="approve" onclick={() => onanswer(true)}>
-              Approve <kbd>Ctrl Y</kbd>
+              Approve {#if keys}<kbd>Ctrl Y</kbd>{/if}
             </button>
-            <button type="button" onclick={() => onanswer(false)}>Deny <kbd>Ctrl N</kbd></button>
+            <button type="button" onclick={() => onanswer(false)}>Deny {#if keys}<kbd>Ctrl N</kbd>{/if}</button>
           </div>
         </section>
       {:else}
@@ -98,9 +103,10 @@
 </div>
 
 <style>
+  /* A column of the side-by-side view sets the two variables (ComparePane). */
   .pane {
-    height: calc(var(--row-height) * var(--results-rows) + var(--space-2));
-    padding: var(--space-2) var(--space-5) var(--space-4);
+    height: var(--chat-pane-height, calc(var(--row-height) * var(--results-rows) + var(--space-2)));
+    padding: var(--space-2) var(--chat-pane-gutter, var(--space-5)) var(--space-4);
     overflow-y: auto;
     scrollbar-width: thin;
     font-size: var(--font-size-chat);
