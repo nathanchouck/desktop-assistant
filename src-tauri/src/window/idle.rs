@@ -4,8 +4,10 @@
 //! loaded. After `IDLE_AFTER` hidden:
 //! - WebView2 is asked to use less (`MemoryUsageTargetLevel` Low): its
 //!   processes drop caches and let Windows page out what they can.
-//! - This process's working set is trimmed, so idle pages leave RAM. The
-//!   keyboard hook's own pages stay: they're locked (`hotkey/hook_boost.rs`).
+//! - This process's working set is trimmed, so idle pages leave RAM, but
+//!   only while no low-level keyboard hook runs (the Windows key override,
+//!   snippet expansion): a hook whose data was paged out answers late, and
+//!   Windows then uses the key itself (D-031).
 //!
 //! Opening the launcher sets WebView2 back to Normal before the window
 //! shows. Trimmed pages come back on first touch, mostly from memory
@@ -67,7 +69,13 @@ pub fn on_hide(app: &AppHandle, idle: &Idle) {
             return;
         }
         if let Some(window) = super::launcher(&app) {
-            os::use_less_memory(&window);
+            let settings = state.settings();
+            // A keyboard hook must answer within ~300 ms or Windows uses the
+            // key itself (D-031). Trimming would send the hook's data to the
+            // page file, so keep this process's pages while one is on.
+            let hooks_on = settings.hotkeys.win_key_override
+                || (settings.snippets.enabled && settings.snippets.expand_as_you_type);
+            os::use_less_memory(&window, !hooks_on);
         }
     });
 }
@@ -95,9 +103,21 @@ mod os {
 
     const MB: usize = 1024 * 1024;
 
-    pub fn use_less_memory(window: &WebviewWindow) {
+    /// WebView2 to Low; this process's own pages are trimmed only when
+    /// `trim` (no keyboard hook running).
+    pub fn use_less_memory(window: &WebviewWindow, trim: bool) {
         set_target(window, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
-        trim_working_set();
+        if trim {
+            trim_working_set();
+        } else {
+            // SAFETY: the pseudo-handle for this process needs no closing.
+            if let Some((set, _)) = working_set(unsafe { GetCurrentProcess() }) {
+                tracing::info!(
+                    "hidden for a while: WebView2 set to low memory; working set {} MB kept (keyboard hooks are on)",
+                    set / MB
+                );
+            }
+        }
     }
 
     pub fn use_normal_memory(window: &WebviewWindow) {
@@ -167,7 +187,7 @@ mod os {
 mod os {
     use tauri::WebviewWindow;
 
-    pub fn use_less_memory(_window: &WebviewWindow) {
+    pub fn use_less_memory(_window: &WebviewWindow, _trim: bool) {
         tracing::debug!("launcher idle");
     }
 

@@ -204,9 +204,46 @@ pub fn is_ignored(app: &str, ignore: &[String]) -> bool {
     !app.is_empty() && ignore.iter().any(|entry| stem(entry) == app)
 }
 
+/// Whether a clipboard format's data is a plain memory block we can copy
+/// byte for byte. The rest are GDI handles (bitmaps, metafiles, palettes)
+/// or "owner display" formats; Windows rebuilds the bitmap ones from the
+/// DIB formats, which are memory blocks.
+pub fn is_memory_format(format: u32) -> bool {
+    const CF_BITMAP: u32 = 2;
+    const CF_METAFILEPICT: u32 = 3;
+    const CF_PALETTE: u32 = 9;
+    const CF_ENHMETAFILE: u32 = 14;
+    const CF_OWNERDISPLAY: u32 = 0x80;
+    const CF_DSPBITMAP: u32 = 0x82;
+    const CF_DSPMETAFILEPICT: u32 = 0x83;
+    const CF_DSPENHMETAFILE: u32 = 0x8E;
+    !matches!(
+        format,
+        CF_BITMAP
+            | CF_METAFILEPICT
+            | CF_PALETTE
+            | CF_ENHMETAFILE
+            | CF_OWNERDISPLAY
+            | CF_DSPBITMAP
+            | CF_DSPMETAFILEPICT
+            | CF_DSPENHMETAFILE
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_memory_formats_are_copied_byte_for_byte() {
+        assert!(is_memory_format(13)); // CF_UNICODETEXT
+        assert!(is_memory_format(15)); // CF_HDROP
+        assert!(is_memory_format(17)); // CF_DIBV5
+        assert!(is_memory_format(0xC0A1)); // a registered format (HTML, PNG)
+        assert!(!is_memory_format(2)); // CF_BITMAP: a GDI handle
+        assert!(!is_memory_format(14)); // CF_ENHMETAFILE
+        assert!(!is_memory_format(0x80)); // CF_OWNERDISPLAY
+    }
 
     fn utf16(s: &str) -> Vec<u8> {
         s.encode_utf16().flat_map(u16::to_le_bytes).collect()

@@ -21,6 +21,7 @@ pub mod vk {
     pub const CONTROL: u16 = 0x11;
     pub const MENU: u16 = 0x12;
     pub const ESCAPE: u16 = 0x1B;
+    pub const INSERT: u16 = 0x2D;
     pub const LWIN: u16 = 0x5B;
     pub const RWIN: u16 = 0x5C;
     pub const C: u16 = 0x43;

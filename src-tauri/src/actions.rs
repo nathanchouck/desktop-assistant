@@ -96,7 +96,14 @@ pub async fn paste(app: &AppHandle, text: Option<&str>) -> AppResult<()> {
     window::hide(app);
     if let Some(target) = target {
         if let Err(e) = state.shell.focus_window(target.handle).await {
+            // Ctrl+V would land in whatever window is in front now (maybe a
+            // console that runs pasted lines). It's on the clipboard: say so.
             tracing::debug!("could not bring {} back to the front: {e}", target.app);
+            crate::toast::info(
+                app,
+                "Copied. The window you came from is gone, so paste it yourself (Ctrl+V).",
+            );
+            return Ok(());
         }
     }
     // Give the window a moment to take the keyboard.

@@ -122,6 +122,62 @@ pub fn read() -> Option<Captured> {
     }
 }
 
+/// Everything that was on the clipboard, to put back after borrowing it
+/// (snippets, the selection shortcut). On Windows that's every format, so
+/// an Excel range or formatted text comes back as it was.
+pub struct Saved {
+    #[cfg(windows)]
+    snapshot: super::win::Snapshot,
+    #[cfg(not(windows))]
+    text: Option<String>,
+}
+
+impl Saved {
+    /// The text that was on the clipboard, if any (for `{clipboard}`).
+    pub fn text(&self) -> Option<String> {
+        #[cfg(windows)]
+        {
+            self.snapshot.text()
+        }
+        #[cfg(not(windows))]
+        {
+            self.text.clone()
+        }
+    }
+}
+
+/// Saves what's on the clipboard now; `None` if it couldn't be read. May
+/// wait for the app that copied to render it: call off the async runtime.
+pub fn save() -> Option<Saved> {
+    #[cfg(windows)]
+    {
+        super::win::snapshot().map(|snapshot| Saved { snapshot })
+    }
+    #[cfg(not(windows))]
+    {
+        Some(Saved { text: read_text() })
+    }
+}
+
+/// Puts saved content back, kept out of clipboard histories (it was there
+/// already) and not recorded again by ours.
+pub fn put_back(saved: &Saved) -> Result<(), String> {
+    let _writing = Writing::begin();
+    #[cfg(windows)]
+    {
+        let sequence = super::win::restore(&saved.snapshot).map_err(|e| e.message())?;
+        OWN_WRITE.store(sequence, Ordering::SeqCst);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        match &saved.text {
+            Some(text) => write(&Content::Text(text.clone()), true).map(|_| ()),
+            None => Ok(()),
+        }
+    }
+}
+
 /// The clipboard's text, if it holds text.
 pub fn read_text() -> Option<String> {
     match read()? {

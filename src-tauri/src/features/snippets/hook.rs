@@ -38,7 +38,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use super::expand;
 use super::typing::{Expansion, Found, Input, Typed, Typing};
-use crate::features::clipboard::content::Captured;
 use crate::features::clipboard::system::{self, Content};
 use crate::platform::INJECTED_TAG;
 
@@ -278,6 +277,8 @@ fn run_worker(inbox: mpsc::Receiver<Event>, mut expansions: Vec<Expansion>) {
     let mut typing = Typing::default();
     // The last window typed in, and whether it's the launcher's own.
     let mut last_window: Option<(isize, bool)> = None;
+    // The window the last key was typed in (where an expansion goes).
+    let mut key_window: isize = 0;
     while let Ok(event) = inbox.recv() {
         let input = match event {
             Event::Stop => break,
@@ -293,6 +294,7 @@ fn run_worker(inbox: mpsc::Receiver<Event>, mut expansions: Vec<Expansion>) {
                 modifiers,
                 window,
             } => {
+                key_window = window;
                 let ours = match last_window {
                     Some((w, ours)) if w == window => ours,
                     _ => {
@@ -316,7 +318,7 @@ fn run_worker(inbox: mpsc::Receiver<Event>, mut expansions: Vec<Expansion>) {
             }
         };
         if let Some(found) = typing.feed(input, &expansions) {
-            expand_keyword(found);
+            expand_keyword(found, key_window);
         }
     }
 }
@@ -368,24 +370,34 @@ fn translate(vk: u32, scan: u32, modifiers: Modifiers, window: isize) -> Typed {
     }
 }
 
-/// Replaces the keyword just typed with its snippet: Backspace over it,
-/// paste the snippet through the clipboard, then put the clipboard back.
-fn expand_keyword(found: Found) {
-    let before = system::read();
-    let clipboard = match &before {
-        Some(Captured::Text(text)) => text.as_str(),
-        _ => "",
-    };
-    let text = expand::expand(
-        &found.expansion.text,
-        clipboard,
-        chrono::Local::now().naive_local(),
-    );
+/// Replaces the keyword just typed in `window` with its snippet: Backspace
+/// over it, paste the snippet through the clipboard, then put back
+/// everything the clipboard held.
+///
+/// The keyword is erased first: saving the clipboard can wait on the app
+/// that copied (Excel renders its formats on demand), and keys typed
+/// meanwhile would be erased instead. Every key goes only to `window`; if
+/// you switched away, nothing is pressed.
+fn expand_keyword(found: Found, window: isize) {
     wait_for_modifiers_up();
+    if !in_front(window) {
+        tracing::debug!("snippet keyword typed, but its window isn't in front any more");
+        return;
+    }
     if !press_repeatedly(VK_BACK, found.erase) {
         tracing::warn!("could not erase a snippet keyword");
         return;
     }
+    let saved = system::save();
+    let clipboard = saved
+        .as_ref()
+        .and_then(system::Saved::text)
+        .unwrap_or_default();
+    let text = expand::expand(
+        &found.expansion.text,
+        &clipboard,
+        chrono::Local::now().naive_local(),
+    );
     let written = match system::write(&Content::Text(text), true) {
         Ok(sequence) => sequence,
         Err(e) => {
@@ -393,18 +405,27 @@ fn expand_keyword(found: Found) {
             return;
         }
     };
-    if !press_together(&[VK_CONTROL, VK_V]) {
-        tracing::warn!("could not paste a snippet");
+    if in_front(window) {
+        if !press_together(&[VK_CONTROL, VK_V]) {
+            tracing::warn!("could not paste a snippet");
+        }
+        std::thread::sleep(RESTORE_DELAY);
+    } else {
+        tracing::debug!("the window changed before the snippet could be pasted");
     }
-    std::thread::sleep(RESTORE_DELAY);
     // Only if nothing new was copied meanwhile.
     if system::sequence() == written {
-        if let Some(content) = before.and_then(system::to_content) {
-            if let Err(e) = system::write(&content, true) {
+        if let Some(saved) = &saved {
+            if let Err(e) = system::put_back(saved) {
                 tracing::debug!("could not put the clipboard back: {e}");
             }
         }
     }
+}
+
+fn in_front(window: isize) -> bool {
+    // SAFETY: no preconditions.
+    unsafe { GetForegroundWindow() as isize == window }
 }
 
 fn wait_for_modifiers_up() {

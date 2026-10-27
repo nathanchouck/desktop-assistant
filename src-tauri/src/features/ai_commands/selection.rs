@@ -45,28 +45,49 @@ pub fn wait_for_change(
     }
 }
 
-/// Presses Ctrl+C in the window in front and returns what it copied
-/// (`None`: nothing was selected, so the clipboard didn't change). With
-/// `restore`, what was on the clipboard before goes back right after.
+/// Window classes of terminals, where Ctrl+C with nothing selected stops
+/// the running program instead of copying.
+const TERMINAL_CLASSES: &[&str] = &[
+    "ConsoleWindowClass",            // conhost (cmd, PowerShell)
+    "CASCADIA_HOSTING_WINDOW_CLASS", // Windows Terminal
+    "PseudoConsoleWindow",
+    "mintty",              // Git Bash
+    "VirtualConsoleClass", // ConEmu
+    "org.wezfurlong.wezterm",
+];
+
+/// The copy shortcut for a window: Ctrl+Insert in terminals (copies there,
+/// never interrupts), Ctrl+C everywhere else.
+pub fn copy_keys(window_class: Option<&str>) -> Vec<u16> {
+    match window_class {
+        Some(class) if TERMINAL_CLASSES.contains(&class) => vec![vk::CONTROL, vk::INSERT],
+        _ => vec![vk::CONTROL, vk::C],
+    }
+}
+
+/// Presses the copy shortcut in the window in front and returns what it
+/// copied (`None`: nothing was selected, so the clipboard didn't change).
+/// With `restore`, what was on the clipboard before goes back right after.
 pub async fn grab(shell: &Shell, restore: bool) -> Result<Option<Captured>, String> {
     let (before, sequence) = blocking(move || {
-        let before = if restore { system::read() } else { None };
+        let before = if restore { system::save() } else { None };
         (before, system::sequence())
     })
     .await?;
+    let class = shell.foreground_window().map(|w| w.class);
     shell
-        .press_keys(vec![vk::CONTROL, vk::C])
+        .press_keys(copy_keys(class.as_deref()))
         .await
-        .map_err(|e| format!("couldn't press Ctrl+C: {e}"))?;
+        .map_err(|e| format!("couldn't press the copy keys: {e}"))?;
     blocking(move || {
         if !wait_for_change(sequence, system::sequence, COPY_WAIT, POLL) {
             return None;
         }
         std::thread::sleep(SETTLE);
         let copied = system::read();
-        if let Some(content) = before.and_then(system::to_content) {
-            // Private, like snippets: it's already in the history once.
-            if let Err(e) = system::write(&content, true) {
+        if let Some(saved) = &before {
+            // Every format, kept out of histories: it's there once already.
+            if let Err(e) = system::put_back(saved) {
                 tracing::debug!("could not put the clipboard back: {e}");
             }
         }
@@ -145,6 +166,17 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn terminals_copy_with_ctrl_insert_so_nothing_is_interrupted() {
+        let insert = vec![vk::CONTROL, vk::INSERT];
+        let ctrl_c = vec![vk::CONTROL, vk::C];
+        assert_eq!(copy_keys(Some("CASCADIA_HOSTING_WINDOW_CLASS")), insert);
+        assert_eq!(copy_keys(Some("ConsoleWindowClass")), insert);
+        assert_eq!(copy_keys(Some("mintty")), insert);
+        assert_eq!(copy_keys(Some("Notepad")), ctrl_c);
+        assert_eq!(copy_keys(None), ctrl_c);
+    }
 
     #[test]
     fn waits_for_the_clipboard_to_change() {

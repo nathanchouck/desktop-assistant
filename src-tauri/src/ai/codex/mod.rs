@@ -90,13 +90,47 @@ impl Sandbox {
 
 /// "Ask": read-only, so every change comes to the Approve card. "Auto":
 /// Codex's own auto mode, writing freely inside the folder you came from.
-/// With no folder (the chat starts in your home folder), auto stays
-/// read-only: the whole home folder is too much to hand over.
+/// Auto stays read-only where that would hand over too much: your home
+/// folder or anything above it, a drive root, and Windows' own folders.
 pub fn sandbox(approvals: Approvals, cwd: &Path, home: &Path) -> Sandbox {
     match approvals {
-        Approvals::Auto if cwd != home => Sandbox::WorkspaceWrite,
+        Approvals::Auto if writable(cwd, home, &system_folders()) => Sandbox::WorkspaceWrite,
         _ => Sandbox::ReadOnly,
     }
+}
+
+/// Windows' own folders, from the environment (none elsewhere).
+fn system_folders() -> Vec<PathBuf> {
+    [
+        "SystemRoot",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramData",
+    ]
+    .into_iter()
+    .filter_map(std::env::var_os)
+    .map(PathBuf::from)
+    .collect()
+}
+
+/// Whether Auto may write freely in `cwd`.
+fn writable(cwd: &Path, home: &Path, system: &[PathBuf]) -> bool {
+    let is_root = cwd.parent().is_none();
+    !is_root
+        // Home itself, or a folder that contains it (C:\Users).
+        && !within(home, cwd)
+        && !system.iter().any(|dir| within(cwd, dir))
+}
+
+/// `path` is `base` or inside it, ignoring case (Windows paths are).
+fn within(path: &Path, base: &Path) -> bool {
+    let lower = |p: &Path| -> Vec<String> {
+        p.components()
+            .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+            .collect()
+    };
+    let (path, base) = (lower(path), lower(base));
+    !base.is_empty() && path.len() >= base.len() && path[..base.len()] == base[..]
 }
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -320,6 +354,24 @@ mod tests {
         );
         assert_eq!(sandbox(Approvals::Auto, home, home), Sandbox::ReadOnly);
         assert_eq!(Sandbox::WorkspaceWrite.as_str(), "workspace-write");
+    }
+
+    #[test]
+    fn auto_never_gets_a_drive_home_parents_or_system_folders() {
+        let home = Path::new("/home/me");
+        let system = [PathBuf::from("/windows"), PathBuf::from("/program files")];
+        assert!(writable(Path::new("/home/me/Projects/site"), home, &system));
+        assert!(!writable(Path::new("/"), home, &system), "drive root");
+        assert!(!writable(Path::new("/home"), home, &system), "above home");
+        assert!(
+            !writable(Path::new("/HOME/ME"), home, &system),
+            "home, any case"
+        );
+        assert!(!writable(Path::new("/Windows/System32"), home, &system));
+        assert!(!writable(Path::new("/Program Files/App"), home, &system));
+        // Similar names aren't the same folder.
+        assert!(writable(Path::new("/home/me2"), home, &system));
+        assert!(writable(Path::new("/windowsapps-backup"), home, &system));
     }
 
     #[test]

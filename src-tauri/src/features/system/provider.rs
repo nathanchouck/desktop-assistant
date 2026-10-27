@@ -44,15 +44,14 @@ impl SystemProvider {
 
     fn command_row(&self, cmd: SystemCommand, confirm: bool) -> ResultItem {
         let mut subtitle = cmd.subtitle().to_owned();
-        let mut ask = confirm.then(|| cmd.confirm()).flatten();
+        // Always ask when asking is on, even when the bin last looked
+        // empty: that look can be stale, and emptying can't be undone. An
+        // empty bin just answers the second Enter with a notice.
+        let ask = confirm.then(|| cmd.confirm()).flatten();
         match cmd {
             SystemCommand::EmptyRecycleBin => {
                 if let Some(contents) = self.bin.get() {
                     subtitle = contents.summary();
-                    if contents.is_empty() {
-                        // Nothing to lose: Enter just says so.
-                        ask = None;
-                    }
                 }
             }
             SystemCommand::ToggleDarkMode => {
@@ -310,12 +309,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_empty_bin_doesnt_ask() {
+    async fn the_bin_always_asks_even_when_it_looked_empty() {
+        // The last look can be stale: files may have been deleted since.
         let p = provider();
         p.bin.set(BinContents::default());
         let row = &p.query("empty recycle bin", 8).await.unwrap()[0];
         assert_eq!(row.subtitle, "Already empty");
-        assert_eq!(row.confirm, None);
+        assert!(row.confirm.is_some());
         p.bin.set(BinContents {
             items: 3,
             bytes: 4096,

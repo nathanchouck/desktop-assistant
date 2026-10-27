@@ -17,13 +17,17 @@ use std::sync::{mpsc, Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use windows::core::{w, Error, Result, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, HGLOBAL, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::DataExchange::{
-    AddClipboardFormatListener, CloseClipboard, GetClipboardData, GetClipboardOwner,
-    GetClipboardSequenceNumber, IsClipboardFormatAvailable, OpenClipboard,
-    RegisterClipboardFormatW,
+use windows::Win32::Foundation::{
+    CloseHandle, GlobalFree, HANDLE, HGLOBAL, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM,
 };
-use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+use windows::Win32::System::DataExchange::{
+    AddClipboardFormatListener, CloseClipboard, EmptyClipboard, EnumClipboardFormats,
+    GetClipboardData, GetClipboardOwner, GetClipboardSequenceNumber, IsClipboardFormatAvailable,
+    OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+};
+use windows::Win32::System::Memory::{
+    GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
+};
 use windows::Win32::System::Ole::{CF_DIB, CF_DIBV5, CF_HDROP, CF_UNICODETEXT};
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -355,6 +359,104 @@ fn read(owner: Option<HWND>, images: bool, for_history: bool) -> Result<Option<C
         }
     }
     Ok(None)
+}
+
+/// Everything on the clipboard, format by format, so it can be put back
+/// exactly (an Excel range keeps its cells, Word its formatting). Formats
+/// that are GDI handles rather than memory blocks are skipped; Windows
+/// makes them again from the bitmap and text formats.
+pub struct Snapshot {
+    formats: Vec<(u32, Vec<u8>)>,
+}
+
+impl Snapshot {
+    /// The text that was on the clipboard, if any.
+    pub fn text(&self) -> Option<String> {
+        let unicode = u32::from(CF_UNICODETEXT.0);
+        self.formats
+            .iter()
+            .find(|(format, _)| *format == unicode)
+            .map(|(_, bytes)| content::text_from_utf16(bytes))
+    }
+}
+
+/// All of a snapshot together may not be bigger than this.
+const MAX_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
+
+/// Takes a snapshot of the clipboard; `None` if it couldn't be opened.
+/// May wait for the app that copied to render its formats.
+pub fn snapshot() -> Option<Snapshot> {
+    let _open = OpenClipboardGuard::open(None).ok()?;
+    let mut formats = Vec::new();
+    let mut total = 0usize;
+    let mut format = 0;
+    loop {
+        // SAFETY: the clipboard is open.
+        format = unsafe { EnumClipboardFormats(format) };
+        if format == 0 {
+            break;
+        }
+        if !content::is_memory_format(format) {
+            continue;
+        }
+        // SAFETY: the clipboard is open and `format` holds a memory block.
+        if let Some(bytes) = unsafe { format_bytes(format) } {
+            total += bytes.len();
+            if total > MAX_SNAPSHOT_BYTES {
+                break;
+            }
+            formats.push((format, bytes));
+        }
+    }
+    Some(Snapshot { formats })
+}
+
+/// Puts a snapshot back (an empty one empties the clipboard), kept out of
+/// clipboard histories: it was there already. Returns the change's number.
+pub fn restore(snapshot: &Snapshot) -> Result<u32> {
+    let f = formats();
+    let _open = OpenClipboardGuard::open(None)?;
+    // SAFETY: the clipboard is open; each block is handed to the clipboard
+    // on success and freed on failure.
+    unsafe {
+        EmptyClipboard()?;
+        for (format, bytes) in &snapshot.formats {
+            if *format == f.exclude || *format == f.history {
+                continue;
+            }
+            set_bytes(*format, bytes);
+        }
+        if f.exclude != 0 {
+            set_bytes(f.exclude, &[0, 0, 0, 0]);
+        }
+        if f.history != 0 {
+            set_bytes(f.history, &[0, 0, 0, 0]);
+        }
+    }
+    Ok(sequence_number())
+}
+
+/// Copies `bytes` into a new global block and hands it to the clipboard.
+///
+/// # Safety
+/// The clipboard must be open and emptied by us.
+unsafe fn set_bytes(format: u32, bytes: &[u8]) {
+    // SAFETY: per the contract above.
+    unsafe {
+        let Ok(global) = GlobalAlloc(GMEM_MOVEABLE, bytes.len().max(1)) else {
+            return;
+        };
+        let data = GlobalLock(global) as *mut u8;
+        if data.is_null() {
+            let _ = GlobalFree(Some(global));
+            return;
+        }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), data, bytes.len());
+        let _ = GlobalUnlock(global);
+        if SetClipboardData(format, Some(HANDLE(global.0))).is_err() {
+            let _ = GlobalFree(Some(global));
+        }
+    }
 }
 
 /// A copy of one format's bytes, if the clipboard has it.
