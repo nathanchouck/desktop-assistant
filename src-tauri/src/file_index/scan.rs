@@ -189,7 +189,21 @@ mod tests {
         });
         assert_eq!(count, 10);
         assert!(chunks > 1, "a zero interval hands over every folder");
-        assert_eq!(joined, walk(dir.path(), &rules, usize::MAX));
+        // Names only: Windows updates a folder's modified time a moment
+        // after a file in it is written, so two walks can differ there.
+        let names = |tree: &Tree| -> Vec<(String, String, bool)> {
+            let mut all: Vec<_> = tree
+                .iter()
+                .flat_map(|(folder, entries)| {
+                    entries
+                        .iter()
+                        .map(move |e| (folder.clone(), e.name.to_string(), e.is_folder))
+                })
+                .collect();
+            all.sort();
+            all
+        };
+        assert_eq!(names(&joined), names(&walk(dir.path(), &rules, usize::MAX)));
     }
 
     #[test]
