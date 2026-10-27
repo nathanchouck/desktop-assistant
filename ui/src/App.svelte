@@ -467,12 +467,26 @@
       <!-- One input for both modes: a search, or a follow-up while chatting. -->
       <SearchBar
         bind:this={bar}
-        chat={chat.active}
+        chat={chatting}
         attachments={compose.attachments}
-        value={chat.active ? chat.draft : composing ? compose.draft : search.query}
-        activeIndex={!chat.active && !composing && search.items.length > 0 ? search.selected : null}
-        oninput={(v) => (chat.active ? (chat.draft = v) : composing ? (compose.draft = v) : search.setQuery(v))}
-        onkeydown={(e) => (chat.active ? onChatKey(e) : composing ? onComposeKey(e) : onSearchKey(e))}
+        value={chat.active ? chat.draft : compare.active ? compare.draft : composing ? compose.draft : search.query}
+        activeIndex={!chatting && !composing && search.items.length > 0 ? search.selected : null}
+        oninput={(v) =>
+          chat.active
+            ? (chat.draft = v)
+            : compare.active
+              ? (compare.draft = v)
+              : composing
+                ? (compose.draft = v)
+                : search.setQuery(v)}
+        onkeydown={(e) =>
+          chat.active
+            ? onChatKey(e)
+            : compare.active
+              ? onCompareKey(e)
+              : composing
+                ? onComposeKey(e)
+                : onSearchKey(e)}
         onremove={(i) => compose.remove(i)}
         ondictate={() => void dictate()}
       />
@@ -482,6 +496,8 @@
         <SettingsPane bind:this={settingsPane} store={settings} onclose={() => void closeSettings()} />
       {:else if chat.active}
         <ChatPane bind:this={pane} transcript={chat.transcript} onanswer={(allow) => chat.answer(allow)} />
+      {:else if compare.active}
+        <ComparePane bind:this={comparePane} store={compare} onanswer={(side, allow) => compare.answer(allow, side)} />
       {:else if composing}
         <ComposePane attachments={compose.attachments} ai={PROVIDER_NAMES[composeAi]} />
       {:else}
