@@ -238,7 +238,10 @@ fn launcher_size(state: &AppState) -> (f64, u32) {
 /// centered, at its usual top edge or higher if needed. Moves only when
 /// the top edge has to change, and in the order that never pokes past the
 /// work area.
-fn fit_on_current_monitor(window: &WebviewWindow, (width, height): (f64, u32)) -> tauri::Result<()> {
+fn fit_on_current_monitor(
+    window: &WebviewWindow,
+    (width, height): (f64, u32),
+) -> tauri::Result<()> {
     let size = LogicalSize::new(width, f64::from(height));
     let Some(monitor) = window.current_monitor()? else {
         return window.set_size(size);
@@ -403,7 +406,7 @@ mod tests {
         assert_eq!(state.width(), WIDTH);
         state.wide.store(true, Ordering::Relaxed);
         assert_eq!(state.width(), WIDE_WIDTH);
-        assert!(WIDE_WIDTH > WIDTH);
+        const { assert!(WIDE_WIDTH > WIDTH) };
     }
 
     #[test]

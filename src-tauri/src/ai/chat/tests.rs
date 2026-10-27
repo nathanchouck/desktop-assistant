@@ -49,7 +49,9 @@ pub(super) fn claude_setup(launch: &Launch, dir: &Path) -> Setup {
     Setup::Claude(launch.clone(), options(dir))
 }
 
-pub(super) async fn collect_until_done(rx: &mut mpsc::UnboundedReceiver<(u32, AiEvent)>) -> Vec<AiEvent> {
+pub(super) async fn collect_until_done(
+    rx: &mut mpsc::UnboundedReceiver<(u32, AiEvent)>,
+) -> Vec<AiEvent> {
     let mut events = Vec::new();
     while let Ok(Some((_, event))) = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await
     {

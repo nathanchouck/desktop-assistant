@@ -254,8 +254,8 @@
         askComposed(intent.other === true);
         break;
       case "compare":
-        // Both AIs get the same attachments (a `c `/`g ` prefix is dropped).
-        void compare.start(composedQuestion(compose.draft).text, compose.take());
+        // Both AIs get the same attachments (a `both `, `c ` or `g ` prefix is dropped).
+        void compare.start(composedQuestion(comparePrefix(compose.draft) ?? compose.draft).text, compose.take());
         break;
       case "remove_last":
         compose.removeLast();

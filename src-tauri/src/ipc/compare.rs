@@ -174,7 +174,10 @@ pub async fn ai_compare_follow_up(
 /// AI's conversation ends (it stays in history).
 #[tauri::command]
 #[specta::specta]
-pub async fn ai_compare_keep(state: State<'_, AppState>, conversation: u32) -> Result<(), IpcError> {
+pub async fn ai_compare_keep(
+    state: State<'_, AppState>,
+    conversation: u32,
+) -> Result<(), IpcError> {
     state.chat.keep(conversation).await.map_err(ai_err)?;
     history::kept(conversation);
     Ok(())

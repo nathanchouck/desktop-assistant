@@ -158,7 +158,9 @@ async fn compares_two_conversations_side_by_side() {
         assert_eq!(sent, id);
     }
     let events = until_all_done(&mut rx, &ids).await;
-    assert!(ids.iter().all(|id| events[id].last() == Some(&AiEvent::Done)));
+    assert!(ids
+        .iter()
+        .all(|id| events[id].last() == Some(&AiEvent::Done)));
     let codex_sent = received(dir.path());
     assert_eq!(codex_sent.matches("\"method\":\"turn/start\"").count(), 2);
     assert_eq!(codex_sent.matches("\"method\":\"thread/start\"").count(), 1);
@@ -282,10 +284,7 @@ async fn keeping_one_side_ends_the_other() {
         Err(AiError::NoConversation)
     ));
     chat.keep(ids[1]).await.unwrap();
-    assert_eq!(
-        chat.conversations().await,
-        [(ids[1], ProviderId::Chatgpt)]
-    );
+    assert_eq!(chat.conversations().await, [(ids[1], ProviderId::Chatgpt)]);
     assert!(chat.resumable(ids[0]).await.is_none());
     // The single-chat API now carries on with ChatGPT.
     assert_eq!(chat.provider().await, Some(ProviderId::Chatgpt));
@@ -353,7 +352,9 @@ async fn both_sides_resume_after_an_idle_shutdown() {
         .unwrap();
     }
     let events = until_all_done(&mut rx, &ids).await;
-    assert!(ids.iter().all(|id| events[id].last() == Some(&AiEvent::Done)));
+    assert!(ids
+        .iter()
+        .all(|id| events[id].last() == Some(&AiEvent::Done)));
     let args = std::fs::read_to_string(dir.path().join("claude-args.log")).unwrap();
     assert!(
         args.contains("--resume 00000000-0000-4000-8000-000000000000"),
@@ -389,10 +390,14 @@ async fn warm_spares_for_both_sides_are_claimed() {
         .map(Result::unwrap)
         .collect();
     let events = until_all_done(&mut rx, &ids).await;
-    assert!(ids.iter().all(|id| events[id].last() == Some(&AiEvent::Done)));
+    assert!(ids
+        .iter()
+        .all(|id| events[id].last() == Some(&AiEvent::Done)));
     assert_eq!(starts(dir.path()), 1, "no second Claude Code");
     assert_eq!(
-        received(dir.path()).matches("\"method\":\"initialize\"").count(),
+        received(dir.path())
+            .matches("\"method\":\"initialize\"")
+            .count(),
         1,
         "no second Codex"
     );
@@ -400,7 +405,11 @@ async fn warm_spares_for_both_sides_are_claimed() {
 
     chat.warm_all(setups()).await.unwrap();
     chat.warm(codex_setup(&codex, dir.path())).await.unwrap();
-    assert_eq!(chat.spare.lock().await.len(), 1, "the Claude spare is closed");
+    assert_eq!(
+        chat.spare.lock().await.len(),
+        1,
+        "the Claude spare is closed"
+    );
     chat.drop_stale_spare(Duration::ZERO).await;
     assert!(chat.spare.lock().await.is_empty());
 }
