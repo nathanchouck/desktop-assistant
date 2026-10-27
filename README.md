@@ -32,9 +32,23 @@ you make them.
 
 M5 done: ChatGPT through OpenAI's Codex CLI, billed to your ChatGPT plan. Type `g ` before a question to ask ChatGPT (`c ` for Claude), pick the default AI in settings, and press Shift+Tab to ask the other one. ChatGPT gets the same screen context and launcher tools, and asks Approve / Deny before changing anything (or works on its own inside the folder you came from, in Auto). Needs the Codex CLI installed and signed in with ChatGPT; the launcher offers to fix either if not.
 
-Also in: an inline calculator with unit and currency conversion, quicklinks
-(`yt lofi`), an emoji picker (`:fire`), clipboard history (`clip`) and
-snippets. See the roadmap for what's next.
+M6–M8 done (all built; checks on a real PC are in
+[docs/TESTING.md](docs/TESTING.md)):
+- **AI:** conversation history (`history`), copy or paste the last answer,
+  LaTeX math, ask about selected text (Ctrl+Shift+Space), a file, or a
+  screen region, dictation, saved AI commands, and Claude vs ChatGPT side
+  by side (Ctrl+Tab).
+- **Search:** calculator with units and currencies, quicklinks (`yt lofi`),
+  emoji (`:fire`), clipboard history (`clip`), snippets, script commands,
+  and Google Calendar, Gmail and Drive (`cal`, `mail`) with your own Google
+  client.
+- **Windows:** system commands (lock, sleep, restart, dark mode, empty the
+  Recycle Bin), window layouts, `kill <app>`, a color picker and media keys.
+- **Settings:** a synced settings folder (OneDrive) with per-PC values,
+  themes, API keys in Credential Manager, an MCP server list shared by both
+  AIs, auto-update from GitHub Releases (after a one-time key setup).
+- **Polish:** Ctrl+K action menu, Open With and Recycle Bin on files, error
+  toasts, multi-monitor/DPI placement, and memory given back when idle.
 
 ## Getting the app
 
@@ -59,6 +73,7 @@ See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for the other commands.
 | Doc | What it covers |
 |---|---|
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Full todo list, by milestone, including later features |
+| [docs/TESTING.md](docs/TESTING.md) | What to check on a real Windows PC, feature by feature |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the app is built: processes, modules, data flow, budgets |
 | [docs/CONVENTIONS.md](docs/CONVENTIONS.md) | Standard procedures: code style, adding a provider, testing, releasing |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Short records of key decisions and why |

@@ -1,7 +1,8 @@
 # Roadmap
 
 Milestones are in build order. Each one should leave the app usable.
-Tick boxes as work lands.
+Tick boxes as work lands. Everything is built; what's left are checks on a
+real Windows PC (see docs/TESTING.md for the full list).
 
 ## M0 Project setup ✅
 - [x] Scaffold Tauri 2 + Svelte 5 + TS (`src-tauri/`, `ui/`)
@@ -114,7 +115,7 @@ Check on a real Windows machine:
 - [x] Provider badge on the chat and the Ask row
 - [x] Approvals / sandbox mapping (per D-007)
 
-## M6 Settings & integrations
+## M6 Settings & integrations ✅ (pending on-device check)
 - [x] Settings menu in the launcher (D-026): shortcut, Windows key, start at login, Claude model / approvals / screen context / warm start / billing, index folders, exclusions, results shown
 - [x] Apply settings live (index folders and exclusions offer a restart instead)
 - [x] Hotkey recorder control
@@ -125,7 +126,7 @@ Check on a real Windows machine:
 - [x] Codex health (with M5)
 - [x] Settings file in a synced folder (OneDrive) option
 
-## M7 Polish & reliability
+## M7 Polish & reliability ✅ (pending on-device check)
 - [x] Conversation history (SQLite) + `>history` to reopen
 - [x] Copy last answer, paste answer into the previous app
 - [x] Error toasts with "open log"
@@ -134,7 +135,7 @@ Check on a real Windows machine:
 - [x] Perf pass against budgets; idle memory check
 - [x] LaTeX math in answers (KaTeX, bundled; prices stay text)
 
-## M8 Later horizon
+## M8 Later horizon ✅ (pending on-device check)
 Productivity
 - [x] Calculator + unit/currency conversion inline (`2^10`, `5 mi to km`)
 - [x] Clipboard history (text + images), pin, search
@@ -152,7 +153,7 @@ AI power features
 - [x] Screenshot region → ask AI
 - [x] Voice input (Windows voice typing, Win+H)
 - [x] Saved AI commands (prompt templates: "fix grammar", "summarize clipboard")
-- [ ] Side-by-side: same prompt to Claude and ChatGPT
+- [x] Side-by-side: same prompt to Claude and ChatGPT (Ctrl+Tab, `both `; D-042)
 
 Integrations without AI (your own Google OAuth client, D-040)
 - [x] `cal`: next events, join meeting link

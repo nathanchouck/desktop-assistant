@@ -121,6 +121,17 @@ every action for a row, **Esc** backs out one step.
       summarizes it. `fix teh cat` fixes the typed text. Settings → AI
       commands lets you edit the list and the selection shortcut.
 
+**Side by side**
+- [ ] With both Claude and ChatGPT signed in, type a question: a "Compare
+      Claude and ChatGPT" row appears under the Ask row. Ctrl+Tab: the
+      window widens to two columns (Claude left, ChatGPT right), each with
+      its model and status. Watch for flicker when it widens.
+- [ ] Enter sends a follow-up to both. Ctrl+2 keeps ChatGPT alone (the window
+      goes back to normal width); `history` then has both chats.
+- [ ] `both delete notes.txt in this folder` from Explorer: each approval
+      card names its AI; Ctrl+Y answers the oldest one. Esc stops both.
+- [ ] `vs code` still finds Visual Studio Code.
+
 ## 6. Calculator, quicklinks, emoji
 
 - [ ] `2^10` → 1024 as the top row; Enter copies it; Ctrl+Enter pastes it.
